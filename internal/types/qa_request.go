@@ -1,5 +1,14 @@
 package types
 
+type ChatMode string
+
+const (
+	ChatModeChat    ChatMode = "chat"
+	ChatModeRAGFast ChatMode = "rag_fast"
+	ChatModeRAGDeep ChatMode = "rag_deep"
+	ChatModeAgent   ChatMode = "agent"
+)
+
 // QARequest consolidates all parameters for KnowledgeQA and AgentQA service calls,
 // replacing the previous 14-parameter method signatures.
 // EventBus is passed separately to avoid circular dependency with the event package.
@@ -16,4 +25,5 @@ type QARequest struct {
 	UserMessageID      string       // Created user message ID
 	WebSearchEnabled   bool         // Whether web search is enabled for this request
 	EnableMemory       bool         // Whether memory feature is enabled
+	Mode               ChatMode     // Requested chat mode; empty = auto-resolve from request state
 }

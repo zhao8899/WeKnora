@@ -32,6 +32,7 @@ type qaRequestContext struct {
 	summaryModelID    string
 	webSearchEnabled  bool
 	enableMemory      bool // Whether memory feature is enabled
+	mode              types.ChatMode
 	mentionedItems    types.MentionedItems
 	effectiveTenantID uint64            // when using shared agent, tenant ID for model/KB/MCP resolution; 0 = use context tenant
 	images            []ImageAttachment // Uploaded images with analysis text
@@ -55,6 +56,7 @@ func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 		UserMessageID:      rc.userMessageID,
 		WebSearchEnabled:   rc.webSearchEnabled,
 		EnableMemory:       rc.enableMemory,
+		Mode:               rc.mode,
 	}
 }
 
@@ -156,6 +158,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		summaryModelID:    secutils.SanitizeForLog(request.SummaryModelID),
 		webSearchEnabled:  request.WebSearchEnabled,
 		enableMemory:      request.EnableMemory,
+		mode:              request.Mode,
 		mentionedItems:    convertMentionedItems(request.MentionedItems),
 		effectiveTenantID: effectiveTenantID,
 		images:            request.Images,

@@ -474,6 +474,15 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     // Get selected agent ID (backend resolves shared agent and its tenant from share relation)
     const selectedAgentId = useSettingsStoreInstance.selectedAgentId || '';
 
+    let mode = 'chat';
+    if (agentEnabled) {
+        mode = 'agent';
+    } else if (webSearchEnabled) {
+        mode = 'rag_deep';
+    } else if (kbIds.length > 0 || knowledgeIds.length > 0) {
+        mode = 'rag_fast';
+    }
+
     // Use agent-chat endpoint when agent is enabled, otherwise use knowledge-chat
     const endpoint = agentEnabled ? '/api/v1/agent-chat' : '/api/v1/knowledge-chat';
     
@@ -484,6 +493,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         session_id: session_id.value, 
         knowledge_base_ids: kbIds,
         knowledge_ids: knowledgeIds,
+        mode,
         agent_enabled: agentEnabled,
         agent_id: selectedAgentId,
         web_search_enabled: webSearchEnabled,

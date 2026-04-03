@@ -95,6 +95,7 @@ func (s *sessionService) KnowledgeQA(
 			SessionID:               req.Session.ID,
 			UserID:                  userID,
 			EnableMemory:            req.EnableMemory,
+			Mode:                    req.Mode,
 			MaxRounds:               s.cfg.Conversation.MaxRounds,
 			KnowledgeBaseIDs:        knowledgeBaseIDs,
 			KnowledgeIDs:            knowledgeIDs,
@@ -138,13 +139,27 @@ func (s *sessionService) KnowledgeQA(
 	// rewrite, fallback, FAQ strategy, history turns)
 	s.applyAgentOverridesToChatManage(ctx, req.CustomAgent, chatManage)
 
-	// Determine pipeline based on knowledge bases availability and web search setting
+	// Determine pipeline based on requested mode and selected retrieval scope.
 	hasKB := len(knowledgeBaseIDs) > 0 || len(knowledgeIDs) > 0
-	needsRAG := hasKB || req.WebSearchEnabled
 	hasHistory := chatManage.MaxRounds > 0
+	pipelineMode := s.resolveKnowledgeQAMode(ctx, req, hasKB)
+
+	// Fast mode keeps the lightweight retrieval path by default.
+	switch pipelineMode {
+	case types.ChatModeChat:
+		chatManage.EnableRewrite = false
+		chatManage.EnableQueryExpansion = false
+		chatManage.WebSearchEnabled = false
+		chatManage.WebFetchEnabled = false
+	case types.ChatModeRAGFast:
+		chatManage.EnableRewrite = false
+		chatManage.EnableQueryExpansion = false
+		chatManage.WebFetchEnabled = false
+	}
 
 	var pipeline []types.EventType
-	if !needsRAG {
+	switch pipelineMode {
+	case types.ChatModeChat:
 		// Pure chat — no retrieval needed.
 		userContent := req.Query
 		if req.ImageDescription != "" && !chatModelSupportsVision {
@@ -158,14 +173,24 @@ func (s *sessionService) KnowledgeQA(
 			Add(types.CHAT_COMPLETION_STREAM).
 			AddIf(chatManage.EnableMemory, types.MEMORY_STORAGE).
 			Build()
-	} else {
-		// RAG — dynamically assemble based on feature flags.
+	case types.ChatModeRAGFast:
 		pipeline = types.NewPipelineBuilder().
-			Add(types.LOAD_HISTORY).
-			Add(types.QUERY_UNDERSTAND).
+			AddIf(hasHistory, types.LOAD_HISTORY).
+			Add(types.CHUNK_SEARCH_PARALLEL).
+			AddIf(chatManage.RerankModelID != "", types.CHUNK_RERANK).
+			Add(types.CHUNK_MERGE).
+			Add(types.FILTER_TOP_K).
+			Add(types.INTO_CHAT_MESSAGE).
+			Add(types.CHAT_COMPLETION_STREAM).
+			Build()
+	default:
+		// Deep RAG — dynamically assemble based on feature flags.
+		pipeline = types.NewPipelineBuilder().
+			AddIf(hasHistory, types.LOAD_HISTORY).
+			AddIf(chatManage.EnableRewrite || len(chatManage.Images) > 0, types.QUERY_UNDERSTAND).
 			Add(types.CHUNK_SEARCH_PARALLEL).
 			Add(types.CHUNK_RERANK).
-			AddIf(req.WebSearchEnabled, types.WEB_FETCH).
+			AddIf(chatManage.WebSearchEnabled && chatManage.WebFetchEnabled, types.WEB_FETCH).
 			Add(types.CHUNK_MERGE).
 			Add(types.FILTER_TOP_K).
 			Add(types.DATA_ANALYSIS).
@@ -174,8 +199,8 @@ func (s *sessionService) KnowledgeQA(
 			Build()
 	}
 
-	logger.Infof(ctx, "Assembled pipeline (%d stages), hasKB=%v, webSearch=%v, history=%v",
-		len(pipeline), hasKB, req.WebSearchEnabled, hasHistory)
+	logger.Infof(ctx, "Assembled pipeline (%d stages), mode=%s, hasKB=%v, webSearch=%v, history=%v",
+		len(pipeline), pipelineMode, hasKB, chatManage.WebSearchEnabled, hasHistory)
 
 	// Start knowledge QA event processing (set session tenant so pipeline session/message lookups use session owner)
 	ctx = context.WithValue(ctx, types.SessionTenantIDContextKey, req.Session.TenantID)
@@ -825,6 +850,22 @@ func (s *sessionService) resolveWebFetchEnabled(req *types.QARequest) bool {
 		return req.CustomAgent.Config.WebFetchEnabled
 	}
 	return false
+}
+
+func (s *sessionService) resolveKnowledgeQAMode(ctx context.Context, req *types.QARequest, hasKB bool) types.ChatMode {
+	switch req.Mode {
+	case types.ChatModeChat, types.ChatModeRAGFast, types.ChatModeRAGDeep:
+		logger.Infof(ctx, "Using requested knowledge QA mode: %s", req.Mode)
+		return req.Mode
+	}
+
+	if req.WebSearchEnabled {
+		return types.ChatModeRAGDeep
+	}
+	if hasKB {
+		return types.ChatModeRAGFast
+	}
+	return types.ChatModeChat
 }
 
 // resolveWebFetchTopN returns how many pages to fetch after rerank.

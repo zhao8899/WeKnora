@@ -7,6 +7,7 @@ type PipelineRequest struct {
 	Query        string `json:"query,omitempty"`
 	EnableMemory bool   `json:"enable_memory"`
 	MaxRounds    int    `json:"max_rounds"`
+	Mode         ChatMode `json:"mode,omitempty"`
 
 	// Knowledge base retrieval parameters
 	KnowledgeBaseIDs []string      `json:"knowledge_base_ids"`
@@ -159,6 +160,7 @@ func (c *ChatManage) Clone() *ChatManage {
 			UserID:                   c.UserID,
 			EnableMemory:             c.EnableMemory,
 			MaxRounds:                c.MaxRounds,
+			Mode:                     c.Mode,
 			KnowledgeBaseIDs:         knowledgeBaseIDs,
 			KnowledgeIDs:             knowledgeIDs,
 			SearchTargets:            searchTargets,

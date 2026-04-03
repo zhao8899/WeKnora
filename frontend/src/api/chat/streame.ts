@@ -16,6 +16,8 @@ interface StreamOptions {
   chunkInterval?: number
 }
 
+type ChatMode = 'chat' | 'rag_fast' | 'rag_deep' | 'agent'
+
 export function useStream() {
   // 响应式状态
   const output = ref('')              // 显示内容
@@ -29,7 +31,7 @@ export function useStream() {
   let renderTimer: number | null = null
 
   // 启动流式请求
-  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; knowledge_ids?: string[]; agent_enabled?: boolean; agent_id?: string; web_search_enabled?: boolean; enable_memory?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; mentioned_items?: Array<{id: string; name: string; type: string; kb_type?: string}>; images?: Array<{data: string}>; method: string; url: string }) => {
+  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; knowledge_ids?: string[]; mode?: ChatMode; agent_enabled?: boolean; agent_id?: string; web_search_enabled?: boolean; enable_memory?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; mentioned_items?: Array<{id: string; name: string; type: string; kb_type?: string}>; images?: Array<{data: string}>; method: string; url: string }) => {
     // 重置状态
     output.value = '';
     error.value = null;
@@ -82,6 +84,9 @@ export function useStream() {
         query: params.query,
         agent_enabled: params.agent_enabled !== undefined ? params.agent_enabled : true
       };
+      if (params.mode) {
+        postBody.mode = params.mode;
+      }
       // Always include knowledge_base_ids for agent-chat (already validated above)
       if (params.knowledge_base_ids !== undefined && params.knowledge_base_ids.length > 0) {
         postBody.knowledge_base_ids = params.knowledge_base_ids;
