@@ -45,6 +45,13 @@ import (
 )
 
 func main() {
+	// Some dependency combinations (for example qdrant + milvus clients) register
+	// protobuf files with overlapping names. Defaulting to "warn" keeps local
+	// source startup usable unless the operator explicitly requests stricter behavior.
+	if os.Getenv("GOLANG_PROTOBUF_REGISTRATION_CONFLICT") == "" {
+		_ = os.Setenv("GOLANG_PROTOBUF_REGISTRATION_CONFLICT", "warn")
+	}
+
 	// Set Gin mode
 	if os.Getenv("GIN_MODE") == "release" {
 		gin.SetMode(gin.ReleaseMode)
