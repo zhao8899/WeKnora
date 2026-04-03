@@ -3,16 +3,16 @@
     <ListSpaceSidebar
       v-model="spaceSelection"
       :count-all="allKnowledgeBases"
-      :count-mine="kbs.length"
-      :count-shared="sharedKbs.length"
+      :count-mine="displayedMineKbs.length"
+      :count-shared="displayedSharedKbs.length"
       :count-by-org="effectiveSharedCountByOrg"
     />
     <div class="kb-list-content">
       <div class="header">
         <div class="header-title">
           <div class="title-row">
-            <h2>{{ $t('knowledgeBase.title') }}</h2>
-            <t-tooltip :content="$t('knowledgeList.create')" placement="bottom">
+            <h2>{{ pageTitle }}</h2>
+            <t-tooltip v-if="canCreateKnowledgeBase" :content="createActionLabel" placement="bottom">
               <t-button
                 variant="text"
                 theme="default"
@@ -24,7 +24,7 @@
               </t-button>
             </t-tooltip>
           </div>
-          <p class="header-subtitle">{{ $t('knowledgeList.subtitle') }}</p>
+          <p class="header-subtitle">{{ pageSubtitle }}</p>
         </div>
       </div>
       <div class="kb-list-main">
@@ -244,10 +244,10 @@
       </template>
     </div>
 
-    <div v-if="spaceSelection === 'mine' && kbs.length > 0" class="kb-card-wrap">
+    <div v-if="spaceSelection === 'mine' && displayedMineKbs.length > 0" class="kb-card-wrap">
       <!-- 我的知识库 -->
       <div
-        v-for="(kb, index) in kbs"
+        v-for="(kb, index) in displayedMineKbs"
         :key="kb.id"
         class="kb-card"
         :class="{
@@ -353,9 +353,9 @@
     </div>
 
     <!-- 卡片网格：共享给我 -->
-    <div v-if="spaceSelection === 'shared' && sharedKbs.length > 0" class="kb-card-wrap">
+    <div v-if="spaceSelection === 'shared' && displayedSharedKbs.length > 0" class="kb-card-wrap">
       <div
-        v-for="shared in sharedKbs"
+        v-for="shared in displayedSharedKbs"
         :key="'shared-' + shared.share_id"
         class="kb-card shared-kb-card"
         :class="{
@@ -401,7 +401,7 @@
     </div>
 
     <!-- 共享给我空状态 -->
-    <div v-if="spaceSelection === 'shared' && sharedKbs.length === 0 && !loading" class="empty-state">
+    <div v-if="spaceSelection === 'shared' && displayedSharedKbs.length === 0 && !loading" class="empty-state">
       <t-icon name="share" size="48px" class="empty-icon" />
       <p>{{ $t('knowledgeList.emptyShared') }}</p>
     </div>
@@ -410,9 +410,9 @@
     <div v-if="spaceSelectionOrgId && spaceKbsLoading" class="kb-list-main-loading">
       <t-loading size="medium" text="" />
     </div>
-    <div v-else-if="spaceSelectionOrgId && spaceKbsList.length > 0" class="kb-card-wrap">
+    <div v-else-if="spaceSelectionOrgId && displayedSpaceKbs.length > 0" class="kb-card-wrap">
       <div
-        v-for="shared in spaceKbsList"
+        v-for="shared in displayedSpaceKbs"
         :key="'shared-' + (shared.share_id || `agent-${shared.knowledge_base?.id}-${shared.source_from_agent?.agent_id || ''}`)"
         class="kb-card shared-kb-card"
         :class="{
@@ -470,28 +470,40 @@
       <img class="empty-img" src="@/assets/img/upload.svg" alt="">
       <span class="empty-txt">{{ $t('knowledgeList.empty.title') }}</span>
       <span class="empty-desc">{{ $t('knowledgeList.empty.description') }}</span>
-      <t-button class="kb-create-btn empty-state-btn" @click="handleCreateKnowledgeBase">
+      <t-button v-if="canCreateKnowledgeBase" class="kb-create-btn empty-state-btn" @click="handleCreateKnowledgeBase">
         <template #icon><t-icon name="folder-add" /></template>
         {{ $t('knowledgeList.create') }}
+      </t-button>
+      <t-button v-else class="empty-state-btn" variant="outline" @click="router.push('/platform/knowledge-search')">
+        <template #icon><t-icon name="search" /></template>
+        {{ $t('knowledgeList.empty.ask') }}
       </t-button>
     </div>
 
     <!-- 我的知识库空状态 -->
-    <div v-if="spaceSelection === 'mine' && kbs.length === 0 && !loading" class="empty-state">
+    <div v-if="spaceSelection === 'mine' && displayedMineKbs.length === 0 && !loading" class="empty-state">
       <img class="empty-img" src="@/assets/img/upload.svg" alt="">
       <span class="empty-txt">{{ $t('knowledgeList.empty.title') }}</span>
       <span class="empty-desc">{{ $t('knowledgeList.empty.description') }}</span>
-      <t-button class="kb-create-btn empty-state-btn" @click="handleCreateKnowledgeBase">
+      <t-button v-if="canCreateKnowledgeBase" class="kb-create-btn empty-state-btn" @click="handleCreateKnowledgeBase">
         <template #icon><t-icon name="folder-add" /></template>
         {{ $t('knowledgeList.create') }}
+      </t-button>
+      <t-button v-else class="empty-state-btn" variant="outline" @click="router.push('/platform/knowledge-search')">
+        <template #icon><t-icon name="search" /></template>
+        {{ $t('knowledgeList.empty.ask') }}
       </t-button>
     </div>
 
     <!-- 空间下知识库空状态 -->
-    <div v-if="spaceSelectionOrgId && !spaceKbsLoading && spaceKbsList.length === 0" class="empty-state">
+    <div v-if="spaceSelectionOrgId && !spaceKbsLoading && displayedSpaceKbs.length === 0" class="empty-state">
       <img class="empty-img" src="@/assets/img/upload.svg" alt="">
       <span class="empty-txt">{{ $t('knowledgeList.empty.sharedTitle') }}</span>
       <span class="empty-desc">{{ $t('knowledgeList.empty.sharedDescription') }}</span>
+      <t-button class="empty-state-btn" variant="outline" @click="router.push('/platform/organizations')">
+        <template #icon><t-icon name="share" /></template>
+        {{ $t('knowledgeList.empty.goSpace') }}
+      </t-button>
     </div>
       </div>
     </div>
@@ -605,6 +617,7 @@ import { MessagePlugin, Icon as TIcon } from 'tdesign-vue-next'
 import { listKnowledgeBases, deleteKnowledgeBase, togglePinKnowledgeBase } from '@/api/knowledge-base'
 import { formatStringDate } from '@/utils/index'
 import { useUIStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import { useOrganizationStore } from '@/stores/organization'
 import { listOrganizationSharedKnowledgeBases, type SharedKnowledgeBase, type OrganizationSharedKnowledgeBaseItem, type SourceFromAgentInfo } from '@/api/organization'
 import KnowledgeBaseEditorModal from './KnowledgeBaseEditorModal.vue'
@@ -615,8 +628,19 @@ import { useI18n } from 'vue-i18n'
 const router = useRouter()
 const route = useRoute()
 const uiStore = useUIStore()
+const authStore = useAuthStore()
 const orgStore = useOrganizationStore()
 const { t } = useI18n()
+const isFaqView = computed(() => route.name === 'faqList')
+const canCreateKnowledgeBase = computed(() => authStore.hasValidTenant)
+
+const pageTitle = computed(() => (isFaqView.value ? t('knowledgeEditor.faq.title') : t('knowledgeBase.title')))
+const pageSubtitle = computed(() =>
+  isFaqView.value ? t('knowledgeEditor.faq.subtitle') : t('knowledgeList.subtitle')
+)
+const createActionLabel = computed(() =>
+  isFaqView.value ? t('knowledgeList.createFAQ') : t('knowledgeList.create')
+)
 
 // 左侧空间选择：我的 / 空间 ID（已去掉「全部」）
 const spaceSelection = ref<'all' | 'mine' | 'shared' | string>('mine')
@@ -663,8 +687,21 @@ const sharingKbName = ref('')
 // Shared knowledge bases
 const sharedKbs = computed<SharedKnowledgeBase[]>(() => orgStore.sharedKnowledgeBases || [])
 
+const matchCurrentView = (type?: 'document' | 'faq') => {
+  const normalizedType = type || 'document'
+  return isFaqView.value ? normalizedType === 'faq' : true
+}
+
+const displayedMineKbs = computed(() => kbs.value.filter(kb => matchCurrentView(kb.type)))
+const displayedSharedKbs = computed(() =>
+  sharedKbs.value.filter(shared => matchCurrentView(shared.knowledge_base?.type))
+)
+const displayedSpaceKbs = computed(() =>
+  spaceKbsList.value.filter(shared => matchCurrentView(shared.knowledge_base?.type))
+)
+
 // All knowledge bases (mine + shared to me)
-const allKnowledgeBases = computed(() => kbs.value.length + sharedKbs.value.length)
+const allKnowledgeBases = computed(() => displayedMineKbs.value.length + displayedSharedKbs.value.length)
 
 // 当前选中的是空间 ID（非全部、非我的）
 const spaceSelectionOrgId = computed(() => {
@@ -687,7 +724,7 @@ const spaceCountByOrg = ref<Record<string, number>>({})
 // 各空间下的共享知识库数量（用于侧栏展示）：优先用接口返回的该空间总数，否则用「共享给我」数量
 const sharedCountByOrg = computed<Record<string, number>>(() => {
   const map: Record<string, number> = {}
-  sharedKbs.value.forEach(s => {
+  displayedSharedKbs.value.forEach(s => {
     const id = s.organization_id
     if (!id) return
     map[id] = (map[id] || 0) + 1
@@ -701,7 +738,9 @@ const effectiveSharedCountByOrg = computed<Record<string, number>>(() => {
   const base = sharedCountByOrg.value
   const merged = { ...base }
   Object.keys(spaceCountByOrg.value).forEach(orgId => {
-    merged[orgId] = spaceCountByOrg.value[orgId]
+    merged[orgId] = spaceSelection.value === orgId
+      ? displayedSpaceKbs.value.length
+      : spaceCountByOrg.value[orgId]
   })
   return merged
 })
@@ -709,16 +748,16 @@ const effectiveSharedCountByOrg = computed<Record<string, number>>(() => {
 // Filtered knowledge bases: 全部 = 我的 + 全部共享；我的 = 仅我的
 const filteredKnowledgeBases = computed(() => {
   if (spaceSelection.value === 'mine') {
-    return kbs.value.map(kb => ({ ...kb, isMine: true as const }))
+    return displayedMineKbs.value.map(kb => ({ ...kb, isMine: true as const }))
   }
   if (spaceSelection.value !== 'all') {
     return []
   }
   const result: Array<(KB & { isMine: true }) | (SharedKnowledgeBase['knowledge_base'] & { isMine: false; permission: string; shared_at: string; share_id: string } & any)> = []
-  kbs.value.forEach(kb => {
+  displayedMineKbs.value.forEach(kb => {
     result.push({ ...kb, isMine: true as const })
   })
-  sharedKbs.value.forEach(shared => {
+  displayedSharedKbs.value.forEach(shared => {
     const kb = shared.knowledge_base
     if (!kb) return
     result.push({
@@ -1108,7 +1147,8 @@ const goSettings = (id: string) => {
 
 // 创建知识库
 const handleCreateKnowledgeBase = () => {
-  uiStore.openCreateKB()
+  if (!canCreateKnowledgeBase.value) return
+  uiStore.openCreateKB(isFaqView.value ? 'faq' : 'document')
 }
 
 // 知识库编辑器成功回调（创建或编辑成功）

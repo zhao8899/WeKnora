@@ -586,7 +586,7 @@
                             size="small"
                             :value="entry.is_recommended"
                             :loading="!!entryRecommendedLoading[entry.id]"
-                            :disabled="!!entryRecommendedLoading[entry.id]"
+                            :disabled="!!entryRecommendedLoading[entry.id] || !canEdit"
                             @click.stop
                             @change="(value: boolean) => handleEntryRecommendedChange(entry, value)"
                           />
@@ -1778,6 +1778,7 @@ const confirmDeleteTag = (tag: any) => {
 }
 
 const handleEntryTagChange = async (entryId: number, value?: string) => {
+  if (!canEdit.value) return
   if (!props.kbId) return
   const targetEntry = entries.value.find((item) => item.id === entryId)
   const previousTagId = targetEntry ? targetEntry.tag_id : undefined
@@ -1808,6 +1809,9 @@ const handleNavigateToCurrentKB = () => {
 }
 
 const handleOpenKBSettings = () => {
+  if (!canManage.value) {
+    return
+  }
   if (!props.kbId) {
     MessagePlugin.warning(t('knowledgeEditor.messages.missingId'))
     return
@@ -1858,6 +1862,9 @@ const handleFaqMenuAction = (event: Event) => {
 }
 
 const handleEntryStatusChange = async (entry: FAQEntry, value: boolean) => {
+  if (!canEdit.value) {
+    return
+  }
   if (!props.kbId) {
     return
   }
@@ -1887,6 +1894,9 @@ const handleEntryStatusChange = async (entry: FAQEntry, value: boolean) => {
 }
 
 const handleEntryRecommendedChange = async (entry: FAQEntry, value: boolean) => {
+  if (!canEdit.value) {
+    return
+  }
   if (entryRecommendedLoading[entry.id]) {
     return
   }
@@ -2049,6 +2059,9 @@ const resetEditorForm = () => {
 }
 
 const openEditor = (entry?: FAQEntry) => {
+  if (!canEdit.value) {
+    return
+  }
   if (entry) {
     editorMode.value = 'edit'
     currentEntryId.value = entry.id
@@ -2120,6 +2133,7 @@ const removeNegative = (index: number) => {
 }
 
 const handleSubmitEntry = async () => {
+  if (!canEdit.value) return
   if (!editorFormRef.value) return
   const result = await editorFormRef.value.validate?.()
   if (result !== true) return
@@ -2150,6 +2164,7 @@ const handleSubmitEntry = async () => {
 }
 
 const handleBatchDelete = async () => {
+  if (!canManage.value) return
   if (!selectedRowKeys.value.length) return
   try {
     await deleteFAQEntries(props.kbId, selectedRowKeys.value)
@@ -2166,12 +2181,14 @@ const batchTagDialogVisible = ref(false)
 const batchTagValue = ref<string>('')
 
 const openBatchTagDialog = () => {
+  if (!canEdit.value) return
   if (!selectedRowKeys.value.length) return
   batchTagValue.value = ''
   batchTagDialogVisible.value = true
 }
 
 const handleBatchTag = async () => {
+  if (!canEdit.value) return
   if (!selectedRowKeys.value.length || !props.kbId) return
   try {
     const updates: Record<number, number | null> = {}
@@ -2190,6 +2207,7 @@ const handleBatchTag = async () => {
 }
 
 const handleBatchStatusChange = async (isEnabled: boolean) => {
+  if (!canEdit.value) return
   if (!selectedRowKeys.value.length || !props.kbId) return
   try {
     const by_id: Record<number, { is_enabled: boolean }> = {}
@@ -2206,6 +2224,7 @@ const handleBatchStatusChange = async (isEnabled: boolean) => {
 }
 
 const handleBatchRecommendedChange = async (isRecommended: boolean) => {
+  if (!canEdit.value) return
   if (!selectedRowKeys.value.length || !props.kbId) return
   try {
     const by_id: Record<number, { is_recommended: boolean }> = {}
@@ -2222,11 +2241,13 @@ const handleBatchRecommendedChange = async (isRecommended: boolean) => {
 }
 
 const handleMenuEdit = (entry: FAQEntry) => {
+  if (!canEdit.value) return
   entry.showMore = false
   openEditor(entry)
 }
 
 const handleMenuDelete = async (entry: FAQEntry) => {
+  if (!canManage.value) return
   entry.showMore = false
   try {
     await deleteFAQEntries(props.kbId, [entry.id])
@@ -2238,6 +2259,9 @@ const handleMenuDelete = async (entry: FAQEntry) => {
 }
 
 const openImportDialog = () => {
+  if (!canEdit.value) {
+    return
+  }
   // 如果正在导入，不允许打开导入对话框
   if (importState.taskStatus?.status === 'running') {
     MessagePlugin.warning(t('faqManager.import.importInProgress'))
@@ -2253,6 +2277,9 @@ const openImportDialog = () => {
 }
 
 const processFile = async (file: File) => {
+  if (!canEdit.value) {
+    return
+  }
   importState.file = file
 
   try {
@@ -2276,6 +2303,7 @@ const processFile = async (file: File) => {
 }
 
 const handleFileChange = async (event: Event) => {
+  if (!canEdit.value) return
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (!file) return
@@ -2722,6 +2750,9 @@ const formatImportTime = (timeStr?: string) => {
 }
 
 const handleImport = async () => {
+  if (!canEdit.value) {
+    return
+  }
   if (!importState.file || !importState.preview.length) {
     MessagePlugin.warning(t('knowledgeEditor.faqImport.selectFile'))
     return

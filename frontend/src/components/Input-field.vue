@@ -76,9 +76,9 @@ const showAgentModeSelector = ref(false);
 const agentModeButtonRef = ref<HTMLElement>();
 const agentModeDropdownStyle = ref<Record<string, string>>({});
 
-// 智能体相关状态（完整列表供选中态解析；对话下拉用 enabledAgents）
+// 问答助手相关状态（完整列表供选中态解析；下拉列表用 enabledAgents）
 const agents = ref<CustomAgent[]>([]);
-/** 当前租户在对话下拉中停用的「我的」智能体 ID（仅影响本租户） */
+/** 当前租户在下拉列表中停用的“我的助手” ID（仅影响本租户） */
 const disabledOwnAgentIds = ref<string[]>([]);
 const selectedAgentId = computed({
   get: () => settingsStore.selectedAgentId || BUILTIN_QUICK_ANSWER_ID,
@@ -102,16 +102,16 @@ const selectedAgent = computed(() => {
   } as CustomAgent;
 });
 
-// 判断是否为自定义智能体（非内置）
+// 判断是否为自定义助手（非内置）
 const isCustomAgent = computed(() => {
   const agent = selectedAgent.value;
   return agent && !agent.is_builtin;
 });
 
-// 判断是否有智能体配置（包括内置智能体）
+// 判断是否有助手配置（包括内置助手）
 const hasAgentConfig = computed(() => {
   const agent = selectedAgent.value;
-  // 内置智能体需要从 agents 列表中获取实际配置
+  // 内置助手需要从 agents 列表中获取实际配置
   if (agent?.is_builtin) {
     const builtinAgent = agents.value.find(a => a.id === agent.id);
     return !!builtinAgent?.config;
@@ -119,7 +119,7 @@ const hasAgentConfig = computed(() => {
   return !!agent?.config;
 });
 
-// 获取当前智能体的实际配置（内置智能体从 agents 列表获取）
+// 获取当前助手的实际配置（内置助手从 agents 列表获取）
 const currentAgentConfig = computed(() => {
   const agent = selectedAgent.value;
   if (agent?.is_builtin) {
@@ -129,23 +129,23 @@ const currentAgentConfig = computed(() => {
   return agent?.config || {};
 });
 
-// 智能体预配置的知识库 IDs
+// 问答助手预配置的知识库 IDs
 const agentKnowledgeBases = computed(() => {
   if (!hasAgentConfig.value) return [];
   return currentAgentConfig.value?.knowledge_bases || [];
 });
 
-// 智能体的知识库选择模式
+// 问答助手的知识库选择模式
 const agentKBSelectionMode = computed(() => {
-  if (!hasAgentConfig.value) return null; // null 表示不受智能体控制
+  if (!hasAgentConfig.value) return null; // null 表示不受问答助手控制
   return currentAgentConfig.value?.kb_selection_mode || 'all';
 });
 
-// 共享智能体下的知识库列表（来自 listKnowledgeBases(agent_id)），用于已选知识库展示与 org 角标
+// 共享问答助手下的知识库列表（来自 listKnowledgeBases(agent_id)），用于已选知识库展示与 org 角标
 const sharedAgentKbList = ref<Array<{ id: string; name: string; type?: string; knowledge_count?: number; chunk_count?: number }>>([]);
 
-// 当智能体改变时，模型、网络搜索、可@知识库列表均跟随新智能体配置
-// 知识库：用新智能体配置的列表替换当前选中，使已选与可@列表一致（含共享智能体）
+// 当问答助手改变时，模型、网络搜索、可@知识库列表均跟随新配置
+// 知识库：用新助手配置的列表替换当前选中，使已选与可@列表一致（含共享助手）
 watch([selectedAgentId, agentKnowledgeBases, agentKBSelectionMode], ([newAgentId, newAgentKbs, newKbMode], [oldAgentId]) => {
   if (newAgentId !== oldAgentId && oldAgentId !== undefined) {
     if (newKbMode === 'none') {
@@ -153,7 +153,7 @@ watch([selectedAgentId, agentKnowledgeBases, agentKBSelectionMode], ([newAgentId
     } else {
       settingsStore.selectKnowledgeBases(newAgentKbs && newAgentKbs.length > 0 ? [...newAgentKbs] : []);
     }
-    // 若 @ 面板已打开，刷新可@列表以立即反映新智能体的知识库范围
+    // 若 @ 面板已打开，刷新可@列表以立即反映新助手的知识库范围
     if (showMention.value) {
       loadMentionItems(mentionQuery.value, true);
     }
@@ -165,7 +165,7 @@ watch([selectedAgentId, agentKnowledgeBases, agentKBSelectionMode], ([newAgentId
   }
 }, { immediate: true });
 
-// 共享智能体时预取该智能体知识库列表，使已选标签在未打开 @ 时也能显示共享空间角标
+// 使用共享助手时预取其知识库列表，使已选标签在未打开 @ 时也能显示共享空间角标
 watch([selectedAgentId, () => settingsStore.selectedAgentSourceTenantId], async ([agentId, sourceTenantId]) => {
   if (sourceTenantId && agentId) {
     try {
@@ -186,19 +186,19 @@ watch([selectedAgentId, () => settingsStore.selectedAgentSourceTenantId], async 
   }
 }, { immediate: true });
 
-// 智能体是否启用了网络搜索
+// 问答助手是否启用了网络搜索
 const agentWebSearchEnabled = computed(() => {
-  if (!hasAgentConfig.value) return null; // null 表示不受智能体控制
+  if (!hasAgentConfig.value) return null; // null 表示不受问答助手控制
   return currentAgentConfig.value?.web_search_enabled ?? true;
 });
 
-// 网络搜索是否被智能体禁用（只读状态）- 只有明确设置为 false 时才禁用
+// 网络搜索是否被问答助手禁用（只读状态），只有明确设置为 false 时才禁用
 const isWebSearchDisabledByAgent = computed(() => {
   return hasAgentConfig.value && agentWebSearchEnabled.value === false;
 });
 
-// 知识库选择是否被智能体锁定
-// 1. 如果智能体配置了 kb_selection_mode = 'none' → 完全禁用知识库
+// 知识库选择是否被问答助手锁定
+// 1. 如果助手配置了 kb_selection_mode = 'none'，则完全禁用知识库
 // 其他情况用户都可以在允许的范围内通过 @ 选择知识库
 const isKnowledgeBaseLockedByAgent = computed(() => {
   if (!hasAgentConfig.value) return false;
@@ -206,31 +206,31 @@ const isKnowledgeBaseLockedByAgent = computed(() => {
   return agentKBSelectionMode.value === 'none';
 });
 
-// 知识库是否被智能体完全禁用（kb_selection_mode = 'none'）
+// 知识库是否被问答助手完全禁用（kb_selection_mode = 'none'）
 const isKnowledgeBaseDisabledByAgent = computed(() => {
   if (!hasAgentConfig.value) return false;
   return agentKBSelectionMode.value === 'none';
 });
 
-// 智能体配置的模型 ID
+// 问答助手配置的模型 ID
 const agentModelId = computed(() => {
   if (!hasAgentConfig.value) return null;
   return currentAgentConfig.value?.model_id || null;
 });
 
-// 智能体支持的文件类型（空数组表示支持所有类型）
+// 问答助手支持的文件类型（空数组表示支持所有类型）
 const agentSupportedFileTypes = computed(() => {
   if (!hasAgentConfig.value) return [];
   return currentAgentConfig.value?.supported_file_types || [];
 });
 
-// 智能体是否启用了图片上传（多模态）
+// 问答助手是否启用了图片上传（多模态）
 const isImageUploadEnabledByAgent = computed(() => {
   if (!hasAgentConfig.value) return false;
   return currentAgentConfig.value?.image_upload_enabled === true;
 });
 
-// 模型选择是否被智能体锁定 - 已移除锁定逻辑，允许用户自由切换模型
+// 模型选择是否被问答助手锁定，当前已移除锁定逻辑，允许用户自由切换模型
 const isModelLockedByAgent = computed(() => {
   return false;
 });
@@ -252,7 +252,7 @@ const mentionLoading = ref(false);
 const mentionOffset = ref(0);
 const MENTION_PAGE_SIZE = 20;
 
-// 共享智能体时用于标识「共享空间」的展示名（组织名或共享者），供 @ 列表与已选标签显示角标
+// 共享问答助手时用于标识“共享空间”的展示名（组织名或共享者），供 @ 列表与已选标签显示角标
 const sharedAgentOrgName = computed(() => {
   const sourceTenantId = settingsStore.selectedAgentSourceTenantId;
   const agentId = selectedAgentId.value;
@@ -288,7 +288,7 @@ const isWebSearchConfigured = ref(false);
 const knowledgeBases = ref<Array<{ id: string; name: string; type?: 'document' | 'faq'; knowledge_count?: number; chunk_count?: number }>>([]);
 const fileList = ref<Array<{ id: string; name: string }>>([]);
 
-// 选中的知识库：包含自己的 + 组织共享的 + 共享智能体下的（用于展示已选列表与 org 角标）
+// 选中的知识库：包含自己的、组织共享的、共享助手下的，用于展示已选列表与 org 角标
 const selectedKbs = computed(() => {
   const own = knowledgeBases.value.filter(kb => selectedKbIds.value.includes(kb.id));
   const sharedList = orgStore.sharedKnowledgeBases || [];
@@ -305,7 +305,7 @@ const selectedKbs = computed(() => {
   const ownIds = new Set(own.map(kb => kb.id));
   const sharedOnly = sharedMapped.filter((kb: any) => !ownIds.has(kb.id));
   const sharedOnlyIds = new Set(sharedOnly.map((kb: any) => kb.id));
-  // 共享智能体下的知识库：从 sharedAgentKbList 中取在选中列表里的，并打上共享空间标识
+  // 共享助手下的知识库：从 sharedAgentKbList 中取在选中列表里的，并打上共享空间标识
   const agentOrg = sharedAgentOrgName.value;
   const sharedFromAgent = (sharedAgentKbList.value || []).filter(kb => selectedKbIds.value.includes(kb.id) && !ownIds.has(kb.id) && !sharedOnlyIds.has(kb.id)).map(kb => ({
     id: kb.id,
@@ -328,12 +328,12 @@ const selectedFiles = computed(() => {
 });
 
   // 合并所有选中项（用于输入框内显示）
-  // 现在智能体配置的知识库也在 store 中，统一从 selectedKbs 获取
+  // 现在问答助手配置的知识库也在 store 中，统一从 selectedKbs 获取
   const allSelectedItems = computed(() => {
-    // 获取智能体预配置的知识库 IDs（用于标记和排序）
+    // 获取问答助手预配置的知识库 IDs，用于标记和排序
     const agentKbIds = agentKnowledgeBases.value;
     
-    // 所有选中的知识库，标记是否为智能体配置
+    // 所有选中的知识库，标记是否为问答助手配置
     const allKbs = selectedKbs.value.map(kb => ({ 
       ...kb, 
       type: 'kb' as const,
@@ -341,7 +341,7 @@ const selectedFiles = computed(() => {
       isAgentConfigured: agentKbIds.includes(kb.id)
     }));
     
-    // 用户选择的文件（根据 fileIdToKbId + 共享列表/共享智能体补全 org_name，用于角标）
+    // 用户选择的文件（根据 fileIdToKbId + 共享列表/共享助手补全 org_name，用于角标）
     const sharedKbOrgMap: Record<string, string> = {};
     (orgStore.sharedKnowledgeBases || []).forEach((s: any) => {
       if (s.knowledge_base?.id != null && s.org_name) {
@@ -364,14 +364,14 @@ const selectedFiles = computed(() => {
       };
     });
     
-    // 智能体配置的放在前面
+    // 问答助手配置的放在前面
     const agentConfiguredKbs = allKbs.filter(kb => kb.isAgentConfigured);
     const userSelectedKbs = allKbs.filter(kb => !kb.isAgentConfigured);
     
     return [...agentConfiguredKbs, ...userSelectedKbs, ...files];
   });
 
-// 移除选中项（智能体配置的项也可以移除）
+// 移除选中项（问答助手配置的项也可以移除）
 const removeSelectedItem = (item: { id: string; type: 'kb' | 'file'; isAgentConfigured?: boolean }) => {
   if (item.type === 'kb') {
     settingsStore.removeKnowledgeBase(item.id);
@@ -399,7 +399,7 @@ const remainingCount = computed(() => Math.max(0, selectedKbs.value.length - 2))
 
 // 根据不同状态组合计算输入框的 placeholder
 const inputPlaceholder = computed(() => {
-  // 如果选择了自定义智能体
+  // 如果选择了自定义助手
   if (isCustomAgent.value && selectedAgent.value) {
     // 有描述时显示描述，否则显示"向 [名称] 提问"
     if (selectedAgent.value.description) {
@@ -440,7 +440,7 @@ const loadKnowledgeBases = async () => {
       // 拉取共享知识库（供 @ 提及与清理选中项时识别）
       await orgStore.fetchSharedKnowledgeBases().catch(() => {});
 
-      // 清理无效的知识库ID：只移除既不在自己列表、也不在组织共享、也不在共享智能体知识库中的 ID（刷新后保留共享智能体下已选知识库）
+      // 清理无效的知识库 ID：只移除既不在自己列表、也不在组织共享、也不在共享助手知识库中的项
       const validKbIds = new Set(validKbs.map((kb: any) => kb.id));
       const sharedKbIds = new Set(
         (orgStore.sharedKnowledgeBases || []).map((s: any) => s.knowledge_base?.id).filter(Boolean)
@@ -540,7 +540,7 @@ const loadWebSearchConfig = async () => {
   }
 };
 
-// 加载智能体列表（我的 + 共享，供选中态与就绪检查用）
+// 加载助手列表（我的 + 共享，供选中态与就绪检查用）
 const loadAgents = async () => {
   try {
     const [agentsRes] = await Promise.all([
@@ -555,7 +555,7 @@ const loadAgents = async () => {
   }
 }
 
-// 对话下拉中展示的「我的」智能体（排除当前租户已停用的）
+// 下拉列表中展示的“我的助手”（排除当前租户已停用的）
 const enabledAgents = computed(() =>
   agents.value.filter(a => !disabledOwnAgentIds.value.includes(a.id))
 );
@@ -670,7 +670,7 @@ const selectedModel = computed(() => {
   return availableModels.value.find(model => model.id === selectedModelId.value);
 });
 
-// 模型展示名：本租户列表中有则用名称；若为共享智能体且其 model_id 不在本租户列表中则显示“共享智能体配置的模型”
+// 模型展示名：本租户列表中有则用名称；若为共享助手且其 model_id 不在本租户列表中则显示“共享问答助手配置的模型”
 const selectedModelDisplayName = computed(() => {
   if (selectedModel.value) return selectedModel.value.name;
   if (!selectedModelId.value) return t('input.notConfigured');
@@ -694,14 +694,6 @@ const updateModelDropdownPosition = () => {
   
   // 获取按钮相对于视口的位置
   const rect = anchor.getBoundingClientRect();
-  console.log('[Model Dropdown] Button rect:', {
-    top: rect.top,
-    bottom: rect.bottom,
-    left: rect.left,
-    right: rect.right,
-    width: rect.width,
-    height: rect.height
-  });
   
   const dropdownWidth = 280;
   const offsetY = 8;
@@ -725,11 +717,6 @@ const updateModelDropdownPosition = () => {
   const spaceBelow = vh - rect.bottom; // 下方剩余空间
   const spaceAbove = rect.top; // 上方剩余空间
   
-  console.log('[Model Dropdown] Space check:', {
-    spaceBelow,
-    spaceAbove,
-    windowHeight: vh
-  });
   
   let actualHeight: number;
   let shouldOpenBelow: boolean;
@@ -739,7 +726,6 @@ const updateModelDropdownPosition = () => {
     // 下方有足够空间，向下弹出
     actualHeight = Math.min(preferredDropdownHeight, spaceBelow - offsetY - 16);
     shouldOpenBelow = true;
-    console.log('[Model Dropdown] Position: below button', { actualHeight });
   } else {
     // 向上弹出，优先使用 preferredHeight，必要时才扩展到 maxHeight
     const availableHeight = spaceAbove - offsetY - topMargin;
@@ -751,14 +737,12 @@ const updateModelDropdownPosition = () => {
       actualHeight = Math.max(minDropdownHeight, availableHeight);
     }
     shouldOpenBelow = false;
-    console.log('[Model Dropdown] Position: above button', { actualHeight });
   }
   
   // 根据弹出方向使用不同的定位方式
   if (shouldOpenBelow) {
     // 向下弹出：使用 top 定位，左对齐
     const top = Math.floor(rect.bottom + offsetY);
-    console.log('[Model Dropdown] Opening below, top:', top);
     modelDropdownStyle.value = {
       position: 'fixed !important',
       width: `${dropdownWidth}px`,
@@ -772,7 +756,6 @@ const updateModelDropdownPosition = () => {
   } else {
     // 向上弹出：使用 bottom 定位，左对齐
     const bottom = vh - rect.top + offsetY;
-    console.log('[Model Dropdown] Opening above, bottom:', bottom);
     modelDropdownStyle.value = {
       position: 'fixed !important',
       width: `${dropdownWidth}px`,
@@ -785,26 +768,24 @@ const updateModelDropdownPosition = () => {
     };
   }
   
-  console.log('[Model Dropdown] Applied style:', modelDropdownStyle.value);
 };
 
 // Mention Logic
 let lastMentionQuery = '';
 const loadMentionItems = async (q: string, resetIndex = true, append = false) => {
-  console.log('[Mention] loadMentionItems called with query:', q, 'append:', append);
   
   if (!append) {
     mentionOffset.value = 0;
   }
   
-  // 根据智能体的 kb_selection_mode 过滤知识库；选中共享智能体时使用该租户下的知识库，否则使用本租户 + 共享给自己的
+  // 根据助手的 kb_selection_mode 过滤知识库；选中共享助手时使用该租户下的知识库，否则使用本租户和共享给自己的
   let kbItems: any[] = [];
   if (!append) {
     let availableKbs: any[];
     const sourceTenantId = settingsStore.selectedAgentSourceTenantId;
     const agentId = selectedAgentId.value;
     if (sourceTenantId && agentId) {
-      // 共享智能体：按 agent_id 拉取该智能体配置的知识库范围（后端从共享关系解析租户）
+      // 共享助手：按 agent_id 拉取该助手配置的知识库范围（后端从共享关系解析租户）
       try {
         const res: any = await listKnowledgeBases({ agent_id: agentId });
         const list = res?.data && Array.isArray(res.data) ? res.data : [];
@@ -876,7 +857,7 @@ const loadMentionItems = async (q: string, resetIndex = true, append = false) =>
   }
   
   // Fetch Files from API
-  // 如果智能体禁用了知识库，也不显示文件
+  // 如果问答助手禁用了知识库，也不显示文件
   let fileItems: any[] = [];
   const shouldLoadFiles = !hasAgentConfig.value || agentKBSelectionMode.value !== 'none';
   
@@ -894,7 +875,6 @@ const loadMentionItems = async (q: string, resetIndex = true, append = false) =>
         fileTypesParam,
         searchOptions
       );
-      console.log('[Mention] searchKnowledge response:', res);
       if (res.data && Array.isArray(res.data)) {
         let files = res.data;
         if (!sourceTenantId && hasAgentConfig.value && agentKBSelectionMode.value === 'selected') {
@@ -940,7 +920,6 @@ const loadMentionItems = async (q: string, resetIndex = true, append = false) =>
   } else {
     mentionItems.value = [...kbItems, ...fileItems];
   }
-  console.log('[Mention] Total items:', mentionItems.value.length, { kbItems: kbItems.length, fileItems: fileItems.length });
   
   // Only reset index if query changed or explicitly requested
   if (resetIndex || q !== lastMentionQuery) {
@@ -986,7 +965,6 @@ const onInput = (val: string | InputEvent) => {
   const cursor = textarea.selectionStart;
   const textBeforeCursor = inputVal.slice(0, cursor);
   
-  console.log('[Mention] onInput called', { inputVal, cursor, textBeforeCursor, showMention: showMention.value });
   
   if (showMention.value) {
     // 如果不是按钮触发的，检查 @ 符号
@@ -1020,16 +998,15 @@ const onInput = (val: string | InputEvent) => {
     }
   } else {
     if (textBeforeCursor.endsWith('@')) {
-      // 如果智能体禁用了知识库，不触发 @ 菜单
+      // 如果问答助手禁用了知识库，不触发 @ 菜单
       if (isKnowledgeBaseDisabledByAgent.value) {
         return;
       }
-      // 如果智能体锁定了知识库且不允许用户选择，也不触发 @ 菜单
+      // 如果问答助手锁定了知识库且不允许用户选择，也不触发 @ 菜单
       if (isKnowledgeBaseLockedByAgent.value) {
         return;
       }
       
-      console.log('[Mention] @ detected, opening menu');
       isMentionTriggeredByButton.value = false;
       mentionStartPos.value = cursor - 1;
       showMention.value = true;
@@ -1092,7 +1069,7 @@ const onCompositionEnd = (e: CompositionEvent) => {
 };
 
 const triggerMention = () => {
-  // 如果智能体锁定或禁用了知识库，不允许打开选择器
+  // 如果问答助手锁定或禁用了知识库，不允许打开选择器
   if (isKnowledgeBaseLockedByAgent.value) {
     const msgKey = isKnowledgeBaseDisabledByAgent.value ? 'input.kbDisabledByAgent' : 'input.kbLockedByAgent';
     MessagePlugin.warning(t(msgKey));
@@ -1197,7 +1174,7 @@ const removeFile = (id: string) => {
 };
 
 const toggleModelSelector = () => {
-  // 如果智能体锁定了模型，不允许打开选择器
+  // 如果问答助手锁定了模型，不允许打开选择器
   if (isModelLockedByAgent.value) {
     MessagePlugin.warning(t('input.modelLockedByAgent'));
     return;
@@ -1229,7 +1206,7 @@ const closeModelSelector = () => {
   showModelSelector.value = false;
 };
 
-// 关闭 Agent 模式选择器（点击外部）
+// 关闭问答模式选择器（点击外部）
 const closeAgentModeSelector = () => {
   showAgentModeSelector.value = false;
 };
@@ -1348,7 +1325,7 @@ const createSession = async (val: string) => {
   if (props.isReplying) {
     return MessagePlugin.error(t('input.messages.replying'));
   }
-  // 发送前校验当前选中的智能体（含默认快速问答）是否已配置完成
+  // 发送前校验当前选中的问答助手（含默认快速问答）是否已配置完成
   const agentToCheck = selectedAgent.value;
   let actualAgent = agentToCheck;
   if (agentToCheck.is_builtin) {
@@ -1413,18 +1390,13 @@ const updateAgentModeDropdownPosition = () => {
   left = Math.max(minLeft, Math.min(maxLeft, left));
   
   // 垂直位置：紧贴按钮，使用合理的高度避免空白
-  const preferredDropdownHeight = 140; // Agent 模式选择器内容较少，用更小的优选高度
+  const preferredDropdownHeight = 140; // 问答模式选择器内容较少，用更小的优选高度
   const maxDropdownHeight = 150;
   const minDropdownHeight = 100;
   const topMargin = 20;
   const spaceBelow = vh - rect.bottom;
   const spaceAbove = rect.top;
   
-  console.log('[Agent Dropdown] Space check:', {
-    spaceBelow,
-    spaceAbove,
-    windowHeight: vh
-  });
   
   let actualHeight: number;
   
@@ -1444,7 +1416,6 @@ const updateAgentModeDropdownPosition = () => {
       margin: '0 !important',
       padding: '0 !important',
     };
-    console.log('[Agent Dropdown] Position: below button', { actualHeight });
   } else {
     // 向上弹出，使用 bottom 定位确保紧贴按钮
     const availableHeight = spaceAbove - offsetY - topMargin;
@@ -1466,7 +1437,6 @@ const updateAgentModeDropdownPosition = () => {
       margin: '0 !important',
       padding: '0 !important',
     };
-    console.log('[Agent Dropdown] Position: above button', { actualHeight, bottom });
   }
 };
 
@@ -1477,7 +1447,7 @@ const toggleAgentModeSelector = () => {
 
   showAgentModeSelector.value = !showAgentModeSelector.value;
   if (showAgentModeSelector.value) {
-    // 重新加载智能体列表
+    // 重新加载助手列表
     loadAgents();
     // 多次更新位置确保准确
     nextTick(() => {
@@ -1508,19 +1478,19 @@ const selectAgentMode = (mode: 'quick-answer' | 'smart-reasoning') => {
   const shouldEnableAgent = mode === 'smart-reasoning';
   if (shouldEnableAgent !== isAgentEnabled.value) {
     settingsStore.toggleAgent(shouldEnableAgent);
-    // 同时更新选中的智能体
+    // 同时更新选中的问答助手
     settingsStore.selectAgent(shouldEnableAgent ? BUILTIN_SMART_REASONING_ID : BUILTIN_QUICK_ANSWER_ID);
     MessagePlugin.success(shouldEnableAgent ? t('input.messages.agentSwitchedOn') : t('input.messages.agentSwitchedOff'));
   }
   showAgentModeSelector.value = false;
 }
 
-// 选择智能体（新版）；sourceTenantId 为共享智能体时传入
+// 选择问答助手（新版）；sourceTenantId 为共享助手时传入
 const handleSelectAgent = (agent: CustomAgent, sourceTenantId?: string) => {
-  // 根据智能体的 agent_mode 判断是否为 Agent 模式
+  // 根据助手的 agent_mode 判断是否为智能推理模式
   const isAgentType = agent.config?.agent_mode === 'smart-reasoning';
   
-  // 统一检查智能体是否就绪（内置和自定义智能体使用相同逻辑）
+  // 统一检查助手是否就绪（内置和自定义助手使用相同逻辑）
   const actualAgent = agent.is_builtin 
     ? (agents.value.find(a => a.id === agent.id) || agent)
     : agent;
@@ -1537,16 +1507,16 @@ const handleSelectAgent = (agent: CustomAgent, sourceTenantId?: string) => {
   settingsStore.selectAgent(agent.id, sourceTenantId);
   settingsStore.toggleAgent(!!isAgentType);
   
-  // 同步智能体的配置状态（含内置、自定义、共享智能体）：模型、网络搜索、知识库由 watch 同步
+  // 同步助手配置状态（含内置、自定义、共享助手）：模型、网络搜索、知识库由 watch 同步
   // 1. 同步网络搜索状态
   const agentWebSearch = agent.config?.web_search_enabled;
   if (agentWebSearch !== undefined) {
     settingsStore.toggleWebSearch(agentWebSearch);
   } else if (agent.is_builtin) {
-    // 内置智能体未配置时保留当前用户设置
+    // 内置助手未配置时保留当前用户设置
   }
   
-  // 2. 同步模型（选中的对话模型随智能体切换，含共享智能体）
+  // 2. 同步模型（选中的问答模型随助手切换，含共享助手）
   const agentModel = agent.config?.model_id;
   if (agentModel && agentModel.trim() !== '') {
     selectedModelId.value = agentModel;
@@ -1657,7 +1627,7 @@ const handleGoToWebSearchSettings = () => {
 };
 
 const handleGoToAgentSettings = (section?: string) => {
-  // 跳转到智能体列表页并打开编辑弹窗
+  // 跳转到助手列表页并打开编辑弹窗
   if (selectedAgent.value && !selectedAgent.value.is_builtin) {
     const query: Record<string, string> = { edit: selectedAgent.value.id };
     if (section) {
@@ -1669,7 +1639,7 @@ const handleGoToAgentSettings = (section?: string) => {
   }
 };
 
-// 获取内置智能体不就绪的原因
+// 获取内置助手不就绪的原因
 const getBuiltinAgentNotReadyReasons = (agent: CustomAgent, isAgentMode: boolean): string[] => {
   const reasons: string[] = []
   const config = agent.config || {}
@@ -1686,7 +1656,7 @@ const getBuiltinAgentNotReadyReasons = (agent: CustomAgent, isAgentMode: boolean
     }
   }
   
-  // Agent 模式还需要检查允许的工具
+  // 智能推理模式还需要检查允许的工具
   if (isAgentMode) {
     if (!config.allowed_tools || config.allowed_tools.length === 0) {
       reasons.push(t('input.agentMissingAllowedTools'))
@@ -1696,7 +1666,7 @@ const getBuiltinAgentNotReadyReasons = (agent: CustomAgent, isAgentMode: boolean
   return reasons
 }
 
-// 获取自定义智能体不就绪的原因（非 Agent 模式，快速回答）
+// 获取自定义助手不就绪的原因（非智能推理模式，快速回答）
 const getCustomAgentNotReadyReasons = (agent: CustomAgent): string[] => {
   const reasons: string[] = []
   const config = agent.config || {}
@@ -1715,7 +1685,7 @@ const getCustomAgentNotReadyReasons = (agent: CustomAgent): string[] => {
   return reasons
 }
 
-// 显示智能体未就绪的消息（统一处理内置和自定义智能体）
+// 显示助手未就绪的消息（统一处理内置和自定义助手）
 const showAgentNotReadyMessage = (agent: CustomAgent, reasons: string[]) => {
   const reasonsText = reasons.join('、')
   
@@ -1749,7 +1719,7 @@ const toggleWebSearch = () => {
   showModelSelector.value = false;
   showAgentModeSelector.value = false;
 
-  // 如果智能体禁用了网络搜索，不允许开启
+  // 如果问答助手禁用了网络搜索，不允许开启
   if (isWebSearchDisabledByAgent.value) {
     MessagePlugin.warning(t('input.webSearchDisabledByAgent'));
     return;
@@ -1806,7 +1776,6 @@ const handleStop = async () => {
     return;
   }
   
-  console.log('[Stop] Stopping generation for message:', props.assistantMessageId);
   
   // 发送 stop 事件，通知父组件立即清除 loading 状态
   emit('stop-generation');
@@ -1912,7 +1881,7 @@ defineExpose({
     <div class="control-bar">
       <!-- 左侧控制按钮 -->
       <div class="control-left">
-        <!-- Agent 模式切换按钮 -->
+        <!-- 问答模式切换按钮 -->
         <div 
           ref="agentModeButtonRef"
           class="control-btn agent-mode-btn"
@@ -1938,7 +1907,7 @@ defineExpose({
           </svg>
         </div>
 
-        <!-- Agent 选择器下拉菜单 -->
+        <!-- 问答助手选择器下拉菜单 -->
         <AgentSelector
           :visible="showAgentModeSelector"
           :anchorEl="agentModeButtonRef"
@@ -2325,7 +2294,7 @@ const getImgSrc = (url: string) => {
   border-color: var(--td-component-stroke, #d1d5db);
 }
 
-/* 智能体预配置：虚线边框区分 */
+/* 问答助手预配置：虚线边框区分 */
 .mention-chip--agent {
   border-style: dashed;
 }
@@ -2991,7 +2960,7 @@ const getImgSrc = (url: string) => {
   color: var(--td-text-color-secondary);
 }
 
-/* Agent 模式选择下拉菜单 */
+/* 问答模式选择下拉菜单 */
 .agent-mode-selector-overlay {
   position: fixed;
   inset: 0;

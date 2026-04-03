@@ -492,6 +492,7 @@ const submitEditTag = async () => {
 };
 
 const confirmDeleteTag = (tag: any) => {
+  if (!canManage.value) return;
   if (!kbId.value) {
     MessagePlugin.warning(t('knowledgeEditor.messages.missingId'));
     return;
@@ -528,6 +529,7 @@ const confirmDeleteTag = (tag: any) => {
 };
 
 const handleKnowledgeTagChange = async (knowledgeId: string, tagValue: string) => {
+  if (!canEdit.value) return;
   try {
     // Pass the tag value directly (empty string means no tag)
     const tagIdToUpdate = tagValue || null;
@@ -951,6 +953,7 @@ const documentActionOptions = computed(() => [
 
 // 处理文档操作下拉菜单选择
 const handleDocumentActionSelect = (data: { value: string }) => {
+  if (!canEdit.value) return;
   switch (data.value) {
     case 'upload':
       handleDocumentUploadClick();
@@ -989,11 +992,13 @@ const ensureDocumentKbReady = () => {
 
 
 const handleDocumentUploadClick = () => {
+  if (!canEdit.value) return;
   if (!ensureDocumentKbReady()) return;
   uploadInputRef.value?.click();
 };
 
 const handleFolderUploadClick = () => {
+  if (!canEdit.value) return;
   if (!ensureDocumentKbReady()) return;
   folderUploadInputRef.value?.click();
 };
@@ -1005,6 +1010,7 @@ const resetUploadInput = () => {
 };
 
 const handleDocumentUpload = async (event: Event) => {
+  if (!canEdit.value) return;
   const input = event.target as HTMLInputElement;
   const files = input?.files;
   if (!files || files.length === 0) return;
@@ -1104,6 +1110,7 @@ const handleDocumentUpload = async (event: Event) => {
 
 // 处理文件夹上传
 const handleFolderUpload = async (event: Event) => {
+  if (!canEdit.value) return;
   const input = event.target as HTMLInputElement;
   const files = input?.files;
   if (!files || files.length === 0) return;
@@ -1196,6 +1203,7 @@ const handleFolderUpload = async (event: Event) => {
 };
 
 const handleManualCreate = () => {
+  if (!canEdit.value) return;
   if (!ensureDocumentKbReady()) return;
   uiStore.openManualEditor({
     mode: 'create',
@@ -1211,6 +1219,7 @@ const urlInputValue = ref('');
 const urlImporting = ref(false);
 
 const handleURLImportClick = () => {
+  if (!canEdit.value) return;
   if (!ensureDocumentKbReady()) return;
   urlInputValue.value = '';
   urlDialogVisible.value = true;
@@ -1222,6 +1231,7 @@ const handleURLImportCancel = () => {
 };
 
 const handleURLImportConfirm = async () => {
+  if (!canEdit.value) return;
   const url = urlInputValue.value.trim();
   if (!url) {
     MessagePlugin.warning(t('knowledgeBase.urlRequired'));
@@ -1309,7 +1319,7 @@ const handleKnowledgeDropdownSelect = (data: { value: string }) => {
 };
 
 const handleManualEdit = (index: number, item: KnowledgeCard) => {
-  if (isFAQ.value) return;
+  if (isFAQ.value || !canEdit.value) return;
   if (cardList.value[index]) {
     cardList.value[index].isMore = false;
   }
@@ -1340,6 +1350,7 @@ const handleKnowledgeReparse = (index: number, item: KnowledgeCard) => {
 };
 
 const rebuildConfirm = async () => {
+  if (!canEdit.value) return;
   rebuildDialog.value = false;
   const item = rebuildKnowledgeItem.value;
   if (!item?.id) return;

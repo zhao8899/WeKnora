@@ -24,7 +24,7 @@
                   <template #icon><t-icon name="enter" size="16px" /></template>
                 </t-button>
               </t-tooltip>
-              <t-tooltip :content="$t('organization.createOrg')" placement="bottom">
+              <t-tooltip v-if="canCreateOrganization" :content="$t('organization.createOrg')" placement="bottom">
                 <t-button
                   variant="text"
                   theme="default"
@@ -88,8 +88,8 @@
               <img class="more-icon" src="@/assets/img/more.png" alt="" />
             </div>
             <template #content>
-              <div class="popup-menu" @click.stop>
-                <div class="popup-menu-item" @click.stop="handleSettings(org)">
+                <div class="popup-menu" @click.stop>
+                <div v-if="canManageOrganization(org)" class="popup-menu-item" @click.stop="handleSettings(org)">
                   <t-icon class="menu-icon" name="setting" />
                   <span>{{ $t('organization.settings.editTitle') }}</span>
                 </div>
@@ -160,7 +160,7 @@
           <template #icon><t-icon name="enter" /></template>
           {{ $t('organization.joinOrg') }}
         </t-button>
-        <t-button class="org-create-btn" @click="handleCreateOrganization">
+        <t-button v-if="canCreateOrganization" class="org-create-btn" @click="handleCreateOrganization">
           <template #icon><img src="@/assets/img/organization-green.svg" class="org-create-icon" alt="" aria-hidden="true" /></template>
           {{ $t('organization.createOrg') }}
         </t-button>
@@ -566,6 +566,7 @@
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
+import { useAuthStore } from '@/stores/auth'
 import { useOrganizationStore } from '@/stores/organization'
 import type { Organization, OrganizationPreview, SearchableOrganizationItem } from '@/api/organization'
 import { previewOrganization, joinOrganization, submitJoinRequest, searchSearchableOrganizations, joinOrganizationById } from '@/api/organization'
@@ -581,6 +582,7 @@ interface OrgWithUI extends Organization {
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const orgStore = useOrganizationStore()
 
 // 申请加入时可选角色（仅需审核时使用）
@@ -785,6 +787,7 @@ const filteredOrganizations = computed(() => {
   if (spaceSelection.value === 'joined') return organizations.value.filter(o => !o.is_owner)
   return organizations.value
 })
+const canCreateOrganization = computed(() => authStore.hasValidTenant)
 
 const emptyStateTitle = computed(() => {
   if (spaceSelection.value === 'created') return t('organization.emptyCreated')
@@ -793,9 +796,15 @@ const emptyStateTitle = computed(() => {
 })
 
 const emptyStateDesc = computed(() => {
-  if (spaceSelection.value === 'created') return t('organization.emptyCreatedDesc')
+  if (spaceSelection.value === 'created') {
+    return canCreateOrganization.value
+      ? t('organization.emptyCreatedDesc')
+      : '当前没有你可管理的共享空间，空间创建由管理员或空间负责人统一维护。'
+  }
   if (spaceSelection.value === 'joined') return t('organization.emptyJoinedDesc')
-  return t('organization.emptyDesc')
+  return canCreateOrganization.value
+    ? t('organization.emptyDesc')
+    : '当前还没有加入共享空间，可以通过邀请码或空间搜索加入已有团队空间。'
 })
 
 // Watch store changes and update local organizations
@@ -824,6 +833,7 @@ const onVisibleChange = (visible: boolean, org: OrgWithUI) => {
 
 // 创建组织
 function handleCreateOrganization() {
+  if (!canCreateOrganization.value) return
   settingsOrgId.value = ''
   settingsMode.value = 'create'
   showSettingsModal.value = true
@@ -847,9 +857,16 @@ function handleCardClick(org: OrgWithUI) {
   if (org.showMore) {
     return
   }
+  if (!canManageOrganization(org)) {
+    return
+  }
   settingsOrgId.value = org.id
   settingsMode.value = 'edit'
   showSettingsModal.value = true
+}
+
+function canManageOrganization(org: OrgWithUI) {
+  return org.is_owner || org.my_role === 'admin'
 }
 
 function handleSettingsSaved() {

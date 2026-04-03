@@ -8,7 +8,7 @@ const router = createRouter({
   routes: [
     {
       path: "/",
-      redirect: "/platform/knowledge-bases",
+      redirect: "/platform/home",
     },
     {
       path: "/login",
@@ -32,16 +32,22 @@ const router = createRouter({
     {
       path: "/knowledgeBase",
       name: "home",
-      component: () => import("../views/knowledge/KnowledgeBase.vue"),
+      component: () => import("../views/home/HomeView.vue"),
       meta: { requiresInit: true, requiresAuth: true }
     },
     {
       path: "/platform",
       name: "Platform",
-      redirect: "/platform/knowledge-bases",
+      redirect: "/platform/home",
       component: () => import("../views/platform/index.vue"),
       meta: { requiresInit: true, requiresAuth: true },
       children: [
+        {
+          path: "home",
+          name: "homeView",
+          component: () => import("../views/home/HomeView.vue"),
+          meta: { requiresInit: true, requiresAuth: true }
+        },
         {
           path: "tenant",
           redirect: "/platform/settings"
@@ -56,6 +62,12 @@ const router = createRouter({
           path: "knowledge-bases",
           name: "knowledgeBaseList",
           component: () => import("../views/knowledge/KnowledgeBaseList.vue"),
+          meta: { requiresInit: true, requiresAuth: true }
+        },
+        {
+          path: "faq",
+          name: "faqList",
+          component: () => import("../views/knowledge/FAQList.vue"),
           meta: { requiresInit: true, requiresAuth: true }
         },
         {
@@ -113,7 +125,7 @@ router.beforeEach(async (to, from, next) => {
   if (to.meta.requiresAuth === false || to.meta.requiresInit === false) {
     // 如果已登录用户访问登录页面，重定向到知识库列表页面
     if (to.path === '/login' && authStore.isLoggedIn) {
-      next('/platform/knowledge-bases')
+      next('/platform/home')
       return
     }
     next()
@@ -125,6 +137,11 @@ router.beforeEach(async (to, from, next) => {
     if (!authStore.isLoggedIn) {
       // 未登录，跳转到登录页面
       next('/login')
+      return
+    }
+
+    if (to.path === '/platform/settings' && !authStore.canAccessAllTenants) {
+      next('/platform/home')
       return
     }
 

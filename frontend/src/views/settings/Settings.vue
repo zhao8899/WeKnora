@@ -3,64 +3,45 @@
     <Transition name="modal">
       <div v-if="visible" class="settings-overlay">
         <div class="settings-modal">
-          <!-- 关闭按钮 -->
           <button class="close-btn" @click="handleClose" :aria-label="$t('general.close')">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
             </svg>
           </button>
 
           <div class="settings-container">
-            <!-- 左侧导航 -->
             <div class="settings-sidebar">
               <div class="sidebar-header">
                 <h2 class="sidebar-title">{{ $t('general.settings') }}</h2>
               </div>
               <div class="settings-nav">
-                <template v-for="(item, index) in navItems" :key="index">
-                  <div 
-                    :class="['nav-item', { 
-                      'active': currentSection === item.key,
-                      'has-submenu': item.children && item.children.length > 0,
-                      'expanded': expandedMenus.includes(item.key)
-                    }]"
+                <template v-for="item in navItems" :key="item.key">
+                  <div
+                    :class="[
+                      'nav-item',
+                      {
+                        active: currentSection === item.key,
+                        'has-submenu': item.children && item.children.length > 0,
+                        expanded: expandedMenus.includes(item.key)
+                      }
+                    ]"
                     @click="handleNavClick(item)"
                   >
-                    <!-- 网络搜索使用自定义 SVG 图标 -->
-                    <svg 
-                      v-if="item.key === 'websearch'"
-                      width="18" 
-                      height="18" 
-                      viewBox="0 0 18 18" 
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      class="nav-icon"
-                    >
-                      <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
-                      <path d="M 9 2 A 3.5 7 0 0 0 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
-                      <path d="M 9 2 A 3.5 7 0 0 1 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
-                      <line x1="2.94" y1="5.5" x2="15.06" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-                      <line x1="2.94" y1="12.5" x2="15.06" y2="12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-                    </svg>
-                    <t-icon v-else :name="item.icon" class="nav-icon" />
+                    <t-icon :name="item.icon" class="nav-icon" />
                     <span class="nav-label">{{ item.label }}</span>
-                    <t-icon 
+                    <t-icon
                       v-if="item.children && item.children.length > 0"
                       :name="expandedMenus.includes(item.key) ? 'chevron-down' : 'chevron-right'"
                       class="expand-icon"
                     />
                   </div>
-                  
-                  <!-- 子菜单 -->
+
                   <Transition name="submenu">
-                    <div 
-                      v-if="item.children && expandedMenus.includes(item.key)" 
-                      class="submenu"
-                    >
+                    <div v-if="item.children && expandedMenus.includes(item.key)" class="submenu">
                       <div
-                        v-for="(child, childIndex) in item.children"
-                        :key="childIndex"
-                        :class="['submenu-item', { 'active': currentSubSection === child.key }]"
+                        v-for="child in item.children"
+                        :key="child.key"
+                        :class="['submenu-item', { active: currentSubSection === child.key }]"
                         @click.stop="handleSubMenuClick(item.key, child.key)"
                       >
                         <span class="submenu-label">{{ child.label }}</span>
@@ -71,62 +52,30 @@
               </div>
             </div>
 
-            <!-- 右侧内容区域 -->
             <div class="settings-content">
               <div class="content-wrapper">
-                <!-- 常规设置 -->
                 <div v-if="currentSection === 'general'" class="section">
                   <GeneralSettings />
                 </div>
 
-                <!-- 模型配置 -->
                 <div v-if="currentSection === 'models'" class="section">
                   <ModelSettings />
                 </div>
 
-                <!-- Ollama 设置 -->
-                <div v-if="currentSection === 'ollama'" class="section">
-                  <OllamaSettings />
-                </div>
-
-                <!-- 网络搜索配置 -->
-                <div v-if="currentSection === 'websearch'" class="section">
-                  <WebSearchSettings />
-                </div>
-
-                <!-- 消息管理 -->
-                <div v-if="currentSection === 'chathistory'" class="section">
-                  <ChatHistorySettings />
-                </div>
-
-                <!-- 解析引擎 -->
                 <div v-if="currentSection === 'parser'" class="section">
                   <ParserEngineSettings />
                 </div>
 
-                <!-- 存储引擎 -->
                 <div v-if="currentSection === 'storage'" class="section">
                   <StorageEngineSettings />
                 </div>
 
-                <!-- 系统信息 -->
                 <div v-if="currentSection === 'system'" class="section">
                   <SystemInfo />
                 </div>
 
-                <!-- 租户信息 -->
                 <div v-if="currentSection === 'tenant'" class="section">
                   <TenantInfo />
-                </div>
-
-                <!-- API 信息 -->
-                <div v-if="currentSection === 'api'" class="section">
-                  <ApiInfo />
-                </div>
-
-                <!-- MCP 服务 -->
-                <div v-if="currentSection === 'mcp'" class="section">
-                  <McpSettings />
                 </div>
               </div>
             </div>
@@ -138,21 +87,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useUIStore } from '@/stores/ui'
 import { useI18n } from 'vue-i18n'
-import SystemInfo from './SystemInfo.vue'
-import TenantInfo from './TenantInfo.vue'
-import ApiInfo from './ApiInfo.vue'
+import { useUIStore } from '@/stores/ui'
 import GeneralSettings from './GeneralSettings.vue'
 import ModelSettings from './ModelSettings.vue'
-import OllamaSettings from './OllamaSettings.vue'
-import McpSettings from './McpSettings.vue'
-import WebSearchSettings from './WebSearchSettings.vue'
-import ChatHistorySettings from './ChatHistorySettings.vue'
 import ParserEngineSettings from './ParserEngineSettings.vue'
 import StorageEngineSettings from './StorageEngineSettings.vue'
+import SystemInfo from './SystemInfo.vue'
+import TenantInfo from './TenantInfo.vue'
+
+interface NavChild {
+  key: string
+  label: string
+}
+
+interface NavItem {
+  key: string
+  icon: string
+  label: string
+  children?: NavChild[]
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -163,11 +119,11 @@ const currentSection = ref<string>('general')
 const currentSubSection = ref<string>('')
 const expandedMenus = ref<string[]>([])
 
-const navItems = computed(() => [
+const navItems = computed<NavItem[]>(() => [
   { key: 'general', icon: 'setting', label: t('general.title') },
-  { 
-    key: 'models', 
-    icon: 'control-platform', 
+  {
+    key: 'models',
+    icon: 'control-platform',
     label: t('settings.modelManagement'),
     children: [
       { key: 'chat', label: t('model.llmModel') },
@@ -176,9 +132,6 @@ const navItems = computed(() => [
       { key: 'vllm', label: t('model.vlmModel') }
     ]
   },
-  { key: 'ollama', icon: 'server', label: 'Ollama' },
-  { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig')  },
-  { key: 'chathistory', icon: 'chat', label: t('chatHistorySettings.title') },
   {
     key: 'parser',
     icon: 'file-search',
@@ -188,7 +141,7 @@ const navItems = computed(() => [
       { key: 'simple', label: 'Simple' },
       { key: 'markitdown', label: 'Markitdown' },
       { key: 'mineru', label: 'MinerU' },
-      { key: 'mineru_cloud', label: 'MinerU Cloud' },
+      { key: 'mineru_cloud', label: 'MinerU Cloud' }
     ]
   },
   {
@@ -200,123 +153,109 @@ const navItems = computed(() => [
       { key: 'minio', label: 'MinIO' },
       { key: 'cos', label: t('settings.storage.cos') },
       { key: 'tos', label: t('settings.storage.tos') },
-      { key: 's3', label: 'AWS S3' },
+      { key: 's3', label: 'AWS S3' }
     ]
   },
-  { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
   { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') },
-  { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
-  { key: 'api', icon: 'secured', label: t('settings.apiInfo') }
+  { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') }
 ])
 
-// 导航项点击处理
-const handleNavClick = (item: any) => {
-  if (item.children && item.children.length > 0) {
-    // 有子菜单，切换展开状态
-    const index = expandedMenus.value.indexOf(item.key)
-    if (index > -1) {
-      expandedMenus.value.splice(index, 1)
-    } else {
-      expandedMenus.value.push(item.key)
-    }
-    currentSubSection.value = item.children[0].key
-  } else {
-    currentSubSection.value = ''
-  }
-  
-  // 切换到对应页面
-  currentSection.value = item.key
-}
+const visible = computed(() => route.path === '/platform/settings' || uiStore.showSettingsModal)
 
-// 子菜单点击处理
-const handleSubMenuClick = (parentKey: string, childKey: string) => {
-  currentSection.value = parentKey
-  currentSubSection.value = childKey
-  
-  // 滚动到对应的模型类型区域
+const scrollToSubSection = (subSection: string) => {
   setTimeout(() => {
-    const element = document.querySelector(`[data-model-type="${childKey}"]`)
+    const element = document.querySelector(`[data-model-type="${subSection}"]`)
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, 100)
 }
 
-// 控制弹窗显示
-const visible = computed(() => {
-  return route.path === '/platform/settings' || uiStore.showSettingsModal
-})
+const applySection = (section: string, subSection?: string) => {
+  const navItem = navItems.value.find(item => item.key === section)
+  if (!navItem) {
+    currentSection.value = 'general'
+    currentSubSection.value = ''
+    return
+  }
 
-// 关闭弹窗
+  currentSection.value = navItem.key
+  if (navItem.children && navItem.children.length > 0) {
+    if (!expandedMenus.value.includes(navItem.key)) {
+      expandedMenus.value.push(navItem.key)
+    }
+    currentSubSection.value = subSection || navItem.children[0].key
+    if (currentSubSection.value) {
+      scrollToSubSection(currentSubSection.value)
+    }
+    return
+  }
+
+  currentSubSection.value = ''
+}
+
+const handleNavClick = (item: NavItem) => {
+  if (item.children && item.children.length > 0) {
+    const index = expandedMenus.value.indexOf(item.key)
+    if (index > -1) {
+      expandedMenus.value.splice(index, 1)
+    } else {
+      expandedMenus.value.push(item.key)
+    }
+  }
+
+  applySection(item.key)
+}
+
+const handleSubMenuClick = (parentKey: string, childKey: string) => {
+  currentSection.value = parentKey
+  currentSubSection.value = childKey
+  scrollToSubSection(childKey)
+}
+
 const handleClose = () => {
   uiStore.closeSettings()
-  // 如果当前路由是设置页，返回上一页
   if (route.path === '/platform/settings') {
     router.back()
   }
 }
 
-// 监听初始导航设置
-watch(() => uiStore.settingsInitialSection, (section) => {
-  if (section && visible.value) {
-    currentSection.value = section
-    const navItem = (navItems.value as any[]).find((item) => item.key === section)
-    if (navItem && navItem.children && navItem.children.length > 0) {
-      if (!expandedMenus.value.includes(section)) {
-        expandedMenus.value.push(section)
-      }
-      currentSubSection.value = uiStore.settingsInitialSubSection || navItem.children[0].key
-      if (uiStore.settingsInitialSubSection) {
-        setTimeout(() => {
-          const element = document.querySelector(`[data-model-type="${uiStore.settingsInitialSubSection}"]`)
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          }
-        }, 300)
-      }
-    } else {
-      currentSubSection.value = ''
+watch(
+  () => uiStore.settingsInitialSection,
+  section => {
+    if (section && visible.value) {
+      applySection(section, uiStore.settingsInitialSubSection || '')
     }
-  }
-}, { immediate: true })
+  },
+  { immediate: true }
+)
 
-// ESC 键关闭
-const handleEscape = (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && visible.value) {
+const handleEscape = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && visible.value) {
     handleClose()
   }
 }
 
-// 处理快捷导航事件
-const handleSettingsNav = (e: CustomEvent) => {
-  const { section, subsection } = e.detail
+const handleSettingsNav = (event: Event) => {
+  const customEvent = event as CustomEvent<{ section?: string; subsection?: string }>
+  const { section, subsection } = customEvent.detail || {}
   if (section) {
-    currentSection.value = section
-    // 如果有子菜单，自动展开
-    const navItem = (navItems.value as any[]).find((item: any) => item.key === section)
-    if (navItem && navItem.children && navItem.children.length > 0) {
-      if (!expandedMenus.value.includes(section)) {
-        expandedMenus.value.push(section)
-      }
-      // 如果有 subsection，选中对应的子菜单项
-      currentSubSection.value = subsection || navItem.children[0].key
-    }
+    applySection(section, subsection)
   }
 }
 
 onMounted(() => {
   window.addEventListener('keydown', handleEscape)
-  window.addEventListener('settings-nav', handleSettingsNav as EventListener)
+  window.addEventListener('settings-nav', handleSettingsNav)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleEscape)
-  window.removeEventListener('settings-nav', handleSettingsNav as EventListener)
+  window.removeEventListener('settings-nav', handleSettingsNav)
 })
 </script>
 
 <style lang="less" scoped>
-/* 遮罩层 */
 .settings-overlay {
   position: fixed;
   inset: 0;
@@ -329,7 +268,6 @@ onUnmounted(() => {
   backdrop-filter: blur(4px);
 }
 
-/* 弹窗容器 */
 .settings-modal {
   position: relative;
   width: 100%;
@@ -343,7 +281,6 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-/* 关闭按钮 */
 .close-btn {
   position: absolute;
   top: 16px;
@@ -374,7 +311,6 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* 左侧导航栏 */
 .settings-sidebar {
   width: 220px;
   background-color: var(--td-bg-color-settings-modal);
@@ -446,7 +382,6 @@ onUnmounted(() => {
   transition: transform 0.2s ease;
 }
 
-/* 子菜单 */
 .submenu {
   margin-left: 32px;
   margin-bottom: 4px;
@@ -479,7 +414,6 @@ onUnmounted(() => {
   display: block;
 }
 
-/* 子菜单动画 */
 .submenu-enter-active,
 .submenu-leave-active {
   transition: all 0.2s ease;
@@ -505,7 +439,6 @@ onUnmounted(() => {
   max-height: 0;
 }
 
-/* 右侧内容区域 */
 .settings-content {
   flex: 1;
   overflow-y: auto;
@@ -532,7 +465,6 @@ onUnmounted(() => {
   }
 }
 
-/* 弹窗动画 */
 .modal-enter-active,
 .modal-leave-active {
   transition: opacity 0.2s ease;
@@ -554,7 +486,6 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* 滚动条样式 */
 .settings-sidebar::-webkit-scrollbar,
 .settings-content::-webkit-scrollbar {
   width: 6px;
@@ -586,4 +517,3 @@ onUnmounted(() => {
   background: var(--td-gray-color-6);
 }
 </style>
-

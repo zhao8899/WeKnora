@@ -2,7 +2,7 @@
     <div class="aside_box" :class="{ 'aside_box--collapsed': uiStore.sidebarCollapsed }">
         <!-- 展开时：Logo + 折叠按钮同行 -->
         <div class="logo_row" v-if="!uiStore.sidebarCollapsed">
-            <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
+            <div class="logo_box" @click="router.push('/platform/home')" style="cursor: pointer;">
                 <img class="logo" src="@/assets/img/weknora.png" alt="">
             </div>
             <div class="sidebar-toggle"
@@ -48,7 +48,7 @@
                      :class="['menu_item', item.childrenPath && item.childrenPath == currentpath ? 'menu_item_c_active' : isMenuItemActive(item.path) ? 'menu_item_active' : '']">
                     <div class="menu_item-box">
                         <div class="menu_icon">
-                            <img class="icon" :src="getImgSrc(item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'search' ? searchIcon : item.icon == 'agent' ? agentIcon : item.icon == 'organization' ? organizationIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)" alt="">
+                            <img class="icon" :src="getImgSrc(item.icon == 'home' ? homeIcon : item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'faq' ? faqIcon : item.icon == 'search' ? searchIcon : item.icon == 'agent' ? agentIcon : item.icon == 'organization' ? organizationIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)" alt="">
                         </div>
                         <template v-if="!uiStore.sidebarCollapsed">
                             <span class="menu_title" :title="item.title">{{ item.title }}</span>
@@ -215,20 +215,20 @@ const isMenuItemActive = (itemPath: string): boolean => {
     const currentRoute = route.name;
     
     switch (itemPath) {
+        case 'home':
+            return currentRoute === 'homeView' || currentRoute === 'home';
         case 'knowledge-bases':
             return currentRoute === 'knowledgeBaseList' || 
                    currentRoute === 'knowledgeBaseDetail' || 
                    currentRoute === 'knowledgeBaseSettings';
+        case 'faq':
+            return currentRoute === 'faqList';
         case 'knowledge-search':
             return currentRoute === 'knowledgeSearch';
-        case 'agents':
-            return currentRoute === 'agentList';
         case 'organizations':
             return currentRoute === 'organizationList';
         case 'creatChat':
             return currentRoute === 'kbCreatChat' || currentRoute === 'globalCreatChat';
-        case 'settings':
-            return currentRoute === 'settings';
         default:
             return itemPath === currentpath.value;
     }
@@ -239,27 +239,31 @@ const getIconActiveState = (itemPath: string) => {
     const currentRoute = route.name;
     
     return {
+        isHomeActive: itemPath === 'home' && (currentRoute === 'homeView' || currentRoute === 'home'),
         isKbActive: itemPath === 'knowledge-bases' && (
             currentRoute === 'knowledgeBaseList' || 
             currentRoute === 'knowledgeBaseDetail' || 
             currentRoute === 'knowledgeBaseSettings'
         ),
+        isFaqActive: itemPath === 'faq' && currentRoute === 'faqList',
         isCreatChatActive: itemPath === 'creatChat' && (currentRoute === 'kbCreatChat' || currentRoute === 'globalCreatChat'),
-        isSettingsActive: itemPath === 'settings' && currentRoute === 'settings',
         isChatActive: itemPath === 'chat' && currentRoute === 'chat'
     };
 };
 
 // 分离上下两部分菜单
 const topMenuItems = computed<MenuItem[]>(() => {
-    return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => 
-        item.path === 'knowledge-bases' || item.path === 'knowledge-search' || item.path === 'agents' || item.path === 'organizations' || item.path === 'creatChat'
+    return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) =>
+        item.path === 'home' || item.path === 'knowledge-bases' || item.path === 'faq' || item.path === 'knowledge-search' || item.path === 'organizations' || item.path === 'creatChat'
     );
 });
 
 const bottomMenuItems = computed<MenuItem[]>(() => {
     return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => {
-        if (item.path === 'knowledge-bases' || item.path === 'knowledge-search' || item.path === 'agents' || item.path === 'organizations' || item.path === 'creatChat') {
+        if (item.path === 'home' || item.path === 'knowledge-bases' || item.path === 'faq' || item.path === 'knowledge-search' || item.path === 'organizations' || item.path === 'creatChat') {
+            return false;
+        }
+        if (item.path === 'settings' && !authStore.canAccessAllTenants) {
             return false;
         }
         return true;
@@ -605,47 +609,34 @@ watch([() => route.name, () => route.params], (newvalue, oldvalue) => {
         }
     }
 });
+let homeIcon = ref('ziliao.svg');
 let knowledgeIcon = ref('zhishiku-green.svg');
+let faqIcon = ref('zhishiku-thin.svg');
 let searchIcon = ref('search.svg');
 let prefixIcon = ref('prefixIcon.svg');
 let logoutIcon = ref('logout.svg');
-let settingIcon = ref('setting.svg');
-let agentIcon = ref('agent.svg');
 let organizationIcon = ref('organization.svg');
 let pathPrefix = ref(route.name)
-  const getIcon = (path: string) => {
-      // 根据当前路由状态更新所有图标
+const getIcon = (path: string) => {
+      const homeActiveState = getIconActiveState('home');
       const kbActiveState = getIconActiveState('knowledge-bases');
+      const faqActiveState = getIconActiveState('faq');
       const creatChatActiveState = getIconActiveState('creatChat');
-      const settingsActiveState = getIconActiveState('settings');
-      const agentsActiveState = route.name === 'agentList';
       const organizationsActiveState = route.name === 'organizationList';
       const knowledgeSearchActiveState = route.name === 'knowledgeSearch';
-      
-      // 知识库图标：只在知识库页面显示绿色
+
       knowledgeIcon.value = kbActiveState.isKbActive ? 'zhishiku-green.svg' : 'zhishiku.svg';
-      
-      // 知识搜索图标：只在知识搜索页面显示绿色
+      faqIcon.value = faqActiveState.isFaqActive ? 'zhishiku-thin.svg' : 'zhishiku-thin.svg';
       searchIcon.value = knowledgeSearchActiveState ? 'search-green.svg' : 'search.svg';
-      
-      // 智能体图标：只在智能体页面显示绿色
-      agentIcon.value = agentsActiveState ? 'agent-green.svg' : 'agent.svg';
-      
-      // 组织图标：只在组织页面显示绿色
       organizationIcon.value = organizationsActiveState ? 'organization-green.svg' : 'organization.svg';
-      
-      // 对话图标：只在对话创建页面显示绿色，其他情况显示默认
       prefixIcon.value = creatChatActiveState.isCreatChatActive ? 'prefixIcon-green.svg' : 'prefixIcon.svg';
-      
-      // 设置图标：只在设置页面显示绿色
-      settingIcon.value = settingsActiveState.isSettingsActive ? 'setting-green.svg' : 'setting.svg';
-      
-      // 退出图标：始终显示默认
       logoutIcon.value = 'logout.svg';
 }
 getIcon(typeof route.name === 'string' ? route.name as string : (route.name ? String(route.name) : ''))
 const handleMenuClick = async (path: string) => {
-    if (path === 'knowledge-bases') {
+    if (path === 'home') {
+        router.push('/platform/home')
+    } else if (path === 'knowledge-bases') {
         // 知识库菜单项：如果在知识库内部，跳转到当前知识库文件页；否则跳转到知识库列表
         const kbId = await getCurrentKbId()
         if (kbId) {
@@ -653,6 +644,8 @@ const handleMenuClick = async (path: string) => {
         } else {
             router.push('/platform/knowledge-bases')
         }
+    } else if (path === 'faq') {
+        router.push('/platform/faq')
     } else if (path === 'knowledge-search') {
         router.push('/platform/knowledge-search')
     } else if (path === 'agents') {
@@ -661,7 +654,9 @@ const handleMenuClick = async (path: string) => {
         // 组织菜单项：跳转到组织列表
         router.push('/platform/organizations')
     } else if (path === 'settings') {
-        // 设置菜单项：打开设置弹窗并跳转路由
+        if (!authStore.canAccessAllTenants) {
+            return
+        }
         uiStore.openSettings()
         router.push('/platform/settings')
     } else {

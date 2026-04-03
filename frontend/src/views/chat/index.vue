@@ -2,7 +2,7 @@
     <div class="chat">
         <div ref="scrollContainer" class="chat_scroll_box" @scroll="handleScroll">
             <div class="msg_list">
-                <!-- 推荐问题卡片 - 仅在新会话（无消息）时展示 -->
+                <!-- 推荐问题卡片，仅在新问答且无消息时展示 -->
                 <div v-if="messagesList.length === 0 && !loading" class="suggested-questions-container" :class="{ 'has-questions': suggestedQuestions.length > 0 }">
                     <transition name="sq-fade">
                         <div v-if="suggestedQuestions.length > 0" class="suggested-questions-inner">
@@ -154,7 +154,7 @@ const debouncedFetchSuggestions = () => {
     suggestedDebounceTimer = setTimeout(() => { fetchSuggestedQuestions(); }, 300);
 };
 
-// 监听 Agent / 知识库 / 文件切换，重新获取推荐问题
+// 监听问答模式 / 知识库 / 文件切换，重新获取推荐问题
 watch(
     () => useSettingsStoreInstance.selectedAgentId,
     debouncedFetchSuggestions,
@@ -198,7 +198,7 @@ watch([() => route.params], (newvalue) => {
         messagesList.splice(0);
         session_id.value = newvalue[0].chatid;
         
-        // 切换会话时，重置状态（加载历史消息不应显示loading）
+        // 切换问答记录时重置状态，加载历史消息不应显示 loading
         loading.value = false;
         isReplying.value = false;
         currentAssistantMessageId.value = '';
@@ -319,7 +319,7 @@ const reconstructEventStreamFromSteps = (agentSteps, messageContent, isCompleted
         if (isFallback) answerEvent.is_fallback = true;
         events.push(answerEvent);
     } else if (isCompleted) {
-        // 如果消息已完成但 content 为空（Agent 模式常见情况），添加一个空的 answer 事件标记完成
+        // 如果消息已完成但 content 为空（智能推理模式常见情况），添加一个空的 answer 事件标记完成
         // 这样可以确保 isConversationDone 返回 true，不显示 loading-indicator
         const answerEvent = {
             type: 'answer',
@@ -336,7 +336,7 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
     let chatlist = data.reverse()
     for (let i = 0, len = chatlist.length; i < len; i++) {
         let item = chatlist[i];
-        item.isAgentMode = false; // Agent 模式标记
+        item.isAgentMode = false; // 智能推理模式标记
         item.agentEventStream = item.agentEventStream || [];
         item._eventMap = new Map();
         item._pendingToolCalls = new Map();
@@ -344,12 +344,10 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
         // Check if this message has agent_steps from database (historical agent conversation)
         // If so, reconstruct the agentEventStream to restore the exact conversation state
         if (item.agent_steps && Array.isArray(item.agent_steps) && item.agent_steps.length > 0) {
-            console.log('[Message Load] Reconstructing agent steps for message:', item.id, 'steps:', item.agent_steps.length);
             item.isAgentMode = true;
             item.agentEventStream = reconstructEventStreamFromSteps(item.agent_steps, item.content, item.is_completed, item.is_fallback, item.agent_duration_ms || 0);
             // 隐藏最终答案内容，因为它已经包含在 agentEventStream 的 answer 事件中
             item.hideContent = true;
-            console.log('[Message Load] Reconstructed', item.agentEventStream.length, 'events from agent steps');
         }
         
         if (item.content) {
@@ -374,8 +372,8 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
             }
         }
         
-        // 只给非Agent模式的空内容已完成消息设置默认错误消息
-        // Agent模式的消息内容在agent_steps中，content为空是正常的
+        // 只给非智能推理模式的空内容已完成消息设置默认错误消息
+        // 智能推理模式的消息内容在 agent_steps 中，content 为空是正常的
         if (item.is_completed && !item.content && !item.isAgentMode) {
             item.content = t('chat.cannotAnswer');
         }
@@ -395,7 +393,6 @@ const handleMsgList = async (data, isScrollType = false, newScrollHeight) => {
         const lastMessage = messagesList[messagesList.length - 1];
         if (lastMessage.role === 'assistant') {
             currentAssistantMessageId.value = lastMessage.id;
-            console.log('[Continue Stream] Set assistant message ID:', lastMessage.id);
         }
         await startStream({ session_id: session_id.value, query: lastMessage.id, method: 'GET', url: '/api/v1/sessions/continue-stream' });
     }
@@ -411,7 +408,6 @@ const checkmenuTitle = (session_id) => {
 // 发送消息
 // 处理停止生成事件 - 立即清除 loading 状态
 const handleStopGeneration = () => {
-    console.log('[Stop Generation] Immediately clearing loading state');
     loading.value = false;
     isReplying.value = false;
     // 注意：不在这里清空 currentAssistantMessageId，因为需要它来调用 API
@@ -512,51 +508,28 @@ watch(error, (newError) => {
 // 处理流式数据
 onChunk((data) => {
     // 日志：打印接收到的事件
-    console.log('[Agent Event Received]', {
-        response_type: data.response_type,
-        id: data.id,
-        done: data.done,
-        content_length: data.content?.length || 0,
-        content_preview: data.content ? data.content.substring(0, 50) : '',
-        data: data.data,
-        session_id: data.session_id,
-        assistant_message_id: data.assistant_message_id
-    });
     
     // 处理 agent query 事件 - 保存 assistant message ID 并保持 loading 状态
     if (data.response_type === 'agent_query') {
         if (data.assistant_message_id) {
             currentAssistantMessageId.value = data.assistant_message_id;
-            console.log('[Agent Query] Saved assistant message ID:', data.assistant_message_id);
         }
-        console.log('[Agent Query Event]', {
-            session_id: data.session_id || data.data?.session_id,
-            assistant_message_id: data.assistant_message_id,
-            query: data.data?.query,
-            request_id: data.data?.request_id
-        });
         
         // 检查是否是继续流式传输（消息已存在）
         const existingMessage = messagesList.findLast((item) => item.id === data.id || item.request_id === data.id);
         if (!existingMessage) {
             // 新消息，设置 loading 状态
         loading.value = true;
-            console.log('[Agent Query] New message, setting loading=true');
         } else {
             // 继续流式传输（刷新页面场景），不设置 loading，因为消息已经在列表中
-            console.log('[Agent Query] Continuing stream for existing message, keeping current loading state');
         }
         return;
     }
     
-    // 处理会话标题更新事件 - 不关闭 loading
+    // 处理问答标题更新事件，不关闭 loading
     if (data.response_type === 'session_title') {
         const title = data.content || data.data?.title;
         if (title && data.data?.session_id) {
-            console.log('[Session Title Update]', {
-                session_id: data.data.session_id,
-                title: title
-            });
             usemenuStore.updatasessionTitle(data.data.session_id, title);
             usemenuStore.changeIsFirstSession(false);
             isNeedTitle.value = false;
@@ -565,29 +538,29 @@ onChunk((data) => {
         return;
     }
     
-    // 判断是否是 Agent 模式的响应
+    // 判断是否是智能推理模式的响应
     // 注意：'answer', 'complete', 'references' 类型可能在两种模式下都存在
-    // 只有 'thinking', 'tool_call', 'tool_result', 'reflection' 是 Agent 专有的
+    // 只有 'thinking'、'tool_call'、'tool_result'、'reflection' 是智能推理专有的
     const isAgentOnlyResponse = data.response_type === 'thinking' || 
                                data.response_type === 'tool_call' || 
                                data.response_type === 'tool_result' ||
                                data.response_type === 'reflection';
     
-    // 检查当前消息是否已经是 Agent 模式
+    // 检查当前消息是否已经是智能推理模式
     const lastMessage = messagesList[messagesList.length - 1];
     const isCurrentlyAgentMode = lastMessage?.isAgentMode === true;
     
-    // 如果是 Agent 专有的响应类型，或者当前消息已经是 Agent 模式，则走 Agent 处理
+    // 如果是智能推理专有响应，或者当前消息已经是智能推理模式，则走智能推理处理
     const shouldHandleAsAgent = isAgentOnlyResponse || isCurrentlyAgentMode;
     
     // 处理 references 事件 - 在两种模式下都需要处理，但不改变模式
     if (data.response_type === 'references') {
-        // 如果当前是 Agent 模式，走 Agent 处理
+        // 如果当前是智能推理模式，走智能推理处理
         if (isCurrentlyAgentMode) {
             handleAgentChunk(data);
             return;
         }
-        // 非 Agent 模式：将 references 保存到消息中供 botmsg 使用
+        // 非智能推理模式：将 references 保存到消息中供 botmsg 使用
         let existingMessage = messagesList.findLast((item) => item.request_id === data.id || item.id === data.id);
         
         // 如果消息还不存在，先创建一个空的 assistant 消息
@@ -609,18 +582,16 @@ onChunk((data) => {
         }
         
         existingMessage.knowledge_references = data.knowledge_references || data.data?.references || [];
-        console.log('[References] Saved to message, count:', existingMessage.knowledge_references.length);
         return;
     }
     
-    // Agent 模式处理（包括 stop 事件）
+    // 智能推理模式处理（包括 stop 事件）
     if (shouldHandleAsAgent) {
         // 在 handleAgentChunk 中处理 loading 状态
         handleAgentChunk(data);
         
         // 对于 stop 事件，额外处理全局状态
         if (data.response_type === 'stop') {
-            console.log('[Stop Event] Generation stopped');
             loading.value = false;
             isReplying.value = false;
             // 清空当前 assistant message ID
@@ -629,7 +600,7 @@ onChunk((data) => {
         return;
     }
     
-    // 原有的知识库 QA 处理逻辑（非 Agent 模式）
+    // 原有的知识库问答处理逻辑（非智能推理模式）
     // answer 内容中可能包含 <think>...</think> 标签
     
     // 检查消息是否已经完成，如果已完成则忽略后续的完成事件（防止空内容覆盖）
@@ -642,7 +613,6 @@ onChunk((data) => {
     
     // 如果消息已完成且当前事件是完成事件（done=true 且无内容），直接忽略
     if (existingMessage?.is_completed && data.done && !data.content) {
-        console.log('[Non-Agent] Ignoring duplicate completion event for completed message');
         return;
     }
     
@@ -687,7 +657,7 @@ onChunk((data) => {
     }
     updateAssistantSession(obj);
 })
-// 处理 Agent 流式数据 (Cursor-style UI)
+// 处理智能推理流式数据（Cursor-style UI）
 const handleAgentChunk = (data) => {
     let message = messagesList.findLast((item) => item.request_id === data.id || item.id === data.id);
     
@@ -717,7 +687,6 @@ const handleAgentChunk = (data) => {
     // 确保在继续流式传输时（刷新页面场景），一旦接收到实际内容就关闭 loading
     // 这是一个保护措施，防止任何边缘情况导致 loading 残留
     if (loading.value && (data.response_type === 'thinking' || data.response_type === 'answer' || data.response_type === 'tool_call')) {
-        console.log('[Agent Chunk] Closing loading for continued stream');
         loading.value = false;
     }
     
@@ -725,11 +694,6 @@ const handleAgentChunk = (data) => {
         case 'thinking':
             {
                 const eventId = data.data?.event_id;
-                console.log('[Thinking Event]', {
-                    event_id: eventId,
-                    done: data.done,
-                    content_length: data.content?.length || 0
-                });
                 
                 // Initialize structures
                 if (!message.agentEventStream) message.agentEventStream = [];
@@ -741,7 +705,6 @@ const handleAgentChunk = (data) => {
                     
                     if (!thinkingEvent) {
                         // Create new thinking event
-                        console.log('[Thinking] Creating new thinking event, event_id:', eventId);
                         thinkingEvent = {
                             type: 'thinking',
                             event_id: eventId,
@@ -759,14 +722,12 @@ const handleAgentChunk = (data) => {
                     // Accumulate content
                     if (data.content) {
                         thinkingEvent.content += data.content;
-                        console.log('[Thinking] Event', eventId, 'accumulated:', thinkingEvent.content.length, 'chars');
                     }
                     
                 } else {
                     // Thinking completed
                     const thinkingEvent = message._eventMap.get(eventId);
                     if (thinkingEvent) {
-                        console.log('[Thinking] Completing event, event_id:', eventId, 'content length:', thinkingEvent.content.length);
                         
                         // Mark as done
                         thinkingEvent.done = true;
@@ -774,7 +735,6 @@ const handleAgentChunk = (data) => {
                         thinkingEvent.duration_ms = data.data?.duration_ms || (Date.now() - thinkingEvent.startTime);
                         thinkingEvent.completed_at = data.data?.completed_at || Date.now();
                         
-                        console.log('[Thinking] Event completed, duration:', thinkingEvent.duration_ms, 'ms');
                     } else {
                         console.warn('[Thinking] Received done for unknown event_id:', eventId);
                     }
@@ -801,11 +761,6 @@ const handleAgentChunk = (data) => {
                     break;
                 }
                 
-                console.log('[Tool Call]', {
-                    tool_call_id: toolCallId,
-                    tool_name: incomingToolName,
-                    has_arguments: Boolean(incomingArguments)
-                });
                 
                 let toolCallEvent = message._pendingToolCalls.get(toolCallId);
                 if (!toolCallEvent) {
@@ -845,11 +800,6 @@ const handleAgentChunk = (data) => {
                 const toolName = data.data.tool_name;
                 const success = data.response_type !== 'error' && data.data.success !== false;
                 
-                console.log('[Tool Result]', {
-                    tool_call_id: toolCallId,
-                    tool_name: toolName,
-                    success: success
-                });
                 
                 // Find and update the pending tool call event
                 let toolCallEvent = null;
@@ -882,7 +832,6 @@ const handleAgentChunk = (data) => {
                     toolCallEvent.display_type = data.data.display_type;
                     toolCallEvent.tool_data = data.data;
                     
-                    console.log('[Tool Result] Updated event in stream');
                 } else {
                     console.warn('[Tool Result] No pending tool call found for', toolCallId || toolName);
                 }
@@ -922,18 +871,11 @@ const handleAgentChunk = (data) => {
             // 最终答案
             message.thinking = false;
             
-            console.log('[Answer Event] Received:', {
-                has_content: !!data.content,
-                content_length: data.content?.length || 0,
-                done: data.done,
-                current_message_content_length: message.content?.length || 0
-            });
             
             // 只有当有实际内容时才追加，避免空内容覆盖
             if (data.content) {
                 message.content = (message.content || '') + data.content;
                 fullContent.value += data.content;
-                console.log('[Answer] Content appended, new length:', message.content.length);
             }
             
             // Add or update answer event in agentEventStream
@@ -947,13 +889,11 @@ const handleAgentChunk = (data) => {
                     done: false
                 };
                 message.agentEventStream.push(answerEvent);
-                console.log('[Answer] Created new answer event in stream');
             }
             
             // 只有当有实际内容时才更新 answerEvent.content
             if (data.content) {
                 answerEvent.content = message.content;
-                console.log('[Answer] answerEvent.content updated, length:', answerEvent.content.length);
             }
 
             // 检查是否为 fallback 回答
@@ -965,7 +905,6 @@ const handleAgentChunk = (data) => {
             // 只在第一次收到 done:true 时标记完成，忽略后续重复的完成事件
             if (data.done && !answerEvent.done) {
                 answerEvent.done = true;
-                console.log('[Agent] Answer done, content length:', message.content?.length || 0, 'answerEvent.content length:', answerEvent.content?.length || 0);
                 
                 // 完成 - 关闭所有状态
                 loading.value = false;
@@ -977,13 +916,11 @@ const handleAgentChunk = (data) => {
                 // 标题生成已改为异步事件推送，不再需要在这里手动调用
                 // 如果标题还未生成，前端会通过 SSE 事件接收
             } else if (data.done && answerEvent.done) {
-                console.log('[Answer] Ignoring duplicate done event, current content preserved:', answerEvent.content?.length || 0);
             }
             break;
             
         case 'complete':
             // 整个流式响应完成事件 - 确保状态正确关闭
-            console.log('[Agent] Complete event received');
             loading.value = false;
             isReplying.value = false;
             // 将 total_duration_ms 存入事件流供 AgentStreamDisplay 使用
@@ -997,8 +934,7 @@ const handleAgentChunk = (data) => {
             break;
             
         case 'stop':
-            // 停止事件 - 添加到事件流并标记对话完成
-            console.log('[Agent] Stop event received');
+            // 停止事件，添加到事件流并标记问答完成
             if (!message.agentEventStream) message.agentEventStream = [];
             
             // Add stop event to stream
@@ -1054,7 +990,7 @@ onMounted(async () => {
     window.addEventListener('session-messages-cleared', handleSessionCleared);
     messagesList.splice(0);
     
-    // 若从智能体列表点击共享智能体进入，URL 带 agent_id 与 source_tenant_id，同步到 store
+    // 若从助手列表点击共享助手进入，URL 带 agent_id 与 source_tenant_id，同步到 store
     const agentIdFromQuery = route.query.agent_id && String(route.query.agent_id);
     const sourceTenantIdFromQuery = route.query.source_tenant_id && String(route.query.source_tenant_id);
     if (agentIdFromQuery && sourceTenantIdFromQuery) {
