@@ -22,7 +22,16 @@ CREATE INDEX IF NOT EXISTS idx_web_search_providers_tenant_id ON web_search_prov
 CREATE INDEX IF NOT EXISTS idx_web_search_providers_provider ON web_search_providers (provider);
 CREATE INDEX IF NOT EXISTS idx_web_search_providers_deleted_at ON web_search_providers (deleted_at);
 
--- Auto-update updated_at column (reuses the function from migration 000028)
+-- Ensure the shared updated_at trigger function exists before creating triggers.
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Auto-update updated_at column
 CREATE TRIGGER trg_web_search_providers_updated_at
     BEFORE UPDATE ON web_search_providers
     FOR EACH ROW

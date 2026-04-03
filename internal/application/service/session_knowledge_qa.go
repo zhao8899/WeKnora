@@ -141,66 +141,11 @@ func (s *sessionService) KnowledgeQA(
 
 	// Determine pipeline based on requested mode and selected retrieval scope.
 	hasKB := len(knowledgeBaseIDs) > 0 || len(knowledgeIDs) > 0
-	hasHistory := chatManage.MaxRounds > 0
 	pipelineMode := s.resolveKnowledgeQAMode(ctx, req, hasKB)
-
-	// Fast mode keeps the lightweight retrieval path by default.
-	switch pipelineMode {
-	case types.ChatModeChat:
-		chatManage.EnableRewrite = false
-		chatManage.EnableQueryExpansion = false
-		chatManage.WebSearchEnabled = false
-		chatManage.WebFetchEnabled = false
-	case types.ChatModeRAGFast:
-		chatManage.EnableRewrite = false
-		chatManage.EnableQueryExpansion = false
-		chatManage.WebFetchEnabled = false
-	}
-
-	var pipeline []types.EventType
-	switch pipelineMode {
-	case types.ChatModeChat:
-		// Pure chat — no retrieval needed.
-		userContent := req.Query
-		if req.ImageDescription != "" && !chatModelSupportsVision {
-			userContent += "\n\n[用户上传图片内容]\n" + req.ImageDescription
-		}
-		chatManage.UserContent = userContent
-
-		pipeline = types.NewPipelineBuilder().
-			AddIf(hasHistory, types.LOAD_HISTORY).
-			AddIf(chatManage.EnableMemory, types.MEMORY_RETRIEVAL).
-			Add(types.CHAT_COMPLETION_STREAM).
-			AddIf(chatManage.EnableMemory, types.MEMORY_STORAGE).
-			Build()
-	case types.ChatModeRAGFast:
-		pipeline = types.NewPipelineBuilder().
-			AddIf(hasHistory, types.LOAD_HISTORY).
-			Add(types.CHUNK_SEARCH_PARALLEL).
-			AddIf(chatManage.RerankModelID != "", types.CHUNK_RERANK).
-			Add(types.CHUNK_MERGE).
-			Add(types.FILTER_TOP_K).
-			Add(types.INTO_CHAT_MESSAGE).
-			Add(types.CHAT_COMPLETION_STREAM).
-			Build()
-	default:
-		// Deep RAG — dynamically assemble based on feature flags.
-		pipeline = types.NewPipelineBuilder().
-			AddIf(hasHistory, types.LOAD_HISTORY).
-			AddIf(chatManage.EnableRewrite || len(chatManage.Images) > 0, types.QUERY_UNDERSTAND).
-			Add(types.CHUNK_SEARCH_PARALLEL).
-			Add(types.CHUNK_RERANK).
-			AddIf(chatManage.WebSearchEnabled && chatManage.WebFetchEnabled, types.WEB_FETCH).
-			Add(types.CHUNK_MERGE).
-			Add(types.FILTER_TOP_K).
-			Add(types.DATA_ANALYSIS).
-			Add(types.INTO_CHAT_MESSAGE).
-			Add(types.CHAT_COMPLETION_STREAM).
-			Build()
-	}
+	pipeline := assembleKnowledgeQAPipeline(req, chatManage, pipelineMode, chatModelSupportsVision)
 
 	logger.Infof(ctx, "Assembled pipeline (%d stages), mode=%s, hasKB=%v, webSearch=%v, history=%v",
-		len(pipeline), pipelineMode, hasKB, chatManage.WebSearchEnabled, hasHistory)
+		len(pipeline), pipelineMode, hasKB, chatManage.WebSearchEnabled, chatManage.MaxRounds > 0)
 
 	// Start knowledge QA event processing (set session tenant so pipeline session/message lookups use session owner)
 	ctx = context.WithValue(ctx, types.SessionTenantIDContextKey, req.Session.TenantID)
@@ -866,6 +811,67 @@ func (s *sessionService) resolveKnowledgeQAMode(ctx context.Context, req *types.
 		return types.ChatModeRAGFast
 	}
 	return types.ChatModeChat
+}
+
+func assembleKnowledgeQAPipeline(
+	req *types.QARequest,
+	chatManage *types.ChatManage,
+	pipelineMode types.ChatMode,
+	chatModelSupportsVision bool,
+) []types.EventType {
+	hasHistory := chatManage.MaxRounds > 0
+
+	// Fast mode keeps the lightweight retrieval path by default.
+	switch pipelineMode {
+	case types.ChatModeChat:
+		chatManage.EnableRewrite = false
+		chatManage.EnableQueryExpansion = false
+		chatManage.WebSearchEnabled = false
+		chatManage.WebFetchEnabled = false
+	case types.ChatModeRAGFast:
+		chatManage.EnableRewrite = false
+		chatManage.EnableQueryExpansion = false
+		chatManage.WebFetchEnabled = false
+	}
+
+	switch pipelineMode {
+	case types.ChatModeChat:
+		userContent := req.Query
+		if req.ImageDescription != "" && !chatModelSupportsVision {
+			userContent += "\n\n[用户上传图片内容]\n" + req.ImageDescription
+		}
+		chatManage.UserContent = userContent
+
+		return types.NewPipelineBuilder().
+			AddIf(hasHistory, types.LOAD_HISTORY).
+			AddIf(chatManage.EnableMemory, types.MEMORY_RETRIEVAL).
+			Add(types.CHAT_COMPLETION_STREAM).
+			AddIf(chatManage.EnableMemory, types.MEMORY_STORAGE).
+			Build()
+	case types.ChatModeRAGFast:
+		return types.NewPipelineBuilder().
+			AddIf(hasHistory, types.LOAD_HISTORY).
+			Add(types.CHUNK_SEARCH_PARALLEL).
+			AddIf(chatManage.RerankModelID != "", types.CHUNK_RERANK).
+			Add(types.CHUNK_MERGE).
+			Add(types.FILTER_TOP_K).
+			Add(types.INTO_CHAT_MESSAGE).
+			Add(types.CHAT_COMPLETION_STREAM).
+			Build()
+	default:
+		return types.NewPipelineBuilder().
+			AddIf(hasHistory, types.LOAD_HISTORY).
+			AddIf(chatManage.EnableRewrite || len(chatManage.Images) > 0, types.QUERY_UNDERSTAND).
+			Add(types.CHUNK_SEARCH_PARALLEL).
+			Add(types.CHUNK_RERANK).
+			AddIf(chatManage.WebSearchEnabled && chatManage.WebFetchEnabled, types.WEB_FETCH).
+			Add(types.CHUNK_MERGE).
+			Add(types.FILTER_TOP_K).
+			Add(types.DATA_ANALYSIS).
+			Add(types.INTO_CHAT_MESSAGE).
+			Add(types.CHAT_COMPLETION_STREAM).
+			Build()
+	}
 }
 
 // resolveWebFetchTopN returns how many pages to fetch after rerank.

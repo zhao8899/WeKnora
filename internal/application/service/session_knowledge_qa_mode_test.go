@@ -72,3 +72,111 @@ func TestResolveKnowledgeQAMode(t *testing.T) {
 		})
 	}
 }
+
+func TestAssembleKnowledgeQAPipeline(t *testing.T) {
+	tests := []struct {
+		name         string
+		req          *types.QARequest
+		chatManage   *types.ChatManage
+		mode         types.ChatMode
+		supportsVLM  bool
+		wantPipeline []types.EventType
+		wantQuery    bool
+		wantUserText string
+	}{
+		{
+			name: "chat mode skips retrieval and sets fallback image text",
+			req: &types.QARequest{
+				Query:            "hello",
+				ImageDescription: "image-desc",
+			},
+			chatManage: &types.ChatManage{
+				PipelineRequest: types.PipelineRequest{
+					MaxRounds:    2,
+					EnableMemory: true,
+				},
+			},
+			mode:        types.ChatModeChat,
+			supportsVLM: false,
+			wantPipeline: []types.EventType{
+				types.LOAD_HISTORY,
+				types.MEMORY_RETRIEVAL,
+				types.CHAT_COMPLETION_STREAM,
+				types.MEMORY_STORAGE,
+			},
+			wantUserText: "hello\n\n[用户上传图片内容]\nimage-desc",
+		},
+		{
+			name: "rag fast skips rewrite web fetch and data analysis",
+			req: &types.QARequest{
+				Query: "hello",
+			},
+			chatManage: &types.ChatManage{
+				PipelineRequest: types.PipelineRequest{
+					MaxRounds:            2,
+					RerankModelID:        "rerank",
+					EnableRewrite:        true,
+					EnableQueryExpansion: true,
+					WebFetchEnabled:      true,
+				},
+			},
+			mode:        types.ChatModeRAGFast,
+			supportsVLM: true,
+			wantPipeline: []types.EventType{
+				types.LOAD_HISTORY,
+				types.CHUNK_SEARCH_PARALLEL,
+				types.CHUNK_RERANK,
+				types.CHUNK_MERGE,
+				types.FILTER_TOP_K,
+				types.INTO_CHAT_MESSAGE,
+				types.CHAT_COMPLETION_STREAM,
+			},
+		},
+		{
+			name: "rag deep keeps rewrite and web fetch when enabled",
+			req: &types.QARequest{
+				Query: "hello",
+			},
+			chatManage: &types.ChatManage{
+				PipelineRequest: types.PipelineRequest{
+					MaxRounds:            1,
+					EnableRewrite:        true,
+					WebSearchEnabled:     true,
+					WebFetchEnabled:      true,
+					EnableQueryExpansion: true,
+				},
+			},
+			mode:        types.ChatModeRAGDeep,
+			supportsVLM: true,
+			wantPipeline: []types.EventType{
+				types.LOAD_HISTORY,
+				types.QUERY_UNDERSTAND,
+				types.CHUNK_SEARCH_PARALLEL,
+				types.CHUNK_RERANK,
+				types.WEB_FETCH,
+				types.CHUNK_MERGE,
+				types.FILTER_TOP_K,
+				types.DATA_ANALYSIS,
+				types.INTO_CHAT_MESSAGE,
+				types.CHAT_COMPLETION_STREAM,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := assembleKnowledgeQAPipeline(tt.req, tt.chatManage, tt.mode, tt.supportsVLM)
+			if len(got) != len(tt.wantPipeline) {
+				t.Fatalf("pipeline length = %d, want %d; got=%v", len(got), len(tt.wantPipeline), got)
+			}
+			for i := range got {
+				if got[i] != tt.wantPipeline[i] {
+					t.Fatalf("pipeline[%d] = %s, want %s; full=%v", i, got[i], tt.wantPipeline[i], got)
+				}
+			}
+			if tt.wantUserText != "" && tt.chatManage.UserContent != tt.wantUserText {
+				t.Fatalf("user content = %q, want %q", tt.chatManage.UserContent, tt.wantUserText)
+			}
+		})
+	}
+}
