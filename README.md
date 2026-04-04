@@ -345,6 +345,11 @@ This smoke check exercises:
 
 It is intended as a lightweight regression check for mode routing and SSE response basics.
 
+For a GitHub-hosted/manual verification path, you can also trigger the `QA Mode Smoke` workflow after configuring these repository secrets:
+
+- `WEKNORA_SMOKE_API_KEY`
+- `WEKNORA_SMOKE_KB_ID`
+
 ### 📁 Directory Structure
 
 ```
