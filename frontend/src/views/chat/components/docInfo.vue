@@ -64,6 +64,8 @@ import { useI18n } from 'vue-i18n';
 import { sanitizeHTML } from '@/utils/security';
 import ContentPopup from './tool-results/ContentPopup.vue';
 
+/** @typedef {import('@/types/chatStream').ChatSessionData} ChatSessionData */
+
 const router = useRouter();
 const { t } = useI18n();
 
@@ -78,6 +80,9 @@ const props = defineProps({
     }
 });
 
+/** @type {ChatSessionData | undefined} */
+const session = props.session;
+
 const showReferBox = ref(false);
 const expandedGroups = reactive({});
 
@@ -90,13 +95,13 @@ const toggleGroup = (key) => {
 };
 
 const webSearchRefs = computed(() => {
-    if (!props.session?.knowledge_references) return [];
-    return props.session.knowledge_references.filter(item => item.chunk_type === 'web_search');
+    if (!session?.knowledge_references) return [];
+    return session.knowledge_references.filter(item => item.chunk_type === 'web_search');
 });
 
 const knowledgeRefs = computed(() => {
-    if (!props.session?.knowledge_references) return [];
-    return props.session.knowledge_references.filter(item => item.chunk_type !== 'web_search');
+    if (!session?.knowledge_references) return [];
+    return session.knowledge_references.filter(item => item.chunk_type !== 'web_search');
 });
 
 const groupedKnowledgeRefs = computed(() => {
@@ -121,7 +126,7 @@ const groupedKnowledgeRefs = computed(() => {
 });
 
 const headerText = computed(() => {
-    const total = props.session?.knowledge_references?.length ?? 0;
+    const total = session?.knowledge_references?.length ?? 0;
     const docCount = groupedKnowledgeRefs.value.length;
     const webCount = webSearchRefs.value.length;
     if (docCount > 0 && webCount > 0) {

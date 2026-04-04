@@ -82,6 +82,8 @@ import {
     renderMermaidInContainer
 } from '@/utils/mermaidShared';
 
+/** @typedef {import('@/types/chatStream').ChatSessionData} ChatSessionData */
+
 marked.use({
     breaks: true,  // 全局启用单个换行支持
 });
@@ -117,6 +119,9 @@ const props = defineProps({
     }
 });
 
+/** @type {ChatSessionData | undefined} */
+const session = props.session;
+
 const preview = (url) => {
     nextTick(() => {
         reviewUrl.value = url;
@@ -144,7 +149,7 @@ customRenderer.code = createMermaidCodeRenderer('mermaid-botmsg');
 
 // 计算属性：将 Markdown 文本转换为 tokens
 const mentionedItems = computed(() => {
-    return props.session?.mentioned_items || [];
+    return session?.mentioned_items || [];
 });
 
 const markdownTokens = computed(() => {
