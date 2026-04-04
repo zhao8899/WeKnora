@@ -1,4 +1,4 @@
-.PHONY: help build run test clean docker-build-app docker-build-docreader docker-build-frontend docker-build-all docker-run migrate-up migrate-down docker-restart docker-stop start-all stop-all start-ollama stop-ollama build-images build-images-app build-images-docreader build-images-frontend clean-images check-env list-containers pull-images show-platform dev-start dev-stop dev-restart dev-logs dev-status dev-app dev-frontend docs install-swagger
+.PHONY: help build run test clean docker-build-app docker-build-docreader docker-build-frontend docker-build-all docker-run migrate-up migrate-down docker-restart docker-stop start-all stop-all start-ollama stop-ollama build-images build-images-app build-images-docreader build-images-frontend clean-images check-env list-containers pull-images show-platform dev-start dev-stop dev-restart dev-logs dev-status dev-app dev-frontend docs install-swagger qa-mode-smoke
 
 # Show help
 help:
@@ -41,6 +41,7 @@ help:
 	@echo "  deps              安装依赖"
 	@echo "  docs              生成 Swagger API 文档"
 	@echo "  install-swagger   安装 swag 工具"
+	@echo "  qa-mode-smoke     运行 chat/rag_fast/rag_deep 烟雾测试 (需提供 API_KEY 和 KB_ID)"
 	@echo ""
 	@echo "环境检查:"
 	@echo "  check-env         检查环境配置"
@@ -218,6 +219,14 @@ lint:
 deps:
 	go mod download
 
+# Smoke test for QA mode routing
+qa-mode-smoke:
+	@if [ -z "$(API_KEY)" ] || [ -z "$(KB_ID)" ]; then \
+		echo "Usage: make qa-mode-smoke API_KEY=sk-... KB_ID=<knowledge-base-id> [BASE_URL=http://127.0.0.1:18080/api/v1]"; \
+		exit 1; \
+	fi
+	BASE_URL="$(or $(BASE_URL),http://127.0.0.1:18080/api/v1)" API_KEY="$(API_KEY)" KB_ID="$(KB_ID)" ./scripts/qa_mode_smoke.sh
+
 # Build for production
 # google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn for qdrant milvus proto conflict
 build-prod:
@@ -284,5 +293,4 @@ dev-app:
 
 dev-frontend:
 	./scripts/dev.sh frontend
-
 
