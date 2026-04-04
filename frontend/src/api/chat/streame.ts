@@ -2,6 +2,7 @@ import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { ref, type Ref, onUnmounted, nextTick } from 'vue'
 import { generateRandomString } from '@/utils/index';
 import i18n from '@/i18n';
+import type { StartChatStreamParams } from '@/utils/chatRequest';
 
 
 
@@ -16,8 +17,6 @@ interface StreamOptions {
   chunkInterval?: number
 }
 
-type ChatMode = 'chat' | 'rag_fast' | 'rag_deep' | 'agent'
-
 export function useStream() {
   // 响应式状态
   const output = ref('')              // 显示内容
@@ -31,7 +30,7 @@ export function useStream() {
   let renderTimer: number | null = null
 
   // 启动流式请求
-  const startStream = async (params: { session_id: any; query: any; knowledge_base_ids?: string[]; knowledge_ids?: string[]; mode?: ChatMode; agent_enabled?: boolean; agent_id?: string; web_search_enabled?: boolean; enable_memory?: boolean; summary_model_id?: string; mcp_service_ids?: string[]; mentioned_items?: Array<{id: string; name: string; type: string; kb_type?: string}>; images?: Array<{data: string}>; method: string; url: string }) => {
+  const startStream = async (params: StartChatStreamParams) => {
     // 重置状态
     output.value = '';
     error.value = null;
@@ -102,6 +101,9 @@ export function useStream() {
       // Include web_search_enabled if provided
       if (params.web_search_enabled !== undefined) {
         postBody.web_search_enabled = params.web_search_enabled;
+      }
+      if (params.web_search_provider_id) {
+        postBody.web_search_provider_id = params.web_search_provider_id;
       }
       // Include enable_memory if provided
       if (params.enable_memory !== undefined) {

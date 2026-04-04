@@ -77,6 +77,7 @@ import { useI18n } from 'vue-i18n';
 import { useUIStore } from '@/stores/ui';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
+import { deriveChatMode } from '@/utils/chatRequest';
 const usemenuStore = useMenuStore();
 const useSettingsStoreInstance = useSettingsStore();
 const uiStore = useUIStore();
@@ -450,6 +451,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     
     // Get web search status from settings store
     const webSearchEnabled = useSettingsStoreInstance.isWebSearchEnabled;
+    const webSearchProviderId = useSettingsStoreInstance.selectedWebSearchProviderId;
     
     // Get memory status from settings store
     const enableMemory = useSettingsStoreInstance.isMemoryEnabled;
@@ -474,14 +476,12 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     // Get selected agent ID (backend resolves shared agent and its tenant from share relation)
     const selectedAgentId = useSettingsStoreInstance.selectedAgentId || '';
 
-    let mode = 'chat';
-    if (agentEnabled) {
-        mode = 'agent';
-    } else if (webSearchEnabled) {
-        mode = 'rag_deep';
-    } else if (kbIds.length > 0 || knowledgeIds.length > 0) {
-        mode = 'rag_fast';
-    }
+    const mode = deriveChatMode({
+        agentEnabled,
+        webSearchEnabled,
+        knowledgeBaseIds: kbIds,
+        knowledgeIds,
+    });
 
     // Use agent-chat endpoint when agent is enabled, otherwise use knowledge-chat
     const endpoint = agentEnabled ? '/api/v1/agent-chat' : '/api/v1/knowledge-chat';
@@ -497,6 +497,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         agent_enabled: agentEnabled,
         agent_id: selectedAgentId,
         web_search_enabled: webSearchEnabled,
+        web_search_provider_id: webSearchProviderId || undefined,
         enable_memory: enableMemory,
         summary_model_id: modelId,
         mcp_service_ids: mcpServiceIds,
