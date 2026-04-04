@@ -3,6 +3,7 @@ import { ref, type Ref, onUnmounted, nextTick } from 'vue'
 import { generateRandomString } from '@/utils/index';
 import i18n from '@/i18n';
 import type { StartChatStreamParams } from '@/utils/chatRequest';
+import type { ChatStreamChunk } from '@/types/chatStream';
 
 
 
@@ -149,10 +150,11 @@ export function useStream() {
         },
 
         onmessage: (ev) => {
-          buffer.push(JSON.parse(ev.data)); // 数据存入缓冲
+          const chunk = JSON.parse(ev.data) as ChatStreamChunk;
+          buffer.push(JSON.stringify(chunk)); // 数据存入缓冲
           // 执行自定义处理
           if (chunkHandler) {
-            chunkHandler(JSON.parse(ev.data));
+            chunkHandler(chunk);
           }
         },
 
@@ -170,9 +172,9 @@ export function useStream() {
     }
   }
 
-  let chunkHandler: ((data: any) => void) | null = null
+  let chunkHandler: ((data: ChatStreamChunk) => void) | null = null
   // 注册块处理器
-  const onChunk = (handler: () => void) => {
+  const onChunk = (handler: (data: ChatStreamChunk) => void) => {
     chunkHandler = handler
   }
 

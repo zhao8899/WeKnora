@@ -521,6 +521,7 @@ watch(error, (newError) => {
 });
 
 // 处理流式数据
+/** @param {import('@/types/chatStream').ChatStreamChunk} data */
 onChunk((data) => {
     // 日志：打印接收到的事件
     console.log('[Agent Event Received]', {
@@ -699,6 +700,7 @@ onChunk((data) => {
     updateAssistantSession(obj);
 })
 // 处理 Agent 流式数据 (Cursor-style UI)
+/** @param {import('@/types/chatStream').ChatStreamChunk} data */
 const handleAgentChunk = (data) => {
     let message = messagesList.findLast((item) => item.request_id === data.id || item.id === data.id);
     
