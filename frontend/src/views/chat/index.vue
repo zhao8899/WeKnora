@@ -78,6 +78,9 @@ import { useUIStore } from '@/stores/ui';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
 import { deriveChatMode } from '@/utils/chatRequest';
+
+/** @typedef {import('@/types/chatStream').ChatStreamChunk} ChatStreamChunk */
+/** @typedef {import('@/types/chatStream').AgentStreamEvent} AgentStreamEvent */
 const usemenuStore = useMenuStore();
 const useSettingsStoreInstance = useSettingsStore();
 const uiStore = useUIStore();
@@ -419,6 +422,63 @@ const handleStopGeneration = () => {
     // API 调用成功后，后端的 stop 事件会清空它
 };
 
+const findMessageByStreamId = (streamId) => {
+    return messagesList.findLast((item) => item.request_id === streamId || item.id === streamId);
+};
+
+const ensureAgentMessageStructures = (message) => {
+    if (!message.agentEventStream) message.agentEventStream = [];
+    if (!message._eventMap) message._eventMap = new Map();
+    if (!message._pendingToolCalls) message._pendingToolCalls = new Map();
+    if (!message.knowledge_references) message.knowledge_references = [];
+    return message;
+};
+
+const createAgentAssistantMessage = (streamId) => ({
+    id: streamId,
+    request_id: streamId,
+    role: 'assistant',
+    content: '',
+    isAgentMode: true,
+    agentEventStream: [],
+    _eventMap: new Map(),
+    _pendingToolCalls: new Map(),
+    knowledge_references: []
+});
+
+const createThinkingEvent = (eventId) => ({
+    type: 'thinking',
+    event_id: eventId,
+    content: '',
+    done: false,
+    startTime: Date.now(),
+    thinking: true
+});
+
+const createToolCallEvent = (toolCallId, toolName, incomingArguments) => ({
+    type: 'tool_call',
+    tool_call_id: toolCallId,
+    tool_name: toolName,
+    arguments: incomingArguments,
+    timestamp: Date.now(),
+    pending: true
+});
+
+const ensureAnswerEvent = (message) => {
+    ensureAgentMessageStructures(message);
+    let answerEvent = message.agentEventStream.find((event) => event.type === 'answer');
+    if (!answerEvent) {
+        answerEvent = {
+            type: 'answer',
+            content: '',
+            done: false
+        };
+        message.agentEventStream.push(answerEvent);
+        console.log('[Answer] Created new answer event in stream');
+    }
+    return answerEvent;
+};
+
 const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []) => {
     userquery.value = value;
     isReplying.value = true;
@@ -549,7 +609,7 @@ onChunk((data) => {
         });
         
         // 检查是否是继续流式传输（消息已存在）
-        const existingMessage = messagesList.findLast((item) => item.id === data.id || item.request_id === data.id);
+        const existingMessage = findMessageByStreamId(data.id);
         if (!existingMessage) {
             // 新消息，设置 loading 状态
         loading.value = true;
@@ -600,7 +660,7 @@ onChunk((data) => {
             return;
         }
         // 非 Agent 模式：将 references 保存到消息中供 botmsg 使用
-        let existingMessage = messagesList.findLast((item) => item.request_id === data.id || item.id === data.id);
+        let existingMessage = findMessageByStreamId(data.id);
         
         // 如果消息还不存在，先创建一个空的 assistant 消息
         if (!existingMessage) {
@@ -702,22 +762,11 @@ onChunk((data) => {
 // 处理 Agent 流式数据 (Cursor-style UI)
 /** @param {import('@/types/chatStream').ChatStreamChunk} data */
 const handleAgentChunk = (data) => {
-    let message = messagesList.findLast((item) => item.request_id === data.id || item.id === data.id);
+    let message = findMessageByStreamId(data.id);
     
     if (!message) {
         // 创建新的 Assistant 消息 - 此时开始显示内容，关闭 loading
-        const newMsg = {
-            id: data.id,
-            request_id: data.id,
-            role: 'assistant',
-            content: '',
-            isAgentMode: true,
-            // Event stream: ordered list of all agent events (thinking, tool calls, etc)
-            agentEventStream: [],
-            // Map to track event by event_id for quick lookup
-            _eventMap: new Map(),
-            knowledge_references: []
-        };
+        const newMsg = createAgentAssistantMessage(data.id);
         messagesList.push(newMsg);
         loading.value = false; // 消息已创建，关闭 loading
         scrollToBottom();
@@ -726,6 +775,7 @@ const handleAgentChunk = (data) => {
     }
     
     message.isAgentMode = true;
+    ensureAgentMessageStructures(message);
     
     // 确保在继续流式传输时（刷新页面场景），一旦接收到实际内容就关闭 loading
     // 这是一个保护措施，防止任何边缘情况导致 loading 残留
@@ -744,10 +794,6 @@ const handleAgentChunk = (data) => {
                     content_length: data.content?.length || 0
                 });
                 
-                // Initialize structures
-                if (!message.agentEventStream) message.agentEventStream = [];
-                if (!message._eventMap) message._eventMap = new Map();
-                
                 if (!data.done) {
                     // Check if this thinking event already exists
                     let thinkingEvent = message._eventMap.get(eventId);
@@ -755,14 +801,7 @@ const handleAgentChunk = (data) => {
                     if (!thinkingEvent) {
                         // Create new thinking event
                         console.log('[Thinking] Creating new thinking event, event_id:', eventId);
-                        thinkingEvent = {
-                            type: 'thinking',
-                            event_id: eventId,
-                            content: '',
-                            done: false,
-                            startTime: Date.now(),
-                            thinking: true
-                        };
+                        thinkingEvent = createThinkingEvent(eventId);
                         
                         // Add to event stream
                         message.agentEventStream.push(thinkingEvent);
@@ -805,9 +844,6 @@ const handleAgentChunk = (data) => {
                 const incomingToolName = data.data.tool_name;
                 const incomingArguments = data.data.arguments;
                 
-                if (!message.agentEventStream) message.agentEventStream = [];
-                if (!message._pendingToolCalls) message._pendingToolCalls = new Map();
-                
                 const toolCallId = data.data.tool_call_id || (incomingToolName ? (incomingToolName + '_' + Date.now()) : null);
                 if (!toolCallId) {
                     console.warn('[Tool Call] Received event without identifiable tool_call_id:', data.data);
@@ -836,14 +872,7 @@ const handleAgentChunk = (data) => {
                     }
                     message._pendingToolCalls.set(toolCallId, toolCallEvent);
                 } else {
-                    const newToolCallEvent = {
-                        type: 'tool_call',
-                        tool_call_id: toolCallId,
-                        tool_name: incomingToolName,
-                        arguments: incomingArguments,
-                        timestamp: Date.now(),
-                        pending: true
-                    };
+                    const newToolCallEvent = createToolCallEvent(toolCallId, incomingToolName, incomingArguments);
                     message.agentEventStream.push(newToolCallEvent);
                     message._pendingToolCalls.set(toolCallId, newToolCallEvent);
                 }
@@ -950,18 +979,7 @@ const handleAgentChunk = (data) => {
             }
             
             // Add or update answer event in agentEventStream
-            if (!message.agentEventStream) message.agentEventStream = [];
-            
-            let answerEvent = message.agentEventStream.find((e) => e.type === 'answer');
-            if (!answerEvent) {
-                answerEvent = {
-                    type: 'answer',
-                    content: '',
-                    done: false
-                };
-                message.agentEventStream.push(answerEvent);
-                console.log('[Answer] Created new answer event in stream');
-            }
+            let answerEvent = ensureAnswerEvent(message);
             
             // 只有当有实际内容时才更新 answerEvent.content
             if (data.content) {
@@ -1012,8 +1030,6 @@ const handleAgentChunk = (data) => {
         case 'stop':
             // 停止事件 - 添加到事件流并标记对话完成
             console.log('[Agent] Stop event received');
-            if (!message.agentEventStream) message.agentEventStream = [];
-            
             // Add stop event to stream
             message.agentEventStream.push({
                 type: 'stop',
