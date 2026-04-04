@@ -32,6 +32,7 @@ END;
 $$ language 'plpgsql';
 
 -- Auto-update updated_at column
+DROP TRIGGER IF EXISTS trg_web_search_providers_updated_at ON web_search_providers;
 CREATE TRIGGER trg_web_search_providers_updated_at
     BEFORE UPDATE ON web_search_providers
     FOR EACH ROW
