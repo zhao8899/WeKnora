@@ -53,6 +53,27 @@ type GetSystemInfoResponse struct {
 	DBVersion           string `json:"db_version,omitempty"`
 }
 
+type HealthResponse struct {
+	Status         string         `json:"status"`
+	Version        string         `json:"version,omitempty"`
+	DB             HealthDBStatus `json:"db"`
+	DocReader      HealthService  `json:"docreader"`
+	StreamManager  HealthService  `json:"stream_manager"`
+	RetrieveDriver string         `json:"retrieve_driver,omitempty"`
+	DBDriver       string         `json:"db_driver,omitempty"`
+}
+
+type HealthDBStatus struct {
+	Status           string `json:"status"`
+	MigrationVersion string `json:"migration_version,omitempty"`
+	Dirty            bool   `json:"dirty,omitempty"`
+}
+
+type HealthService struct {
+	Status     string `json:"status"`
+	Configured bool   `json:"configured"`
+}
+
 // 编译时注入的版本信息
 var (
 	Version   = "unknown"
@@ -111,6 +132,49 @@ func (h *SystemHandler) GetSystemInfo(c *gin.Context) {
 		"code": 0,
 		"msg":  "success",
 		"data": response,
+	})
+}
+
+func (h *SystemHandler) GetHealth(c *gin.Context) {
+	db := HealthDBStatus{Status: "unknown"}
+	if ver, dirty, ok := database.CachedMigrationVersion(); ok {
+		db.Status = "ok"
+		db.MigrationVersion = fmt.Sprintf("%d", ver)
+		db.Dirty = dirty
+	}
+
+	docReaderConfigured := strings.TrimSpace(os.Getenv("DOCREADER_ADDR")) != ""
+	docReaderStatus := "disabled"
+	if docReaderConfigured {
+		docReaderStatus = "configured"
+		if h.documentReader != nil && h.documentReader.IsConnected() {
+			docReaderStatus = "ok"
+		}
+	}
+
+	streamConfigured := strings.TrimSpace(os.Getenv("STREAM_MANAGER_TYPE")) != ""
+	streamStatus := "disabled"
+	if streamConfigured {
+		streamStatus = "configured"
+		if strings.EqualFold(os.Getenv("STREAM_MANAGER_TYPE"), "memory") || strings.TrimSpace(os.Getenv("REDIS_ADDR")) != "" {
+			streamStatus = "ok"
+		}
+	}
+
+	c.JSON(200, HealthResponse{
+		Status:  "ok",
+		Version: Version,
+		DB:      db,
+		DocReader: HealthService{
+			Status:     docReaderStatus,
+			Configured: docReaderConfigured,
+		},
+		StreamManager: HealthService{
+			Status:     streamStatus,
+			Configured: streamConfigured,
+		},
+		RetrieveDriver: os.Getenv("RETRIEVE_DRIVER"),
+		DBDriver:       os.Getenv("DB_DRIVER"),
 	})
 }
 
@@ -768,7 +832,7 @@ func (h *SystemHandler) checkMinio(c *gin.Context, ctx context.Context, cfg *typ
 
 	if cfg.Mode == "remote" {
 		if blocked, reason := isBlockedStorageEndpoint(endpoint); blocked {
-			logger.Warnf(ctx, "Storage check: MinIO endpoint blocked by SSRF protection", "endpoint", endpoint)
+			logger.Warnf(ctx, "Storage check: MinIO endpoint blocked by SSRF protection, endpoint=%s", endpoint)
 			c.JSON(200, gin.H{"code": 0, "data": StorageCheckResponse{OK: false, Message: reason}})
 			return
 		}
