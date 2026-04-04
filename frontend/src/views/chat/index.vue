@@ -533,6 +533,48 @@ const appendStopEvent = (message, data) => {
     });
 };
 
+const buildStandardAssistantPayload = (data, content) => {
+    const payload = { ...data, content: '', role: 'assistant', showThink: false, is_completed: false };
+
+    if (data.data?.is_fallback) {
+        payload.is_fallback = true;
+    }
+
+    if (content.includes('<think>') && !content.includes('<\/think>')) {
+        payload.thinking = true;
+        payload.showThink = true;
+        payload.content = '';
+        payload.thinkContent = content.replace('<think>', '').trim();
+        return payload;
+    }
+
+    if (content.includes('<think>') && content.includes('<\/think>')) {
+        payload.thinking = false;
+        payload.showThink = true;
+        const index = content.lastIndexOf('<\/think>');
+        payload.thinkContent = content.substring(0, index).replace('<think>', '').trim();
+        payload.content = content.substring(index + 8).trim();
+        return payload;
+    }
+
+    payload.content = content;
+    return payload;
+};
+
+const applyAssistantPayloadToMessage = (message, payload) => {
+    message.content = payload.content;
+    message.thinking = payload.thinking;
+    message.thinkContent = payload.thinkContent;
+    message.showThink = payload.showThink;
+    message.knowledge_references = message.knowledge_references ? message.knowledge_references : payload.knowledge_references;
+    if (payload.is_fallback) {
+        message.is_fallback = true;
+    }
+    if (payload.is_completed) {
+        message.is_completed = true;
+    }
+};
+
 const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []) => {
     userquery.value = value;
     isReplying.value = true;
@@ -751,29 +793,7 @@ onChunk((data) => {
     }
     
     fullContent.value += data.content;
-    let obj = { ...data, content: '', role: 'assistant', showThink: false, is_completed: false };
-
-    // 检查是否为 fallback 回答（未从知识库检索到内容）
-    if (data.data?.is_fallback) {
-        obj.is_fallback = true;
-    }
-
-    if (fullContent.value.includes('<think>') && !fullContent.value.includes('<\/think>')) {
-        obj.thinking = true;
-        obj.showThink = true;
-        obj.content = '';
-        obj.thinkContent = fullContent.value.replace('<think>', '').trim();
-    } else if (fullContent.value.includes('<think>') && fullContent.value.includes('<\/think>')) {
-        obj.thinking = false;
-        obj.showThink = true;
-        // Use lastIndexOf to handle edge cases with multiple </think> occurrences,
-        // consistent with history loading logic (line 280)
-        const index = fullContent.value.lastIndexOf('<\/think>');
-        obj.thinkContent = fullContent.value.substring(0, index).replace('<think>', '').trim();
-        obj.content = fullContent.value.substring(index + 8).trim();
-    } else {
-        obj.content = fullContent.value;
-    }
+    let obj = buildStandardAssistantPayload(data, fullContent.value);
     
     if (!existingMessage) {
         loading.value = false; // 消息即将创建，关闭 loading
@@ -1072,19 +1092,7 @@ const updateAssistantSession = (payload) => {
         return item.id === payload.id;
     });
     if (message) {
-        message.content = payload.content;
-        message.thinking = payload.thinking;
-        message.thinkContent = payload.thinkContent;
-        message.showThink = payload.showThink;
-        message.knowledge_references = message.knowledge_references ? message.knowledge_references : payload.knowledge_references;
-        // 更新 fallback 状态
-        if (payload.is_fallback) {
-            message.is_fallback = true;
-        }
-        // 更新完成状态
-        if (payload.is_completed) {
-            message.is_completed = true;
-        }
+        applyAssistantPayloadToMessage(message, payload);
     } else {
         messagesList.push(payload);
     }
