@@ -74,6 +74,54 @@ type HealthService struct {
 	Configured bool   `json:"configured"`
 }
 
+type DiagnosticsResponse struct {
+	Version     string                 `json:"version,omitempty"`
+	Edition     string                 `json:"edition,omitempty"`
+	DB          DiagnosticsDB          `json:"db"`
+	Redis       DiagnosticsRedis       `json:"redis"`
+	DocReader   DiagnosticsDocReader   `json:"docreader"`
+	Retrieval   DiagnosticsRetrieval   `json:"retrieval"`
+	Graph       DiagnosticsGraph       `json:"graph"`
+	ObjectStore DiagnosticsObjectStore `json:"object_store"`
+}
+
+type DiagnosticsDB struct {
+	Driver           string `json:"driver,omitempty"`
+	Host             string `json:"host,omitempty"`
+	Port             string `json:"port,omitempty"`
+	Name             string `json:"name,omitempty"`
+	MigrationVersion string `json:"migration_version,omitempty"`
+	Dirty            bool   `json:"dirty,omitempty"`
+}
+
+type DiagnosticsRedis struct {
+	StreamManagerType string `json:"stream_manager_type,omitempty"`
+	Addr              string `json:"addr,omitempty"`
+	Configured        bool   `json:"configured"`
+}
+
+type DiagnosticsDocReader struct {
+	Addr       string `json:"addr,omitempty"`
+	Transport  string `json:"transport,omitempty"`
+	Configured bool   `json:"configured"`
+	Connected  bool   `json:"connected"`
+}
+
+type DiagnosticsRetrieval struct {
+	Driver string `json:"driver,omitempty"`
+}
+
+type DiagnosticsGraph struct {
+	Enabled    bool `json:"enabled"`
+	Configured bool `json:"configured"`
+}
+
+type DiagnosticsObjectStore struct {
+	Type            string `json:"type,omitempty"`
+	LocalConfigured bool   `json:"local_configured"`
+	MinioConfigured bool   `json:"minio_configured"`
+}
+
 // 编译时注入的版本信息
 var (
 	Version   = "unknown"
@@ -175,6 +223,67 @@ func (h *SystemHandler) GetHealth(c *gin.Context) {
 		},
 		RetrieveDriver: os.Getenv("RETRIEVE_DRIVER"),
 		DBDriver:       os.Getenv("DB_DRIVER"),
+	})
+}
+
+func (h *SystemHandler) GetDiagnostics(c *gin.Context) {
+	db := DiagnosticsDB{
+		Driver: os.Getenv("DB_DRIVER"),
+		Host:   os.Getenv("DB_HOST"),
+		Port:   os.Getenv("DB_PORT"),
+		Name:   os.Getenv("DB_NAME"),
+	}
+	if ver, dirty, ok := database.CachedMigrationVersion(); ok {
+		db.MigrationVersion = fmt.Sprintf("%d", ver)
+		db.Dirty = dirty
+	}
+
+	docReaderAddr, docReaderTransport := h.getDocReaderConnInfo()
+	docReaderConfigured := strings.TrimSpace(docReaderAddr) != ""
+	docReaderConnected := h.documentReader != nil && h.documentReader.IsConnected()
+
+	streamManagerType := strings.TrimSpace(os.Getenv("STREAM_MANAGER_TYPE"))
+	redisAddr := strings.TrimSpace(os.Getenv("REDIS_ADDR"))
+
+	graphEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("NEO4J_ENABLE")), "true")
+	graphConfigured := h.neo4jDriver != nil
+
+	storageType := strings.TrimSpace(os.Getenv("STORAGE_TYPE"))
+	localConfigured := strings.TrimSpace(os.Getenv("LOCAL_STORAGE_BASE_DIR")) != ""
+	minioConfigured := strings.TrimSpace(os.Getenv("MINIO_ENDPOINT")) != "" ||
+		(strings.TrimSpace(os.Getenv("MINIO_ACCESS_KEY_ID")) != "" && strings.TrimSpace(os.Getenv("MINIO_SECRET_ACCESS_KEY")) != "")
+
+	c.JSON(200, gin.H{
+		"code": 0,
+		"msg":  "success",
+		"data": DiagnosticsResponse{
+			Version: Version,
+			Edition: Edition,
+			DB:      db,
+			Redis: DiagnosticsRedis{
+				StreamManagerType: streamManagerType,
+				Addr:              redisAddr,
+				Configured:        streamManagerType != "" && (streamManagerType == "memory" || redisAddr != ""),
+			},
+			DocReader: DiagnosticsDocReader{
+				Addr:       docReaderAddr,
+				Transport:  docReaderTransport,
+				Configured: docReaderConfigured,
+				Connected:  docReaderConnected,
+			},
+			Retrieval: DiagnosticsRetrieval{
+				Driver: os.Getenv("RETRIEVE_DRIVER"),
+			},
+			Graph: DiagnosticsGraph{
+				Enabled:    graphEnabled,
+				Configured: graphConfigured,
+			},
+			ObjectStore: DiagnosticsObjectStore{
+				Type:            storageType,
+				LocalConfigured: localConfigured,
+				MinioConfigured: minioConfigured,
+			},
+		},
 	})
 }
 

@@ -436,6 +436,7 @@ func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler) {
 	systemRoutes := r.Group("/system")
 	{
 		systemRoutes.GET("/info", handler.GetSystemInfo)
+		systemRoutes.GET("/diagnostics", handler.GetDiagnostics)
 		systemRoutes.GET("/parser-engines", handler.ListParserEngines)
 		systemRoutes.POST("/parser-engines/check", handler.CheckParserEngines)
 		systemRoutes.POST("/docreader/reconnect", handler.ReconnectDocReader)
