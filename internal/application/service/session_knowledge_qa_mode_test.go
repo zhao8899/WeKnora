@@ -107,7 +107,7 @@ func TestAssembleKnowledgeQAPipeline(t *testing.T) {
 			wantUserText: "hello\n\n[用户上传图片内容]\nimage-desc",
 		},
 		{
-			name: "rag fast skips rewrite web fetch and data analysis",
+			name: "rag fast skips rewrite web fetch and data analysis and clamps retrieval bounds",
 			req: &types.QARequest{
 				Query: "hello",
 			},
@@ -115,6 +115,8 @@ func TestAssembleKnowledgeQAPipeline(t *testing.T) {
 				PipelineRequest: types.PipelineRequest{
 					MaxRounds:            2,
 					RerankModelID:        "rerank",
+					EmbeddingTopK:        30,
+					RerankTopK:           30,
 					EnableRewrite:        true,
 					EnableQueryExpansion: true,
 					WebFetchEnabled:      true,
@@ -176,6 +178,23 @@ func TestAssembleKnowledgeQAPipeline(t *testing.T) {
 			}
 			if tt.wantUserText != "" && tt.chatManage.UserContent != tt.wantUserText {
 				t.Fatalf("user content = %q, want %q", tt.chatManage.UserContent, tt.wantUserText)
+			}
+			if tt.mode == types.ChatModeRAGFast {
+				if tt.chatManage.EnableRewrite {
+					t.Fatalf("rag_fast should disable rewrite")
+				}
+				if tt.chatManage.EnableQueryExpansion {
+					t.Fatalf("rag_fast should disable query expansion")
+				}
+				if tt.chatManage.WebFetchEnabled {
+					t.Fatalf("rag_fast should disable web fetch")
+				}
+				if tt.chatManage.EmbeddingTopK != 8 {
+					t.Fatalf("rag_fast embedding top k = %d, want 8", tt.chatManage.EmbeddingTopK)
+				}
+				if tt.chatManage.RerankTopK != 5 {
+					t.Fatalf("rag_fast rerank top k = %d, want 5", tt.chatManage.RerankTopK)
+				}
 			}
 		})
 	}

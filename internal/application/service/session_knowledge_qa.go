@@ -821,18 +821,7 @@ func assembleKnowledgeQAPipeline(
 ) []types.EventType {
 	hasHistory := chatManage.MaxRounds > 0
 
-	// Fast mode keeps the lightweight retrieval path by default.
-	switch pipelineMode {
-	case types.ChatModeChat:
-		chatManage.EnableRewrite = false
-		chatManage.EnableQueryExpansion = false
-		chatManage.WebSearchEnabled = false
-		chatManage.WebFetchEnabled = false
-	case types.ChatModeRAGFast:
-		chatManage.EnableRewrite = false
-		chatManage.EnableQueryExpansion = false
-		chatManage.WebFetchEnabled = false
-	}
+	applyKnowledgeQAModeDefaults(chatManage, pipelineMode)
 
 	switch pipelineMode {
 	case types.ChatModeChat:
@@ -871,6 +860,28 @@ func assembleKnowledgeQAPipeline(
 			Add(types.INTO_CHAT_MESSAGE).
 			Add(types.CHAT_COMPLETION_STREAM).
 			Build()
+	}
+}
+
+func applyKnowledgeQAModeDefaults(chatManage *types.ChatManage, pipelineMode types.ChatMode) {
+	switch pipelineMode {
+	case types.ChatModeChat:
+		chatManage.EnableRewrite = false
+		chatManage.EnableQueryExpansion = false
+		chatManage.WebSearchEnabled = false
+		chatManage.WebFetchEnabled = false
+	case types.ChatModeRAGFast:
+		chatManage.EnableRewrite = false
+		chatManage.EnableQueryExpansion = false
+		chatManage.WebFetchEnabled = false
+
+		// Keep the "fast" path bounded even if tenant/global defaults are large.
+		if chatManage.EmbeddingTopK <= 0 || chatManage.EmbeddingTopK > 8 {
+			chatManage.EmbeddingTopK = 8
+		}
+		if chatManage.RerankTopK <= 0 || chatManage.RerankTopK > 5 {
+			chatManage.RerankTopK = 5
+		}
 	}
 }
 
