@@ -15,16 +15,24 @@ if [[ -z "${KB_ID}" ]]; then
   exit 1
 fi
 
-if ! curl -fsS "${BASE_URL%/api/v1}/health" >/dev/null 2>&1; then
+health_out="$(mktemp)"
+diagnostics_out="$(mktemp)"
+cleanup() {
+  rm -rf "${tmpdir:-}" "${health_out}" "${diagnostics_out}"
+}
+trap cleanup EXIT
+
+if ! curl -fsS "${BASE_URL%/api/v1}/health" > "${health_out}" 2>/dev/null; then
   echo "server health check failed: ${BASE_URL%/api/v1}/health" >&2
   exit 1
 fi
 
+if ! curl -fsS -H "X-API-Key: ${API_KEY}" "${BASE_URL}/system/diagnostics" > "${diagnostics_out}" 2>/dev/null; then
+  echo "system diagnostics check failed: ${BASE_URL}/system/diagnostics" >&2
+  exit 1
+fi
+
 tmpdir="$(mktemp -d)"
-cleanup() {
-  rm -rf "${tmpdir}"
-}
-trap cleanup EXIT
 
 create_session() {
   local title="$1"
@@ -69,12 +77,23 @@ run_sse "${rag_deep_session}" "{\"query\":\"总结一下道成知识库里的核
 assert_contains "${chat_out}" '"response_type":"answer"'
 assert_contains "${chat_out}" 'chat-mode-ok'
 
+assert_contains "${health_out}" '"status":"ok"'
+assert_contains "${health_out}" '"db"'
+assert_contains "${health_out}" '"stream_manager"'
+
+assert_contains "${diagnostics_out}" '"code":0'
+assert_contains "${diagnostics_out}" '"docreader"'
+assert_contains "${diagnostics_out}" '"retrieval"'
+assert_contains "${diagnostics_out}" '"object_store"'
+
 assert_contains "${rag_fast_out}" '"response_type":"references"'
 assert_contains "${rag_fast_out}" '"response_type":"complete"'
 
 assert_contains "${rag_deep_out}" '"response_type":"references"'
 assert_contains "${rag_deep_out}" '"response_type":"complete"'
 
+echo "health: ok"
+echo "diagnostics: ok"
 echo "chat: ok"
 echo "rag_fast: ok"
 echo "rag_deep: ok"
