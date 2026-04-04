@@ -469,7 +469,7 @@ const sanitizeForDisplay = (text: string): string => {
   if (!text) return text;
   let result = text;
   for (const [name, i18nKey] of Object.entries(TOOL_NAME_KEYS)) {
-    result = result.replaceAll(name, i18n.global.t(i18nKey));
+    result = result.split(name).join(i18n.global.t(i18nKey));
   }
   // Format any remaining mcp_ tool names inline
   result = result.replace(/\bmcp_([a-z0-9_]+)/g, (_match, rest) => {
@@ -670,12 +670,12 @@ watch(eventStream, (stream) => {
   if (!stream || !Array.isArray(stream)) return;
 
   // Check for agent_complete event with authoritative duration from backend
-  if (agentDurationMs.value === 0) {
-    const completeEvent = stream.find((e) => e.type === 'agent_complete' && e.total_duration_ms);
-    if (completeEvent) {
-      agentDurationMs.value = completeEvent.total_duration_ms;
-    }
-  }
+	if (agentDurationMs.value === 0) {
+		const completeEvent = stream.find((e) => e.type === 'agent_complete' && e.total_duration_ms);
+		if (completeEvent) {
+			agentDurationMs.value = completeEvent.total_duration_ms ?? 0;
+		}
+	}
 
   if (hasAnswerStarted.value) return;
 
@@ -943,7 +943,8 @@ const toggleIntermediateSteps = () => {
   });
 };
 
-const toggleEvent = (eventId: string) => {
+const toggleEvent = (eventId?: string) => {
+  if (!eventId) return;
   if (expandedEvents.value.has(eventId)) {
     expandedEvents.value.delete(eventId);
   } else {
@@ -957,8 +958,8 @@ const handleActionHeaderClick = (event: AgentStreamEvent) => {
   }
 };
 
-const isEventExpanded = (eventId: string): boolean => {
-  return expandedEvents.value.has(eventId);
+const isEventExpanded = (eventId?: string): boolean => {
+  return !!eventId && expandedEvents.value.has(eventId);
 };
 
 // Check if search/grep tools have results
@@ -1379,7 +1380,7 @@ const preprocessMarkdown = (contentStr: string): string => {
 };
 
 // Get tokens from markdown content (with sanitization for user-friendly display)
-const getTokens = (content: any) => {
+const getTokens = (content: unknown) => {
   const contentStr = typeof content === 'string' ? content : String(content || '');
   if (!contentStr.trim()) return [];
 
@@ -1418,7 +1419,7 @@ const agentRenderer = new marked.Renderer();
 agentRenderer.code = createMermaidCodeRenderer('mermaid-agent');
 
 // Render HTML from a single token
-const getTokenHTML = (token: any): string => {
+const getTokenHTML = (token: unknown): string => {
   try {
     const html = marked.parser([token], { renderer: agentRenderer });
     const protectedHTML = protectProviderImageSrcInHTML(html);
@@ -1430,7 +1431,7 @@ const getTokenHTML = (token: any): string => {
 };
 
 // Legacy Markdown rendering function (kept for summaries)
-const renderMarkdown = (content: any): string => {
+const renderMarkdown = (content: unknown): string => {
   const contentStr = typeof content === 'string' ? content : String(content || '');
   if (!contentStr.trim()) return '';
 
@@ -1465,7 +1466,7 @@ const renderMermaidDiagrams = async () => {
 };
 
 // Tool summary - extract key info to display externally
-const getToolSummary = (event: any): string => {
+const getToolSummary = (event: AgentStreamEvent | null | undefined): string => {
   if (!event || event.pending || !event.success) return '';
   
   const toolName = event.tool_name;
@@ -1507,7 +1508,7 @@ const getToolSummary = (event: any): string => {
 };
 
 // Get plan status parts for todo_write tool header
-const getPlanStatusParts = (event: any) => {
+const getPlanStatusParts = (event: AgentStreamEvent | null | undefined) => {
   if (!event || !event.tool_data?.steps) {
     return { inProgress: 0, pending: 0, completed: 0 };
   }
@@ -1525,7 +1526,7 @@ const getPlanStatusParts = (event: any) => {
 };
 
 // Get plan status items for display with icons
-const getPlanStatusItems = (event: any) => {
+const getPlanStatusItems = (event: AgentStreamEvent | null | undefined) => {
   const parts = getPlanStatusParts(event);
   const items: Array<{ icon: string; class: string; label: string; count: number }> = [];
   
@@ -1560,7 +1561,7 @@ const getPlanStatusItems = (event: any) => {
 };
 
 // Get plan status summary for todo_write tool header (deprecated, use getPlanStatusParts instead)
-const getPlanStatusSummary = (event: any): string => {
+const getPlanStatusSummary = (event: AgentStreamEvent | null | undefined): string => {
   const parts = getPlanStatusParts(event);
   const textParts = [];
   if (parts.inProgress > 0) textParts.push(`🚀 ${t('agentStream.plan.inProgress')} ${parts.inProgress}`);
@@ -1570,12 +1571,12 @@ const getPlanStatusSummary = (event: any): string => {
 };
 
 // Check if tool should use book icon
-const isBookIcon = (toolName: string): boolean => {
+const isBookIcon = (toolName?: string): boolean => {
   return false; // 不再使用 t-icon 的 book，改用 SVG 图标
 };
 
 // Get icon for tool type
-const getToolIcon = (toolName: string): string => {
+const getToolIcon = (toolName?: string): string => {
   if (toolName === 'thinking') {
     return thinkingIcon;
   } else if (toolName === 'search_knowledge' || toolName === 'knowledge_search') {
@@ -1590,7 +1591,7 @@ const getToolIcon = (toolName: string): string => {
     return fileAddIcon;
   } else if (toolName === 'image_analysis') {
     return thinkingIcon;
-  } else if (toolName.startsWith('mcp_')) {
+  } else if (toolName?.startsWith('mcp_')) {
     return documentIcon; // MCP external tool icon
   } else {
     return documentIcon; // default icon
@@ -1598,7 +1599,7 @@ const getToolIcon = (toolName: string): string => {
 };
 
 // Get search results summary text (returns HTML with colored numbers)
-const getSearchResultsSummary = (event: any): string => {
+const getSearchResultsSummary = (event: AgentStreamEvent | null | undefined): string => {
   if (!event || !event.tool_data) return '';
   
   const toolData = event.tool_data;
@@ -1617,7 +1618,7 @@ const getSearchResultsSummary = (event: any): string => {
 };
 
 // Get web search results summary text
-const getWebSearchResultsSummary = (toolData: any): string => {
+const getWebSearchResultsSummary = (toolData: Record<string, any> | null | undefined): string => {
   if (!toolData) return '';
   
   const count = toolData.results?.length || toolData.count || 0;
@@ -1627,13 +1628,13 @@ const getWebSearchResultsSummary = (toolData: any): string => {
 };
 
 // Get results count (number only) for web search summary
-const getResultsCount = (toolData: any): number => {
+const getResultsCount = (toolData: Record<string, any> | null | undefined): number => {
   if (!toolData) return 0;
   return toolData.results?.length || toolData.count || 0;
 };
 
 // Get grep results summary text (returns HTML with colored numbers)
-const getGrepResultsSummary = (toolData: any): string => {
+const getGrepResultsSummary = (toolData: Record<string, any> | null | undefined): string => {
   if (!toolData) return '';
   
   const totalMatches = toolData.total_matches || 0;
@@ -1652,7 +1653,7 @@ const getGrepResultsSummary = (toolData: any): string => {
 };
 
 // Extract and format query parameters from args
-const getQueryText = (args: any): string => {
+const getQueryText = (args: unknown): string => {
   if (!args) return '';
   
   // Parse if it's a string
@@ -1687,7 +1688,7 @@ const getQueryText = (args: any): string => {
 };
 
 // Get tool title - prefer summary over description, add query for search tools
-const getToolTitle = (event: any): string => {
+const getToolTitle = (event: AgentStreamEvent): string => {
   if (event.pending) {
     if (event.tool_name === 'image_analysis') {
       return t('agentStream.toolStatus.imageAnalyzing');
@@ -1775,7 +1776,7 @@ const getToolTitle = (event: any): string => {
 };
 
 // Tool description
-const getToolDescription = (event: any): string => {
+const getToolDescription = (event: AgentStreamEvent): string => {
   if (event.pending) {
     if (event.tool_name === 'image_analysis') {
       return t('agentStream.toolStatus.imageAnalyzing');

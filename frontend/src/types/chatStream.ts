@@ -1,3 +1,5 @@
+import type { DisplayType } from './tool-results'
+
 export type ChatResponseType =
   | 'agent_query'
   | 'session_title'
@@ -43,7 +45,7 @@ export interface AgentStreamEvent {
   duration_ms?: number
   completed_at?: number
   tool_data?: Record<string, any>
-  display_type?: string
+  display_type?: DisplayType
   is_fallback?: boolean
   total_duration_ms?: number
   total_steps?: number
