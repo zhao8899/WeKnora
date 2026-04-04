@@ -329,6 +329,22 @@ make dev-frontend
 
 **Detailed Documentation:** [Development Environment Quick Start](./docs/开发指南.md)
 
+### 🧪 QA Mode Smoke Test
+
+After starting the backend and ensuring you have a valid tenant API key plus a knowledge base ID, you can quickly verify the three core QA paths:
+
+```bash
+make qa-mode-smoke API_KEY=sk-... KB_ID=<knowledge-base-id> BASE_URL=http://127.0.0.1:18080/api/v1
+```
+
+This smoke check exercises:
+
+- `chat`
+- `rag_fast`
+- `rag_deep`
+
+It is intended as a lightweight regression check for mode routing and SSE response basics.
+
 ### 📁 Directory Structure
 
 ```
