@@ -479,6 +479,60 @@ const ensureAnswerEvent = (message) => {
     return answerEvent;
 };
 
+const createStandardAssistantMessage = (streamId) => ({
+    id: streamId,
+    request_id: streamId,
+    role: 'assistant',
+    content: '',
+    showThink: false,
+    thinkContent: '',
+    thinking: false,
+    is_completed: false,
+    knowledge_references: []
+});
+
+const ensureStandardAssistantMessage = (streamId) => {
+    let message = findMessageByStreamId(streamId);
+    if (!message) {
+        message = createStandardAssistantMessage(streamId);
+        messagesList.push(message);
+        loading.value = false;
+        scrollToBottom();
+    }
+    return message;
+};
+
+const extractKnowledgeReferences = (data) => data.knowledge_references || data.data?.references || [];
+
+const applyReferencesToMessage = (message, data) => {
+    message.knowledge_references = extractKnowledgeReferences(data);
+};
+
+const finalizeReplyState = () => {
+    loading.value = false;
+    isReplying.value = false;
+    fullContent.value = '';
+    currentAssistantMessageId.value = '';
+};
+
+const appendAgentCompleteEvent = (message, data) => {
+    if (data.data?.total_duration_ms && message.agentEventStream) {
+        message.agentEventStream.push({
+            type: 'agent_complete',
+            total_duration_ms: data.data.total_duration_ms,
+            total_steps: data.data.total_steps,
+        });
+    }
+};
+
+const appendStopEvent = (message, data) => {
+    message.agentEventStream.push({
+        type: 'stop',
+        timestamp: Date.now(),
+        reason: data.data?.reason || 'user_requested'
+    });
+};
+
 const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []) => {
     userquery.value = value;
     isReplying.value = true;
@@ -660,27 +714,8 @@ onChunk((data) => {
             return;
         }
         // 非 Agent 模式：将 references 保存到消息中供 botmsg 使用
-        let existingMessage = findMessageByStreamId(data.id);
-        
-        // 如果消息还不存在，先创建一个空的 assistant 消息
-        if (!existingMessage) {
-            existingMessage = {
-                id: data.id,
-                request_id: data.id,
-                role: 'assistant',
-                content: '',
-                showThink: false,
-                thinkContent: '',
-                thinking: false,
-                is_completed: false,
-                knowledge_references: []
-            };
-            messagesList.push(existingMessage);
-            loading.value = false; // 消息已创建，关闭 loading
-            scrollToBottom();
-        }
-        
-        existingMessage.knowledge_references = data.knowledge_references || data.data?.references || [];
+        let existingMessage = ensureStandardAssistantMessage(data.id);
+        applyReferencesToMessage(existingMessage, data);
         console.log('[References] Saved to message, count:', existingMessage.knowledge_references.length);
         return;
     }
@@ -693,10 +728,7 @@ onChunk((data) => {
         // 对于 stop 事件，额外处理全局状态
         if (data.response_type === 'stop') {
             console.log('[Stop Event] Generation stopped');
-            loading.value = false;
-            isReplying.value = false;
-            // 清空当前 assistant message ID
-            currentAssistantMessageId.value = '';
+            finalizeReplyState();
         }
         return;
     }
@@ -999,11 +1031,7 @@ const handleAgentChunk = (data) => {
                 console.log('[Agent] Answer done, content length:', message.content?.length || 0, 'answerEvent.content length:', answerEvent.content?.length || 0);
                 
                 // 完成 - 关闭所有状态
-                loading.value = false;
-                isReplying.value = false;
-                fullContent.value = '';
-                // 清空当前 assistant message ID
-                currentAssistantMessageId.value = '';
+                finalizeReplyState();
                 
                 // 标题生成已改为异步事件推送，不再需要在这里手动调用
                 // 如果标题还未生成，前端会通过 SSE 事件接收
@@ -1018,24 +1046,14 @@ const handleAgentChunk = (data) => {
             loading.value = false;
             isReplying.value = false;
             // 将 total_duration_ms 存入事件流供 AgentStreamDisplay 使用
-            if (data.data?.total_duration_ms && message.agentEventStream) {
-                message.agentEventStream.push({
-                    type: 'agent_complete',
-                    total_duration_ms: data.data.total_duration_ms,
-                    total_steps: data.data.total_steps,
-                });
-            }
+            appendAgentCompleteEvent(message, data);
             break;
             
         case 'stop':
             // 停止事件 - 添加到事件流并标记对话完成
             console.log('[Agent] Stop event received');
             // Add stop event to stream
-            message.agentEventStream.push({
-                type: 'stop',
-                timestamp: Date.now(),
-                reason: data.data?.reason || 'user_requested'
-            });
+            appendStopEvent(message, data);
             
             // Mark conversation as stopped
             isReplying.value = false;
