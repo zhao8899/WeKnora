@@ -4,13 +4,55 @@
 
 | 方法   | 路径                              | 描述                   |
 | ------ | --------------------------------- | ---------------------- |
+| GET    | `/health`                         | 轻量健康摘要           |
 | GET    | `/system/info`                    | 获取系统信息           |
+| GET    | `/system/diagnostics`             | 获取运行时诊断摘要     |
 | GET    | `/system/parser-engines`          | 获取解析引擎列表       |
 | POST   | `/system/parser-engines/check`    | 检查解析引擎可用性     |
 | POST   | `/system/docreader/reconnect`     | 重连文档解析服务       |
 | GET    | `/system/storage-engine-status`   | 获取存储引擎状态       |
 | POST   | `/system/storage-engine-check`    | 检查存储引擎连通性     |
 | GET    | `/system/minio/buckets`           | 获取 MinIO 桶列表      |
+
+## GET `/health` - 轻量健康摘要
+
+**请求**:
+
+```curl
+curl --location 'http://localhost:8080/health'
+```
+
+**说明**:
+
+返回轻量级运行状态，适合 readiness / smoke check 场景。当前会包含：
+
+- 服务状态
+- 版本号
+- 数据库迁移版本与 dirty 状态
+- DocReader 是否已配置 / 连接
+- Stream manager 是否已配置
+- 当前 DB / retrieval driver
+
+## GET `/system/diagnostics` - 获取运行时诊断摘要
+
+**请求**:
+
+```curl
+curl --location 'http://localhost:8080/api/v1/system/diagnostics' \
+--header 'X-API-Key: sk-xxxxx' \
+--header 'Content-Type: application/json'
+```
+
+**说明**:
+
+返回更适合开发和排障的运行时配置快照，包含：
+
+- DB 驱动、地址、库名、迁移版本
+- Redis / stream manager 配置
+- DocReader 地址、传输方式、连接状态
+- Retrieval driver
+- Graph 能力是否启用
+- Object store 配置摘要
 
 ## GET `/system/info` - 获取系统信息
 
