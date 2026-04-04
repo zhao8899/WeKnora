@@ -572,15 +572,10 @@ import knowledgeIcon from '@/assets/img/zhishiku-thin.svg';
 import documentIcon from '@/assets/img/ziliao.svg';
 import fileAddIcon from '@/assets/img/file-add-green.svg';
 import webSearchGlobeGreenIcon from '@/assets/img/websearch-globe-green.svg';
-
-interface SessionData {
-  isAgentMode?: boolean;
-  agentEventStream?: any[];
-  knowledge_references?: any[];
-}
+import type { AgentStreamEvent, ChatSessionData } from '@/types/chatStream';
 
 const props = defineProps<{
-  session: SessionData;
+  session: ChatSessionData;
   userQuery?: string;
 }>();
 
@@ -588,7 +583,7 @@ const props = defineProps<{
 marked.use({});
 
 // Event stream
-const eventStream = computed(() => props.session?.agentEventStream || []);
+const eventStream = computed<AgentStreamEvent[]>(() => props.session?.agentEventStream || []);
 
 // Expanded events tracking (for tool calls and thinking events)
 const expandedEvents = ref<Set<string>>(new Set());
@@ -676,7 +671,7 @@ watch(eventStream, (stream) => {
 
   // Check for agent_complete event with authoritative duration from backend
   if (agentDurationMs.value === 0) {
-    const completeEvent = stream.find((e: any) => e.type === 'agent_complete' && e.total_duration_ms);
+    const completeEvent = stream.find((e) => e.type === 'agent_complete' && e.total_duration_ms);
     if (completeEvent) {
       agentDurationMs.value = completeEvent.total_duration_ms;
     }
@@ -684,7 +679,7 @@ watch(eventStream, (stream) => {
 
   if (hasAnswerStarted.value) return;
 
-  const hasAnswer = stream.some((e: any) => e.type === 'answer' && e.content);
+  const hasAnswer = stream.some((e) => e.type === 'answer' && e.content);
   if (hasAnswer) {
     hasAnswerStarted.value = true;
   }
@@ -700,15 +695,15 @@ const isConversationDone = computed(() => {
   }
   
   // Check for stop event (user cancelled)
-  const stopEvent = stream.find((e: any) => e.type === 'stop');
+  const stopEvent = stream.find((e) => e.type === 'stop');
   if (stopEvent) {
     console.log('[Collapse] Found stop event, conversation done');
     return true;
   }
   
   // Check for answer event with done=true
-  const answerEvents = stream.filter((e: any) => e.type === 'answer');
-  const doneAnswer = answerEvents.find((e: any) => e.done === true);
+  const answerEvents = stream.filter((e) => e.type === 'answer');
+  const doneAnswer = answerEvents.find((e) => e.done === true);
   
   console.log('[Collapse] Answer events:', answerEvents.length, 'Done answer:', !!doneAnswer);
   
@@ -727,8 +722,8 @@ const finalContent = computed(() => {
   }
 
   // Check if there's an answer event with content (normal path via final_answer tool)
-  const answerEvents = stream.filter((e: any) => e.type === 'answer');
-  const hasAnswerContent = answerEvents.some((e: any) => e.content && e.content.trim());
+  const answerEvents = stream.filter((e) => e.type === 'answer');
+  const hasAnswerContent = answerEvents.some((e) => e.content && e.content.trim());
 
   if (hasAnswerContent) {
     return { type: 'answer' };
@@ -736,10 +731,10 @@ const finalContent = computed(() => {
 
   // Fallback: if no answer content (legacy path or LLM didn't call final_answer),
   // use last thinking as final content
-  const thinkingEvents = stream.filter((e: any) => e.type === 'thinking' && e.content && e.content.trim());
+  const thinkingEvents = stream.filter((e) => e.type === 'thinking' && e.content && e.content.trim());
   if (thinkingEvents.length > 0) {
     const lastThinking = thinkingEvents[thinkingEvents.length - 1];
-    const doneAnswer = answerEvents.find((e: any) => e.done === true);
+    const doneAnswer = answerEvents.find((e) => e.done === true);
     return {
       type: 'thinking',
       event_id: lastThinking.event_id,
@@ -754,7 +749,7 @@ const finalContent = computed(() => {
 const intermediateStepsCount = computed(() => {
   if (!hasAnswerStarted.value && !isConversationDone.value) return 0;
   // Count only thinking and tool_call events (exclude plan_task_change, etc.)
-  return intermediateEvents.value.filter((e: any) => e.type === 'thinking' || e.type === 'tool_call').length;
+  return intermediateEvents.value.filter((e) => e.type === 'thinking' || e.type === 'tool_call').length;
 });
 
 const intermediateStepsSummary = computed(() => {
@@ -785,14 +780,14 @@ const shouldShowCollapsedSteps = computed(() => {
 });
 
 // Check if event is a "deep thinking" type (either streaming thinking or thinking tool call)
-const isThinkingLikeEvent = (event: any): boolean => {
+const isThinkingLikeEvent = (event: AgentStreamEvent): boolean => {
   if (event.type === 'thinking') return true;
   if (event.type === 'tool_call' && event.tool_name === 'thinking') return true;
   return false;
 };
 
 // Extract thinking content from an event
-const getThinkingContent = (event: any): string => {
+const getThinkingContent = (event: AgentStreamEvent): string => {
   if (event.type === 'thinking') return event.content || '';
   if (event.type === 'tool_call' && event.tool_name === 'thinking') {
     return event.tool_data?.thought || event.output || '';
@@ -801,7 +796,7 @@ const getThinkingContent = (event: any): string => {
 };
 
 // Get a short summary snippet from thinking content for display in the header
-const getThinkingSummary = (event: any): string => {
+const getThinkingSummary = (event: AgentStreamEvent): string => {
   const content = getThinkingContent(event);
   if (!content) return '';
   const cleaned = sanitizeForDisplay(content)
@@ -816,10 +811,10 @@ const getThinkingSummary = (event: any): string => {
 };
 
 // Helper: build the full result list with plan_task_change injections and thinking merging
-const buildFullEventList = (stream: any[]) => {
-  const validStream = stream.filter((e: any) => e && typeof e === 'object' && e.type);
+const buildFullEventList = (stream: AgentStreamEvent[]) => {
+  const validStream = stream.filter((e) => e && typeof e === 'object' && e.type);
   let lastTask: string | null = null;
-  const result: any[] = [];
+  const result: AgentStreamEvent[] = [];
 
   for (let i = 0; i < validStream.length; i++) {
     const event = validStream[i];
@@ -881,15 +876,15 @@ const buildFullEventList = (stream: any[]) => {
 };
 
 // Intermediate events (tree children: everything except answer)
-const intermediateEvents = computed(() => {
+const intermediateEvents = computed<AgentStreamEvent[]>(() => {
   const stream = eventStream.value;
   if (!stream || !Array.isArray(stream)) return [];
   const result = buildFullEventList(stream);
-  return result.filter((e: any) => e.type !== 'answer' && e.type !== 'agent_complete');
+  return result.filter((e) => e.type !== 'answer' && e.type !== 'agent_complete');
 });
 
 // Events to display (non-tree: before answer starts show all, after answer starts show only answer)
-const displayEvents = computed(() => {
+const displayEvents = computed<AgentStreamEvent[]>(() => {
   const stream = eventStream.value;
   if (!stream || !Array.isArray(stream)) {
     return [];
@@ -906,7 +901,7 @@ const displayEvents = computed(() => {
   // The intermediate steps are rendered inside the tree-children via intermediateEvents
 
   // When answer has started (streaming or done), show only answer events here
-  const answerEvents = result.filter((e: any) => e.type === 'answer');
+  const answerEvents = result.filter((e) => e.type === 'answer');
   if (answerEvents.length > 0) {
     return answerEvents;
   }
@@ -918,11 +913,11 @@ const displayEvents = computed(() => {
   }
 
   if (final.type === 'thinking') {
-    const thinkingFiltered = result.filter((e: any) =>
+    const thinkingFiltered = result.filter((e) =>
       e.type === 'thinking' && e.event_id === final.event_id
     );
     if (final.showAnswerToolbar) {
-      const answerDoneEvents = result.filter((e: any) => e.type === 'answer' && e.done === true);
+      const answerDoneEvents = result.filter((e) => e.type === 'answer' && e.done === true);
       return [...thinkingFiltered, ...answerDoneEvents];
     }
     return thinkingFiltered;
@@ -932,7 +927,7 @@ const displayEvents = computed(() => {
 });
 
 // Get unique key for event
-const getEventKey = (event: any, index: number): string => {
+const getEventKey = (event: AgentStreamEvent | null | undefined, index: number): string => {
   if (!event) return `event-${index}`;
   if (event.event_id) return `event-${event.event_id}`;
   if (event.tool_call_id) return `tool-${event.tool_call_id}`;
@@ -956,7 +951,7 @@ const toggleEvent = (eventId: string) => {
   }
 };
 
-const handleActionHeaderClick = (event: any) => {
+const handleActionHeaderClick = (event: AgentStreamEvent) => {
   if (hasResults(event) && event.tool_call_id) {
     toggleEvent(event.tool_call_id);
   }
@@ -967,7 +962,7 @@ const isEventExpanded = (eventId: string): boolean => {
 };
 
 // Check if search/grep tools have results
-const hasResults = (event: any): boolean => {
+const hasResults = (event: AgentStreamEvent): boolean => {
   if (!event || !event.tool_data) return true; // Default to true for other tools
   
   const toolName = event.tool_name;
