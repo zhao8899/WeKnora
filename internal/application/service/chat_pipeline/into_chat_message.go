@@ -175,6 +175,13 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 		userContent += "\n\n[用户上传图片内容]\n" + chatManage.ImageDescription
 	}
 
+	// CRAG-style verdict hint: nudge the model to hedge or fall back when the
+	// retrieval grader flagged the results as weak. Correct verdicts (the common
+	// case) get no hint to keep the prompt static and cache-friendly.
+	if hint := retrievalVerdictHint(chatManage.RetrievalVerdict); hint != "" {
+		userContent += "\n\n" + hint
+	}
+
 	// Set formatted content back to chat management
 	chatManage.UserContent = userContent
 	pipelineInfo(ctx, "IntoChatMessage", "output", map[string]interface{}{
@@ -223,6 +230,22 @@ func (p *PluginIntoChatMessage) persistRenderedContent(ctx context.Context, chat
 			})
 		}
 	}()
+}
+
+// retrievalVerdictHint returns a short instruction to append to the user
+// message based on the CRAG grader verdict. Returns "" for the correct verdict
+// (the common case) so the prompt stays static and prefix-caching stays hot.
+func retrievalVerdictHint(verdict string) string {
+	switch verdict {
+	case types.RetrievalVerdictIncorrect:
+		return "[Retrieval notice] The retrieved passages appear weakly related to the question. " +
+			"If they do not actually answer it, say so plainly and avoid fabricating details."
+	case types.RetrievalVerdictAmbiguous:
+		return "[Retrieval notice] The retrieved passages are only partially relevant. " +
+			"Ground every claim in the passages and explicitly flag any gaps instead of guessing."
+	default:
+		return ""
+	}
 }
 
 // buildDocumentHeader generates a document metadata section listing each unique

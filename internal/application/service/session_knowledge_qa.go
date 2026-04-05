@@ -844,6 +844,7 @@ func assembleKnowledgeQAPipeline(
 			AddIf(chatManage.RerankModelID != "", types.CHUNK_RERANK).
 			Add(types.CHUNK_MERGE).
 			Add(types.FILTER_TOP_K).
+			Add(types.RETRIEVAL_GRADER).
 			Add(types.INTO_CHAT_MESSAGE).
 			Add(types.CHAT_COMPLETION_STREAM).
 			Build()
@@ -856,6 +857,7 @@ func assembleKnowledgeQAPipeline(
 			AddIf(chatManage.WebSearchEnabled && chatManage.WebFetchEnabled, types.WEB_FETCH).
 			Add(types.CHUNK_MERGE).
 			Add(types.FILTER_TOP_K).
+			Add(types.RETRIEVAL_GRADER).
 			Add(types.DATA_ANALYSIS).
 			Add(types.INTO_CHAT_MESSAGE).
 			Add(types.CHAT_COMPLETION_STREAM).

@@ -173,6 +173,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewDataTableSummaryService, dig.Name("dataTableSummary")))
 	must(container.Provide(service.NewImageMultimodalService, dig.Name("imageMultimodal")))
 
+	must(container.Provide(service.NewGraphCommunityService))
 	must(container.Provide(service.NewMessageService))
 	must(container.Provide(service.NewMCPServiceService))
 	must(container.Provide(service.NewCustomAgentService))
@@ -228,6 +229,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(chatpipeline.NewPluginChatCompletion))
 	must(container.Invoke(chatpipeline.NewPluginChatCompletionStream))
 	must(container.Invoke(chatpipeline.NewPluginFilterTopK))
+	must(container.Invoke(chatpipeline.NewPluginRetrievalGrader))
 	must(container.Invoke(chatpipeline.NewPluginQueryUnderstand))
 	must(container.Invoke(chatpipeline.NewPluginLoadHistory))
 	must(container.Invoke(chatpipeline.NewPluginExtractEntity))

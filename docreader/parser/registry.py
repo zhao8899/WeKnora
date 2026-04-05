@@ -3,6 +3,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from docreader.parser.base_parser import BaseParser
 from docreader.parser.doc_parser import DocParser
+from docreader.parser.docling_parser import DoclingParser, docling_available
 from docreader.parser.docx2_parser import Docx2Parser
 from docreader.parser.excel_parser import ExcelParser
 from docreader.parser.image_parser import ImageParser
@@ -147,6 +148,29 @@ def _build_default_registry() -> ParserEngineRegistry:
             "csv": MarkitdownParser,
         },
         description="MarkItDown 解析引擎（微软 MarkItDown 库）",
+    )
+
+    # Docling — IBM's layout-aware document parser with optional VLM support.
+    # Heavy optional dependency; registered unconditionally but reports
+    # unavailability when the docling package is not installed.
+    _docling_types = {
+        "pdf": DoclingParser,
+        "docx": DoclingParser,
+        "pptx": DoclingParser,
+        "xlsx": DoclingParser,
+        "html": DoclingParser,
+        "htm": DoclingParser,
+        "png": DoclingParser,
+        "jpg": DoclingParser,
+        "jpeg": DoclingParser,
+        "tiff": DoclingParser,
+    }
+    reg.register(
+        "docling",
+        _docling_types,
+        description="Docling 解析引擎（IBM 布局感知 + 可选 VLM）",
+        check_available=docling_available,
+        unavailable_hint="docling 未安装，pip install docling",
     )
 
     # NOTE: Engine listing is managed by Go-side engine registry

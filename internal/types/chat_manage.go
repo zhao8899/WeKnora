@@ -101,6 +101,7 @@ type PipelineState struct {
 	ChatResponse         *ChatResponse     `json:"-"`
 	ImageDescription     string            `json:"-"`
 	SystemPromptOverride string            `json:"-"`
+	RetrievalVerdict     string            `json:"-"`
 }
 
 // PipelineContext holds runtime context for the current pipeline execution.
@@ -199,6 +200,7 @@ func (c *ChatManage) Clone() *ChatManage {
 			ImageDescription:     c.ImageDescription,
 			SystemPromptOverride: c.SystemPromptOverride,
 			RenderedContexts:     c.RenderedContexts,
+			RetrievalVerdict:     c.RetrievalVerdict,
 		},
 	}
 }
@@ -220,8 +222,16 @@ const (
 	CHAT_COMPLETION        EventType = "chat_completion"
 	CHAT_COMPLETION_STREAM EventType = "chat_completion_stream"
 	FILTER_TOP_K           EventType = "filter_top_k"
+	RETRIEVAL_GRADER       EventType = "retrieval_grader"
 	MEMORY_RETRIEVAL       EventType = "memory_retrieval"
 	MEMORY_STORAGE         EventType = "memory_storage"
+)
+
+// Retrieval verdicts produced by the CRAG-style retrieval grader.
+const (
+	RetrievalVerdictCorrect   = "correct"
+	RetrievalVerdictAmbiguous = "ambiguous"
+	RetrievalVerdictIncorrect = "incorrect"
 )
 
 // PipelineBuilder dynamically assembles a pipeline as an ordered list of EventTypes.

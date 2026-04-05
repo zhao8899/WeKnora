@@ -1483,6 +1483,10 @@ type ProcessChunksOptions struct {
 	// When set, the chunks passed to processChunks are child chunks, and each
 	// child's ParentIndex references an entry in this slice.
 	ParentChunks []types.ParsedParentChunk
+	// SourceMarkdown is the full document text used to derive a per-chunk
+	// heading breadcrumb for contextual retrieval. When empty, only the
+	// document title is prepended (legacy behavior).
+	SourceMarkdown string
 }
 
 // buildParentChildConfigs derives parent and child SplitterConfig from ChunkingConfig.
@@ -1739,15 +1743,28 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 
 	// Create index information — only for child/flat chunks, NOT parent chunks.
 	// Parent chunks are stored for context retrieval but do not need vector embeddings.
-	// Prepend the document title to improve semantic alignment between
-	// question-style queries and statement-style chunk content.
+	//
+	// Contextual Retrieval prefix: prepend both the document title and the
+	// hierarchical heading breadcrumb (e.g. "# Q3 Report > ## Financials")
+	// active at the chunk's byte offset. This disambiguates chunk content
+	// for the embedding model at zero extra LLM cost.
 	indexInfoList := make([]*types.IndexInfo, 0, len(textChunks))
 	titlePrefix := ""
 	if t := strings.TrimSpace(knowledge.Title); t != "" {
 		titlePrefix = t + "\n"
 	}
+	var headingIndex *chunker.HeadingIndex
+	if options.SourceMarkdown != "" {
+		headingIndex = chunker.NewHeadingIndex(options.SourceMarkdown)
+	}
 	for _, chunk := range textChunks {
-		indexContent := titlePrefix + chunk.Content
+		prefix := titlePrefix
+		if headingIndex != nil {
+			if breadcrumb := headingIndex.PathAt(chunk.StartAt); breadcrumb != "" {
+				prefix += breadcrumb + "\n"
+			}
+		}
+		indexContent := prefix + chunk.Content
 		indexInfoList = append(indexInfoList, &types.IndexInfo{
 			Content:         indexContent,
 			SourceID:        chunk.ID,
@@ -7097,6 +7114,7 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 		// through so processChunks will enqueue image:multimodal tasks (OCR + caption).
 		EnableMultimodel: kb.IsMultimodalEnabled() && len(resolvedImages) > 0,
 		StoredImages:     resolvedImages,
+		SourceMarkdown:   clean,
 	}
 	if kb.QuestionGenerationConfig != nil && kb.QuestionGenerationConfig.Enabled {
 		opts.EnableQuestionGeneration = true
@@ -7916,6 +7934,7 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		QuestionCount:            payload.QuestionCount,
 		EnableMultimodel:         payload.EnableMultimodel,
 		StoredImages:             storedImages,
+		SourceMarkdown:           convertResult.MarkdownContent,
 	}
 
 	if kb.ChunkingConfig.EnableParentChild {

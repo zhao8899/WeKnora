@@ -234,3 +234,277 @@ func listI2listS(list []any) []string {
 	}
 	return result
 }
+
+// ---------------------------------------------------------------------------
+// GraphRAG community detection
+// ---------------------------------------------------------------------------
+//
+// Community detection is a GraphRAG primitive: after an entity/relation graph
+// is extracted from a knowledge base, running Leiden (or Louvain) groups
+// densely-connected entities into communities that the system can then
+// summarise. Those summaries provide higher-level retrieval context than raw
+// chunk search — a query that names one entity can be answered with the
+// digest of its whole community.
+//
+// We rely on the Neo4j GDS library's ``gds.leiden.write`` when available. If
+// GDS is not installed (GDS is an optional plugin), we degrade gracefully:
+// detection becomes a no-op and the listing call returns an empty slice so
+// upstream callers can continue without community context.
+
+// gdsAvailable probes whether the Neo4j instance exposes the GDS library. We
+// cache nothing here — it is called at most once per detection request and
+// the procedure call is cheap.
+func (n *Neo4jRepository) gdsAvailable(ctx context.Context, tx neo4j.ManagedTransaction) bool {
+	res, err := tx.Run(ctx, "RETURN gds.version() AS version", nil)
+	if err != nil {
+		return false
+	}
+	ok := res.Next(ctx)
+	_, _ = res.Consume(ctx)
+	return ok
+}
+
+// DetectCommunities runs Leiden over the namespace's sub-graph and writes a
+// ``community`` int property onto each node. Returns the number of distinct
+// communities produced. When GDS is not installed the method is a best-effort
+// no-op and returns (0, nil).
+func (n *Neo4jRepository) DetectCommunities(
+	ctx context.Context, namespace types.NameSpace,
+) (int, error) {
+	if n.driver == nil {
+		logger.Warnf(ctx, "NOT SUPPORT RETRIEVE GRAPH")
+		return 0, nil
+	}
+	session := n.driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
+	defer session.Close(ctx)
+
+	count, err := session.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
+		if !n.gdsAvailable(ctx, tx) {
+			logger.Warnf(ctx, "neo4j GDS not installed — skipping community detection")
+			return 0, nil
+		}
+
+		labelExpr := n.Label(namespace)
+		// Project a named graph containing just this namespace's sub-graph.
+		// The projection is per-call and dropped below; keeping it scoped to
+		// kg=$knowledge_id prevents one tenant's detection bleeding into
+		// another's graph. We use gds.graph.project.cypher so the filter can
+		// be expressed without relying on dynamic label tokens.
+		graphName := "wk_comm_" + sanitiseGraphName(namespace.KnowledgeBase, namespace.Knowledge)
+
+		// Drop any stale projection from a prior failed run.
+		_, _ = tx.Run(ctx, "CALL gds.graph.drop($name, false) YIELD graphName RETURN graphName",
+			map[string]interface{}{"name": graphName})
+
+		nodeQuery := fmt.Sprintf(
+			"MATCH (n:%s {kg: $knowledge_id}) RETURN id(n) AS id", labelExpr,
+		)
+		relQuery := fmt.Sprintf(
+			"MATCH (n:%s {kg: $knowledge_id})-[r]-(m:%s {kg: $knowledge_id}) "+
+				"RETURN id(n) AS source, id(m) AS target", labelExpr, labelExpr,
+		)
+		projectParams := map[string]interface{}{
+			"name":       graphName,
+			"nodeQuery":  nodeQuery,
+			"relQuery":   relQuery,
+			"paramsJson": map[string]interface{}{"knowledge_id": namespace.Knowledge},
+		}
+		if _, err := tx.Run(ctx,
+			"CALL gds.graph.project.cypher($name, $nodeQuery, $relQuery, "+
+				"{parameters: $paramsJson}) YIELD graphName RETURN graphName",
+			projectParams,
+		); err != nil {
+			return 0, fmt.Errorf("gds project failed: %w", err)
+		}
+
+		// Leiden writes the ``community`` property on each projected node.
+		// We drain the result explicitly before running the cleanup drop —
+		// calling tx.Run with an unconsumed prior result is brittle across
+		// driver versions.
+		var communityCount int
+		writeRes, err := tx.Run(ctx,
+			"CALL gds.leiden.write($name, {writeProperty: 'community'}) "+
+				"YIELD communityCount RETURN communityCount",
+			map[string]interface{}{"name": graphName},
+		)
+		if err == nil {
+			if writeRes.Next(ctx) {
+				if v, ok := writeRes.Record().Get("communityCount"); ok {
+					if cc, ok := v.(int64); ok {
+						communityCount = int(cc)
+					}
+				}
+			}
+			_, _ = writeRes.Consume(ctx)
+		}
+		// Always drop the projection, even if leiden failed — stale graphs
+		// in the GDS catalog would break the next invocation.
+		_, _ = tx.Run(ctx,
+			"CALL gds.graph.drop($name, false) YIELD graphName RETURN graphName",
+			map[string]interface{}{"name": graphName},
+		)
+		if err != nil {
+			return 0, fmt.Errorf("gds leiden failed: %w", err)
+		}
+		return communityCount, nil
+	})
+	if err != nil {
+		logger.Errorf(ctx, "detect communities failed: %v", err)
+		return 0, err
+	}
+	return count.(int), nil
+}
+
+// ListCommunityMembers groups the namespace's nodes by the ``community``
+// property. Groups with no community (detection not run, or GDS absent) are
+// skipped. The returned slice is sorted by descending group size.
+func (n *Neo4jRepository) ListCommunityMembers(
+	ctx context.Context, namespace types.NameSpace,
+) ([]*types.CommunityGroup, error) {
+	if n.driver == nil {
+		logger.Warnf(ctx, "NOT SUPPORT RETRIEVE GRAPH")
+		return nil, nil
+	}
+	session := n.driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
+	defer session.Close(ctx)
+
+	result, err := session.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
+		labelExpr := n.Label(namespace)
+		nodeQuery := `
+			MATCH (n:` + labelExpr + ` {kg: $knowledge_id})
+			WHERE n.community IS NOT NULL
+			RETURN n.community AS community, n.name AS name,
+				coalesce(n.chunks, []) AS chunks,
+				coalesce(n.attributes, []) AS attributes
+		`
+		nodeRes, err := tx.Run(ctx, nodeQuery,
+			map[string]interface{}{"knowledge_id": namespace.Knowledge})
+		if err != nil {
+			return nil, fmt.Errorf("list community nodes: %w", err)
+		}
+
+		groups := make(map[int64]*types.CommunityGroup)
+		nameToCommunity := make(map[string]int64)
+		for nodeRes.Next(ctx) {
+			rec := nodeRes.Record()
+			commRaw, _ := rec.Get("community")
+			comm, ok := commRaw.(int64)
+			if !ok {
+				continue
+			}
+			name, _ := rec.Get("name")
+			chunksRaw, _ := rec.Get("chunks")
+			attrsRaw, _ := rec.Get("attributes")
+			g := groups[comm]
+			if g == nil {
+				g = &types.CommunityGroup{ID: comm}
+				groups[comm] = g
+			}
+			nameStr, _ := name.(string)
+			g.Nodes = append(g.Nodes, &types.GraphNode{
+				Name:       nameStr,
+				Chunks:     listI2listS(anyToSlice(chunksRaw)),
+				Attributes: listI2listS(anyToSlice(attrsRaw)),
+			})
+			g.Size++
+			nameToCommunity[nameStr] = comm
+		}
+
+		// Pull intra-community relations so the summariser has edge context.
+		relQuery := `
+			MATCH (n:` + labelExpr + ` {kg: $knowledge_id})-[r]->(m:` + labelExpr + ` {kg: $knowledge_id})
+			WHERE n.community IS NOT NULL AND n.community = m.community
+			RETURN n.name AS source, m.name AS target, type(r) AS type, n.community AS community
+		`
+		relRes, err := tx.Run(ctx, relQuery,
+			map[string]interface{}{"knowledge_id": namespace.Knowledge})
+		if err != nil {
+			return nil, fmt.Errorf("list community relations: %w", err)
+		}
+		for relRes.Next(ctx) {
+			rec := relRes.Record()
+			commRaw, _ := rec.Get("community")
+			comm, ok := commRaw.(int64)
+			if !ok {
+				continue
+			}
+			g := groups[comm]
+			if g == nil {
+				continue
+			}
+			src, _ := rec.Get("source")
+			dst, _ := rec.Get("target")
+			typ, _ := rec.Get("type")
+			srcStr, _ := src.(string)
+			dstStr, _ := dst.(string)
+			typStr, _ := typ.(string)
+			g.Relation = append(g.Relation, &types.GraphRelation{
+				Node1: srcStr,
+				Node2: dstStr,
+				Type:  typStr,
+			})
+		}
+
+		out := make([]*types.CommunityGroup, 0, len(groups))
+		for _, g := range groups {
+			out = append(out, g)
+		}
+		sortCommunityGroups(out)
+		return out, nil
+	})
+	if err != nil {
+		logger.Errorf(ctx, "list community members failed: %v", err)
+		return nil, err
+	}
+	return result.([]*types.CommunityGroup), nil
+}
+
+// sanitiseGraphName builds a GDS-safe projection name from the namespace.
+// GDS graph names are used as Cypher identifiers in some contexts, so we
+// restrict them to [A-Za-z0-9_].
+func sanitiseGraphName(parts ...string) string {
+	var b strings.Builder
+	for i, p := range parts {
+		if i > 0 {
+			b.WriteByte('_')
+		}
+		for _, r := range p {
+			switch {
+			case r >= '0' && r <= '9', r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':
+				b.WriteRune(r)
+			default:
+				b.WriteByte('_')
+			}
+		}
+	}
+	s := b.String()
+	if s == "" {
+		return "anon"
+	}
+	return s
+}
+
+// anyToSlice coerces Neo4j-returned list values to []any. Some driver
+// versions return typed slices; this smooths over the difference.
+func anyToSlice(v any) []any {
+	if v == nil {
+		return nil
+	}
+	if s, ok := v.([]any); ok {
+		return s
+	}
+	return nil
+}
+
+// sortCommunityGroups sorts groups by descending Size so callers that
+// summarise "top-N communities" don't need to re-sort.
+func sortCommunityGroups(groups []*types.CommunityGroup) {
+	// simple insertion sort — N is small (communities per KB)
+	for i := 1; i < len(groups); i++ {
+		j := i
+		for j > 0 && groups[j-1].Size < groups[j].Size {
+			groups[j-1], groups[j] = groups[j], groups[j-1]
+			j--
+		}
+	}
+}

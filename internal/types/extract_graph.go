@@ -214,6 +214,21 @@ type GraphData struct {
 	Relation []*GraphRelation `json:"relation,omitempty"`
 }
 
+// CommunityGroup represents a single community discovered by a graph
+// clustering algorithm (e.g. Leiden). It carries the raw member entities and
+// the relations that connect them, which is the input a GraphRAG community
+// summariser consumes to produce a natural-language digest of the cluster.
+//
+// ID is the raw community identifier reported by the algorithm; it is only
+// stable within a single detection run. Size is duplicated out of Nodes for
+// convenience so callers can sort/threshold without walking the slice.
+type CommunityGroup struct {
+	ID       int64            `json:"id"`
+	Size     int              `json:"size"`
+	Nodes    []*GraphNode     `json:"nodes,omitempty"`
+	Relation []*GraphRelation `json:"relation,omitempty"`
+}
+
 // NameSpace represents the name space of the knowledge base and knowledge
 type NameSpace struct {
 	KnowledgeBase string `json:"knowledge_base"`

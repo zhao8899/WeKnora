@@ -227,6 +227,19 @@ qa-mode-smoke:
 	fi
 	BASE_URL="$(or $(BASE_URL),http://127.0.0.1:18080/api/v1)" API_KEY="$(API_KEY)" KB_ID="$(KB_ID)" ./scripts/qa_mode_smoke.sh
 
+# Lightweight RAGAS-style metrics run (context_precision / answer_coverage / refs)
+rag-metrics:
+	@if [ -z "$(API_KEY)" ] || [ -z "$(KB_ID)" ]; then \
+		echo "Usage: make rag-metrics API_KEY=sk-... KB_ID=<knowledge-base-id> [BASE_URL=http://127.0.0.1:18080/api/v1] [FIXTURE=scripts/fixtures/rag_smoke.json] [REPORT=rag_metrics_report.json]"; \
+		exit 1; \
+	fi
+	python3 scripts/rag_metrics.py \
+		--base-url "$(or $(BASE_URL),http://127.0.0.1:18080/api/v1)" \
+		--api-key "$(API_KEY)" \
+		--kb-id "$(KB_ID)" \
+		--fixture "$(or $(FIXTURE),scripts/fixtures/rag_smoke.json)" \
+		$(if $(REPORT),--report "$(REPORT)")
+
 # Build for production
 # google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn for qdrant milvus proto conflict
 build-prod:

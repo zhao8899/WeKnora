@@ -36,3 +36,10 @@ dependencies = [
     "trafilatura>=2.0.0",
     "urllib3>=2.5.0",
 ]
+
+[project.optional-dependencies]
+# Docling engine is a large optional dependency (PyTorch + transformer models).
+# Install with: pip install -e ".[docling]"
+docling = [
+    "docling>=2.0.0",
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "query": "什么是 WeKnora？",
+    "expected_keywords": ["WeKnora", "知识"],
+    "mode": "rag_fast",
+    "min_refs": 1,
+    "min_context_precision": 0.5,
+    "min_answer_coverage": 0.5
+  },
+  {
+    "query": "How does the RAG pipeline work?",
+    "expected_keywords": ["retrieval", "rerank"],
+    "mode": "rag_deep",
+    "min_refs": 1,
+    "min_context_precision": 0.5
+  }
+]

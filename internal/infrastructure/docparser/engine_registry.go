@@ -29,6 +29,7 @@ func init() {
 	RegisterEngine(&simpleEngine{})
 	RegisterEngine(&mineruEngine{})
 	RegisterEngine(&mineruCloudEngine{})
+	RegisterEngine(&doclingEngine{})
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +113,34 @@ func (e *mineruCloudEngine) CheckAvailable(_ bool, overrides map[string]string) 
 }
 
 // ---------------------------------------------------------------------------
+// docling — DocReader-backed, layout-aware parser with optional VLM.
+// ---------------------------------------------------------------------------
+//
+// Docling runs inside the docreader service and is only usable when that
+// service is reachable. Actual availability (whether the docling Python
+// package is installed in the docreader image) is authoritative on the
+// remote side; the ListEngines RPC overlay in ListAllEngines will replace
+// this stub's values with the real availability reported by docreader.
+
+type doclingEngine struct{}
+
+func (e *doclingEngine) Name() string { return "docling" }
+func (e *doclingEngine) Description() string {
+	return "Docling layout-aware parser (with optional VLM)"
+}
+func (e *doclingEngine) FileTypes(_ bool) []string {
+	return []string{"pdf", "docx", "pptx", "xlsx", "html", "htm", "png", "jpg", "jpeg", "tiff"}
+}
+func (e *doclingEngine) CheckAvailable(docreaderConnected bool, _ map[string]string) (bool, string) {
+	if !docreaderConnected {
+		return false, "DocReader service not connected"
+	}
+	// The remote docreader reports the authoritative package-install status
+	// via ListEngines; ListAllEngines will override this when present.
+	return true, ""
+}
+
+// ---------------------------------------------------------------------------
 // ListAllEngines — merge local + remote
 // ---------------------------------------------------------------------------
 
@@ -141,16 +170,26 @@ func ListAllEngines(docreaderConnected bool, overrides map[string]string, remote
 		fileTypes := e.FileTypes(docreaderConnected)
 		description := e.Description()
 
-		if re, ok := remoteMap[name]; ok {
-			if len(re.FileTypes) > 0 {
-				fileTypes = re.FileTypes
+		remoteOverride, hasRemote := remoteMap[name]
+		if hasRemote {
+			if len(remoteOverride.FileTypes) > 0 {
+				fileTypes = remoteOverride.FileTypes
 			}
-			if re.Description != "" {
-				description = re.Description
+			if remoteOverride.Description != "" {
+				description = remoteOverride.Description
 			}
 		}
 
 		available, reason := e.CheckAvailable(docreaderConnected, overrides)
+		// When the engine runs inside docreader and the remote reports it
+		// as unavailable (e.g. optional package missing), trust the remote
+		// over the local stub. This lets engines like "docling" surface an
+		// accurate install-status message even though Go can't inspect the
+		// Python import state directly.
+		if hasRemote && available && !remoteOverride.Available {
+			available = false
+			reason = remoteOverride.UnavailableReason
+		}
 		result = append(result, types.ParserEngineInfo{
 			Name:              name,
 			Description:       description,
