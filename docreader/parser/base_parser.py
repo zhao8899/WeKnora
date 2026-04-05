@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 import os
+import re
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -8,6 +9,9 @@ from docreader.models.document import Document
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# Matches the first ATX heading (# Title) in markdown content.
+_RE_FIRST_HEADING = re.compile(r"^\s*#{1,3}\s+(.+)", re.MULTILINE)
 
 
 class BaseParser(ABC):
@@ -58,4 +62,12 @@ class BaseParser(ABC):
             len(document.content),
             self.file_name,
         )
+        # Auto-extract title from the first markdown heading if not already set.
+        if "title" not in document.metadata and document.content:
+            m = _RE_FIRST_HEADING.search(document.content)
+            if m:
+                title = m.group(1).strip()
+                if title:
+                    document.metadata["title"] = title
+                    logger.info("Auto-extracted title from heading: %s", title)
         return document

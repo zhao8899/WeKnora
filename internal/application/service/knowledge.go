@@ -7798,6 +7798,23 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		if convertResult == nil {
 			return nil
 		}
+		// Update knowledge title from extracted document title if the current
+		// title is just the file name (default set during upload).
+		if extractedTitle := convertResult.Metadata["title"]; extractedTitle != "" {
+			baseName := knowledge.FileName
+			if idx := strings.LastIndex(baseName, "."); idx > 0 {
+				baseName = baseName[:idx]
+			}
+			if knowledge.Title == "" || knowledge.Title == knowledge.FileName || knowledge.Title == baseName {
+				knowledge.Title = extractedTitle
+				knowledge.UpdatedAt = time.Now()
+				if err := s.repo.UpdateKnowledge(ctx, knowledge); err != nil {
+					logger.Warnf(ctx, "Failed to update knowledge title from document: %v", err)
+				} else {
+					logger.Infof(ctx, "Updated knowledge title to extracted document title: %s", extractedTitle)
+				}
+			}
+		}
 	}
 
 	// Step 1.5: ASR transcription for audio files
