@@ -57,7 +57,7 @@ func (p *PluginSearch) runQueryExpansion(ctx context.Context, chatManage *types.
 					VectorThreshold:       chatManage.VectorThreshold,
 					KeywordThreshold:      expKwTh,
 					MatchCount:            expTopK,
-					DisableVectorMatch:    false,
+					DisableVectorMatch:    true,  // Expansion targets keyword recall; vector search already ran on the original query
 					DisableKeywordsMatch:  false,
 					SkipContextEnrichment: true, // Pipeline handles context assembly in merge stage
 				}
@@ -192,11 +192,16 @@ func extractKeywords(text string) []string {
 	return keywords
 }
 
+// reQuotedPhrase matches content within various quotation marks (Chinese and Western).
+var reQuotedPhrase = regexp.MustCompile(`["'"'「」『』]([^"'"'「」『』]+)["'"'「」『』]`)
+
+// reSplitDelimiters splits text by common Chinese/Western punctuation and whitespace.
+var reSplitDelimiters = regexp.MustCompile(`[,，;；、。！？!?\s]+`)
+
 func extractPhrases(text string) []string {
 	// Extract quoted content
 	var phrases []string
-	re := regexp.MustCompile(`["'"'「」『』]([^"'"'「」『』]+)["'"'「」『』]`)
-	matches := re.FindAllStringSubmatch(text, -1)
+	matches := reQuotedPhrase.FindAllStringSubmatch(text, -1)
 	for _, m := range matches {
 		if len(m) > 1 && len(m[1]) > 2 {
 			phrases = append(phrases, m[1])
@@ -206,9 +211,7 @@ func extractPhrases(text string) []string {
 }
 
 func splitByDelimiters(text string) []string {
-	// Split by common delimiters
-	re := regexp.MustCompile(`[,，;；、。！？!?\s]+`)
-	parts := re.Split(text, -1)
+	parts := reSplitDelimiters.Split(text, -1)
 	var result []string
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
