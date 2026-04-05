@@ -65,11 +65,15 @@ type QueueMetrics struct {
 }
 
 // qaQueue is a bounded, per-user-limited request queue with a fixed worker pool.
+// Internally uses a fixed-capacity ring buffer to avoid O(n) slice copies on dequeue.
 type qaQueue struct {
-	mu         sync.Mutex
-	cond       *sync.Cond
-	queue      []*qaRequest
-	maxSize    int
+	mu      sync.Mutex
+	cond    *sync.Cond
+	buf     []*qaRequest // fixed-capacity ring buffer
+	head    int          // index of the next element to dequeue
+	tail    int          // index of the next free slot
+	count   int          // number of elements currently in the buffer
+	maxSize int
 	maxPerUser int
 	workers    int
 	perUser    map[string]int // userKey → queued count
@@ -100,7 +104,7 @@ type qaQueue struct {
 // redisClient may be nil for single-instance mode.
 func newQAQueue(workers, maxSize, maxPerUser, globalMaxWorkers int, handler func(req *qaRequest), redisClient *redis.Client) *qaQueue {
 	q := &qaQueue{
-		queue:            make([]*qaRequest, 0, maxSize),
+		buf:              make([]*qaRequest, maxSize),
 		maxSize:          maxSize,
 		maxPerUser:       maxPerUser,
 		workers:          workers,
@@ -148,10 +152,10 @@ func (q *qaQueue) Enqueue(req *qaRequest) (position int, err error) {
 		return 0, fmt.Errorf("queue is closed")
 	}
 
-	if len(q.queue) >= q.maxSize {
+	if q.count >= q.maxSize {
 		q.redisDecrUser(context.Background(), req.userKey)
 		q.totalRejected.Add(1)
-		return 0, fmt.Errorf("queue full (%d/%d)", len(q.queue), q.maxSize)
+		return 0, fmt.Errorf("queue full (%d/%d)", q.count, q.maxSize)
 	}
 
 	// Local per-user check: only useful when Redis is nil (single-instance mode).
@@ -163,12 +167,14 @@ func (q *qaQueue) Enqueue(req *qaRequest) (position int, err error) {
 	}
 
 	req.enqueuedAt = time.Now()
-	q.queue = append(q.queue, req)
+	q.buf[q.tail] = req
+	q.tail = (q.tail + 1) % q.maxSize
+	q.count++
 	if q.redis == nil {
 		q.perUser[req.userKey]++
 	}
 	q.totalEnqueued.Add(1)
-	pos := len(q.queue) - 1
+	pos := q.count - 1
 
 	q.cond.Signal()
 	return pos, nil
@@ -180,10 +186,25 @@ func (q *qaQueue) Remove(userKey string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	for i, req := range q.queue {
-		if req.userKey == userKey {
+	// Scan the ring buffer for the matching request and compact.
+	for i := 0; i < q.count; i++ {
+		idx := (q.head + i) % q.maxSize
+		req := q.buf[idx]
+		if req != nil && req.userKey == userKey {
 			req.cancel()
-			q.queue = append(q.queue[:i], q.queue[i+1:]...)
+			// Shift subsequent elements forward to fill the gap.
+			for j := i; j < q.count-1; j++ {
+				src := (q.head + j + 1) % q.maxSize
+				dst := (q.head + j) % q.maxSize
+				q.buf[dst] = q.buf[src]
+			}
+			// Clear the last occupied slot.
+			last := (q.head + q.count - 1) % q.maxSize
+			q.buf[last] = nil
+			q.count--
+			// Adjust tail to match.
+			q.tail = (q.head + q.count) % q.maxSize
+
 			if q.redis == nil {
 				q.perUser[userKey]--
 				if q.perUser[userKey] <= 0 {
@@ -200,7 +221,7 @@ func (q *qaQueue) Remove(userKey string) bool {
 // Metrics returns a snapshot of the queue's observable state.
 func (q *qaQueue) Metrics() QueueMetrics {
 	q.mu.Lock()
-	depth := len(q.queue)
+	depth := q.count
 	q.mu.Unlock()
 
 	return QueueMetrics{
@@ -266,16 +287,18 @@ func (q *qaQueue) dequeue() *qaRequest {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	for len(q.queue) == 0 && !q.closed {
+	for q.count == 0 && !q.closed {
 		q.cond.Wait()
 	}
 
-	if q.closed && len(q.queue) == 0 {
+	if q.closed && q.count == 0 {
 		return nil
 	}
 
-	req := q.queue[0]
-	q.queue = q.queue[1:]
+	req := q.buf[q.head]
+	q.buf[q.head] = nil // allow GC of the request
+	q.head = (q.head + 1) % q.maxSize
+	q.count--
 	if q.redis == nil {
 		q.perUser[req.userKey]--
 		if q.perUser[req.userKey] <= 0 {
