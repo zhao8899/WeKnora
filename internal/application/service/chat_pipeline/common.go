@@ -60,11 +60,25 @@ func prepareChatModel(ctx context.Context, modelService interfaces.ModelService,
 // prepareMessagesWithHistory prepare complete messages including history.
 // When SystemPromptOverride is set (e.g. by intent-specific prompt logic),
 // it takes precedence over the default SummaryConfig.Prompt.
+//
+// Prompt caching optimization: if the system prompt template does NOT embed
+// the {{contexts}} placeholder, retrieved contexts are placed in a separate
+// user message. This keeps the system prompt static across queries, enabling
+// OpenAI/DeepSeek/Anthropic automatic prefix caching (saves 50-80% tokens).
+// Templates that still use {{contexts}} retain legacy behavior for compatibility.
 func prepareMessagesWithHistory(chatManage *types.ChatManage) []chat.Message {
 	base := chatManage.SummaryConfig.Prompt
 	if chatManage.SystemPromptOverride != "" {
 		base = chatManage.SystemPromptOverride
 	}
+
+	// Detect whether templates inline contexts. When neither the system prompt
+	// nor the context template inlines contexts, we emit retrieved contexts as
+	// a dedicated user turn BEFORE history so the system prompt stays static
+	// and prefix caching works.
+	systemInlinesContexts := strings.Contains(base, "{{contexts}}")
+	contextTplInlinesContexts := strings.Contains(chatManage.SummaryConfig.ContextTemplate, "{{contexts}}")
+
 	systemPrompt := types.RenderPromptPlaceholders(base, types.PlaceholderValues{
 		"query":    chatManage.Query,
 		"language": chatManage.Language,
@@ -73,6 +87,23 @@ func prepareMessagesWithHistory(chatManage *types.ChatManage) []chat.Message {
 
 	chatMessages := []chat.Message{
 		{Role: "system", Content: systemPrompt},
+	}
+
+	// Emit contexts as a dedicated user message only when NEITHER template
+	// already carried them. This prevents double injection while keeping the
+	// system prompt cacheable.
+	if !systemInlinesContexts && !contextTplInlinesContexts &&
+		strings.TrimSpace(chatManage.RenderedContexts) != "" {
+		chatMessages = append(chatMessages,
+			chat.Message{
+				Role:    "user",
+				Content: "The following is retrieved information that may or may not be relevant:\n\n" + chatManage.RenderedContexts,
+			},
+			chat.Message{
+				Role:    "assistant",
+				Content: "Understood. I will answer strictly based on the retrieved information above.",
+			},
+		)
 	}
 
 	// Add conversation history (already limited by maxRounds in load_history/rewrite plugins)
