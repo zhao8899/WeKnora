@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/common"
@@ -47,18 +48,28 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 		{Role: "user", Content: query},
 	}
 
-	// Add all tool call results as context
+	// Add all tool call results as a single clearly-labelled context block.
+	// Using separate user messages per tool result can mislead the LLM into
+	// treating tool output as user utterances; a single block with explicit
+	// markers avoids this.
 	toolResultCount := 0
+	var contextParts []string
 	for stepIdx, step := range state.RoundSteps {
 		for toolIdx, toolCall := range step.ToolCalls {
+			if toolCall.Result == nil || toolCall.Result.Output == "" {
+				continue
+			}
 			toolResultCount++
-			messages = append(messages, chat.Message{
-				Role:    "user",
-				Content: fmt.Sprintf("Tool %s returned: %s", toolCall.Name, toolCall.Result.Output),
-			})
+			contextParts = append(contextParts, fmt.Sprintf("[Tool: %s]\n%s", toolCall.Name, toolCall.Result.Output))
 			logger.Debugf(ctx, "[Agent][FinalAnswer] Added tool result [Step-%d][Tool-%d]: %s (output: %d chars)",
 				stepIdx+1, toolIdx+1, toolCall.Name, len(toolCall.Result.Output))
 		}
+	}
+	if len(contextParts) > 0 {
+		messages = append(messages, chat.Message{
+			Role:    "user",
+			Content: "The following are results from tool calls (not user input):\n\n" + strings.Join(contextParts, "\n\n---\n\n"),
+		})
 	}
 
 	logger.Debugf(ctx, "[Agent][FinalAnswer] Built context: %d messages, %d tool results",

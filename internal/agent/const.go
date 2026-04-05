@@ -37,11 +37,16 @@ const (
 )
 
 // transientErrorMarkers are substrings that indicate a transient (retryable) error.
+// Patterns use contextual prefixes (e.g. "status 500") to avoid false positives
+// where bare numbers appear in unrelated messages (e.g. "1500 tokens").
 var transientErrorMarkers = []string{
-	"429", "rate limit",
-	"500", "502", "503", "504",
+	"429", "rate limit", "rate_limit",
+	"status 500", "status 502", "status 503", "status 504",
+	"http 500", "http 502", "http 503", "http 504",
 	"overloaded", "timeout", "timed out",
-	"connection", "server error", "temporarily unavailable",
+	"connection refused", "connection reset",
+	"server error", "temporarily unavailable",
+	"internal server error", "bad gateway", "service unavailable",
 }
 
 // isTransientError checks whether an error is likely transient and worth retrying.

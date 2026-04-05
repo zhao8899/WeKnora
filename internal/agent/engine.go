@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	agentmemory "github.com/Tencent/WeKnora/internal/agent/memory"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	agenttoken "github.com/Tencent/WeKnora/internal/agent/token"
@@ -402,30 +404,42 @@ const toolImageAnalysisPrompt = "Describe the content of this image in detail. "
 	"If it contains charts or diagrams, describe the data and structure."
 
 // describeImages generates text descriptions for tool result images using the
-// configured imageDescriber (VLM). Each image is decoded from a data URI and
-// analyzed independently. Failures are logged and skipped gracefully.
+// configured imageDescriber (VLM). Images are analyzed concurrently via errgroup
+// and results are collected in the original order. Individual failures are logged
+// and skipped without cancelling sibling analyses.
 // This follows the same pattern as Handler.analyzeImageAttachments().
 func (e *AgentEngine) describeImages(ctx context.Context, imageDataURIs []string) []string {
-	if e.imageDescriber == nil {
+	if e.imageDescriber == nil || len(imageDataURIs) == 0 {
 		return nil
 	}
-	var descriptions []string
+
+	ordered := make([]string, len(imageDataURIs))
+	g, gCtx := errgroup.WithContext(ctx)
 	for i, dataURI := range imageDataURIs {
-		if ctx.Err() != nil {
-			logger.Warnf(ctx, "[Agent] Context cancelled, skipping remaining %d tool result images", len(imageDataURIs)-i)
-			break
+		i, dataURI := i, dataURI
+		g.Go(func() error {
+			imgBytes, err := decodeDataURIBytes(dataURI)
+			if err != nil {
+				logger.Warnf(gCtx, "[Agent] Failed to decode tool result image %d: %v", i, err)
+				return nil // skip, don't cancel siblings
+			}
+			desc, err := e.imageDescriber(gCtx, imgBytes, toolImageAnalysisPrompt)
+			if err != nil {
+				logger.Warnf(gCtx, "[Agent] VLM analysis failed for tool result image %d: %v", i, err)
+				return nil
+			}
+			ordered[i] = strings.TrimSpace(desc)
+			return nil
+		})
+	}
+	_ = g.Wait()
+
+	// Collect non-empty descriptions preserving order
+	var descriptions []string
+	for _, d := range ordered {
+		if d != "" {
+			descriptions = append(descriptions, d)
 		}
-		imgBytes, err := decodeDataURIBytes(dataURI)
-		if err != nil {
-			logger.Warnf(ctx, "[Agent] Failed to decode tool result image %d: %v", i, err)
-			continue
-		}
-		desc, err := e.imageDescriber(ctx, imgBytes, toolImageAnalysisPrompt)
-		if err != nil {
-			logger.Warnf(ctx, "[Agent] VLM analysis failed for tool result image %d: %v", i, err)
-			continue
-		}
-		descriptions = append(descriptions, strings.TrimSpace(desc))
 	}
 	return descriptions
 }

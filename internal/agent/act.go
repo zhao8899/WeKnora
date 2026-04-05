@@ -118,53 +118,13 @@ func (e *AgentEngine) executeToolCallsParallel(
 	// Append results and emit events in original order
 	for _, toolCall := range results {
 		step.ToolCalls = append(step.ToolCalls, toolCall)
-
-		result := toolCall.Result
-		if result == nil {
-			result = &types.ToolResult{Success: false, Error: "no result"}
-		}
-
-		e.eventBus.Emit(ctx, event.Event{
-			ID:        toolCall.ID + "-tool-result",
-			Type:      event.EventAgentToolResult,
-			SessionID: sessionID,
-			Data: event.AgentToolResultData{
-				ToolCallID: toolCall.ID,
-				ToolName:   toolCall.Name,
-				Output:     result.Output,
-				Error:      result.Error,
-				Success:    result.Success,
-				Duration:   toolCall.Duration,
-				Iteration:  iteration,
-				Data:       result.Data,
-			},
-		})
-
-		e.eventBus.Emit(ctx, event.Event{
-			ID:        toolCall.ID + "-tool-exec",
-			Type:      event.EventAgentTool,
-			SessionID: sessionID,
-			Data: event.AgentActionData{
-				Iteration:  iteration,
-				ToolName:   toolCall.Name,
-				ToolInput:  toolCall.Args,
-				ToolOutput: result.Output,
-				Success:    result.Success,
-				Error:      result.Error,
-				Duration:   toolCall.Duration,
-			},
-		})
+		e.emitToolCallEvents(ctx, toolCall, iteration, sessionID)
 	}
 }
 
-// executeSingleToolCall runs one tool call sequentially (original behavior).
-func (e *AgentEngine) executeSingleToolCall(
-	ctx context.Context, tc types.LLMToolCall, i int,
-	step *types.AgentStep, iteration, round int, sessionID string,
-) {
-	toolCall := e.runToolCall(ctx, tc, i, iteration, round, sessionID)
-	step.ToolCalls = append(step.ToolCalls, toolCall)
-
+// emitToolCallEvents emits the standard pair of events (tool-result + tool-exec)
+// after a tool call completes. Shared by both sequential and parallel execution paths.
+func (e *AgentEngine) emitToolCallEvents(ctx context.Context, toolCall types.ToolCall, iteration int, sessionID string) {
 	result := toolCall.Result
 	if result == nil {
 		result = &types.ToolResult{Success: false, Error: "no result"}
@@ -200,6 +160,16 @@ func (e *AgentEngine) executeSingleToolCall(
 			Duration:   toolCall.Duration,
 		},
 	})
+}
+
+// executeSingleToolCall runs one tool call sequentially (original behavior).
+func (e *AgentEngine) executeSingleToolCall(
+	ctx context.Context, tc types.LLMToolCall, i int,
+	step *types.AgentStep, iteration, round int, sessionID string,
+) {
+	toolCall := e.runToolCall(ctx, tc, i, iteration, round, sessionID)
+	step.ToolCalls = append(step.ToolCalls, toolCall)
+	e.emitToolCallEvents(ctx, toolCall, iteration, sessionID)
 }
 
 // runToolCall handles argument parsing, execution, logging, and pipeline events for a single tool call.
