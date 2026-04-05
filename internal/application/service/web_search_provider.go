@@ -76,7 +76,9 @@ func isValidProviderType(provider types.WebSearchProviderType) bool {
 	case types.WebSearchProviderTypeBing,
 		types.WebSearchProviderTypeGoogle,
 		types.WebSearchProviderTypeDuckDuckGo,
-		types.WebSearchProviderTypeTavily:
+		types.WebSearchProviderTypeTavily,
+		types.WebSearchProviderTypeSerpAPI,
+		types.WebSearchProviderTypeBrave:
 		return true
 	default:
 		return false
@@ -100,6 +102,14 @@ func validateProviderParameters(provider types.WebSearchProviderType, params typ
 	case types.WebSearchProviderTypeTavily:
 		if params.APIKey == "" {
 			return fmt.Errorf("API key is required for Tavily provider")
+		}
+	case types.WebSearchProviderTypeSerpAPI:
+		if params.APIKey == "" {
+			return fmt.Errorf("API key is required for SerpAPI provider")
+		}
+	case types.WebSearchProviderTypeBrave:
+		if params.APIKey == "" {
+			return fmt.Errorf("API key is required for Brave Search provider")
 		}
 	case types.WebSearchProviderTypeDuckDuckGo:
 		// No API key required
