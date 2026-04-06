@@ -19,10 +19,7 @@ ALTER TABLE data_sources ALTER COLUMN tenant_id TYPE BIGINT;
 ALTER TABLE web_search_providers ALTER COLUMN tenant_id TYPE BIGINT;
 ALTER TABLE im_channels ALTER COLUMN tenant_id TYPE BIGINT;
 ALTER TABLE im_channel_sessions ALTER COLUMN tenant_id TYPE BIGINT;
-ALTER TABLE agent_shares ALTER COLUMN tenant_id TYPE BIGINT;
-ALTER TABLE kb_shares ALTER COLUMN tenant_id TYPE BIGINT;
 ALTER TABLE organization_members ALTER COLUMN tenant_id TYPE BIGINT;
-ALTER TABLE embeddings ALTER COLUMN tenant_id TYPE BIGINT;
 
 -- Add GIN indexes on JSONB columns for faster containment queries
 CREATE INDEX IF NOT EXISTS idx_models_parameters_gin ON models USING GIN (parameters);
