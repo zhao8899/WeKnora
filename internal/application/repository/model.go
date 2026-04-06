@@ -81,7 +81,7 @@ func (r *modelRepository) Delete(ctx context.Context, tenantID uint64, id string
 // This is a batch operation that updates all matching records in one query
 func (r *modelRepository) ClearDefaultByType(
 	ctx context.Context,
-	tenantID uint,
+	tenantID uint64,
 	modelType types.ModelType,
 	excludeID string,
 ) error {
