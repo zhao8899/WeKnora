@@ -23,6 +23,8 @@ const (
 	EmbedQueryContextKey ContextKey = "EmbedQuery"
 	// LanguageContextKey is the context key for user language preference (e.g. "zh-CN", "en-US")
 	LanguageContextKey ContextKey = "Language"
+	// OrgRoleContextKey is the context key for the user's organization role (OrgMemberRole)
+	OrgRoleContextKey ContextKey = "OrgRole"
 )
 
 // String returns the string representation of the context key

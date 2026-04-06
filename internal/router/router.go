@@ -16,6 +16,9 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/dig"
 
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
+
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/handler/session"
@@ -62,6 +65,8 @@ type RouterParams struct {
 	OrganizationHandler      *handler.OrganizationHandler
 	IMHandler                *handler.IMHandler
 	DataSourceHandler        *handler.DataSourceHandler
+	DB                       *gorm.DB
+	RedisClient              *redis.Client `optional:"true"`
 }
 
 // NewRouter 创建新的路由
@@ -110,6 +115,14 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
+
+	// API 全局限流中间件（滑动窗口，默认 100req/60s per tenant）
+	r.Use(middleware.APIRateLimit(params.RedisClient))
+
+	// 审计日志中间件（记录认证后的写操作）
+	if params.DB != nil {
+		r.Use(middleware.Audit(params.DB))
+	}
 
 	// 文件服务：统一代理本地/MinIO/COS/TOS存储后端（需要认证）
 	serveFiles(r)
@@ -343,43 +356,47 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 
 // RegisterTenantRoutes 注册租户相关的路由
 func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
+	requireAdmin := middleware.RequireRole(types.OrgRoleAdmin)
+
 	// 添加获取所有租户的路由（需要跨租户权限）
-	r.GET("/tenants/all", handler.ListAllTenants)
+	r.GET("/tenants/all", requireAdmin, handler.ListAllTenants)
 	// 添加搜索租户的路由（需要跨租户权限，支持分页和搜索）
-	r.GET("/tenants/search", handler.SearchTenants)
+	r.GET("/tenants/search", requireAdmin, handler.SearchTenants)
 	// 租户路由组
 	tenantRoutes := r.Group("/tenants")
 	{
-		tenantRoutes.POST("", handler.CreateTenant)
+		tenantRoutes.POST("", requireAdmin, handler.CreateTenant)
 		tenantRoutes.GET("/:id", handler.GetTenant)
-		tenantRoutes.PUT("/:id", handler.UpdateTenant)
-		tenantRoutes.DELETE("/:id", handler.DeleteTenant)
+		tenantRoutes.PUT("/:id", requireAdmin, handler.UpdateTenant)
+		tenantRoutes.DELETE("/:id", requireAdmin, handler.DeleteTenant)
 		tenantRoutes.GET("", handler.ListTenants)
 
 		// Generic KV configuration management (tenant-level)
 		// Tenant ID is obtained from authentication context
 		tenantRoutes.GET("/kv/:key", handler.GetTenantKV)
-		tenantRoutes.PUT("/kv/:key", handler.UpdateTenantKV)
+		tenantRoutes.PUT("/kv/:key", requireAdmin, handler.UpdateTenantKV)
 	}
 }
 
 // RegisterModelRoutes 注册模型相关的路由
 func RegisterModelRoutes(r *gin.RouterGroup, handler *handler.ModelHandler) {
+	requireAdmin := middleware.RequireRole(types.OrgRoleAdmin)
+
 	// 模型路由组
 	models := r.Group("/models")
 	{
 		// 获取模型厂商列表
 		models.GET("/providers", handler.ListModelProviders)
-		// 创建模型
-		models.POST("", handler.CreateModel)
+		// 创建模型（仅管理员）
+		models.POST("", requireAdmin, handler.CreateModel)
 		// 获取模型列表
 		models.GET("", handler.ListModels)
 		// 获取单个模型
 		models.GET("/:id", handler.GetModel)
-		// 更新模型
-		models.PUT("/:id", handler.UpdateModel)
-		// 删除模型
-		models.DELETE("/:id", handler.DeleteModel)
+		// 更新模型（仅管理员）
+		models.PUT("/:id", requireAdmin, handler.UpdateModel)
+		// 删除模型（仅管理员）
+		models.DELETE("/:id", requireAdmin, handler.DeleteModel)
 	}
 }
 
