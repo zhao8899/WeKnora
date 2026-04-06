@@ -9,11 +9,19 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
+// CommunityContextProvider produces a formatted community summary block for
+// a knowledge-base namespace. Satisfied by service.GraphCommunityService
+// without importing the service package (avoids import cycle).
+type CommunityContextProvider interface {
+	FormatCommunityContext(ctx context.Context, namespace types.NameSpace) string
+}
+
 // PluginSearch implements search functionality for chat pipeline
 type PluginSearchEntity struct {
-	graphRepo     interfaces.RetrieveGraphRepository
-	chunkRepo     interfaces.ChunkRepository
-	knowledgeRepo interfaces.KnowledgeRepository
+	graphRepo        interfaces.RetrieveGraphRepository
+	chunkRepo        interfaces.ChunkRepository
+	knowledgeRepo    interfaces.KnowledgeRepository
+	communityCtx     CommunityContextProvider
 }
 
 // NewPluginSearchEntity creates a new plugin search entity
@@ -22,11 +30,13 @@ func NewPluginSearchEntity(
 	graphRepository interfaces.RetrieveGraphRepository,
 	chunkRepository interfaces.ChunkRepository,
 	knowledgeRepository interfaces.KnowledgeRepository,
+	communityCtx CommunityContextProvider,
 ) *PluginSearchEntity {
 	res := &PluginSearchEntity{
 		graphRepo:     graphRepository,
 		chunkRepo:     chunkRepository,
 		knowledgeRepo: knowledgeRepository,
+		communityCtx:  communityCtx,
 	}
 	eventManager.Register(res)
 	return res
@@ -177,6 +187,17 @@ func (p *PluginSearchEntity) OnEvent(ctx context.Context,
 		len(chatManage.SearchResult),
 		chatManage.SessionID,
 	)
+
+	// Attempt community summary generation for the first searched namespace.
+	// Errors are logged and swallowed — community context is advisory.
+	if p.communityCtx != nil && len(knowledgeBaseIDs) > 0 {
+		ns := types.NameSpace{KnowledgeBase: knowledgeBaseIDs[0]}
+		if text := p.communityCtx.FormatCommunityContext(ctx, ns); text != "" {
+			chatManage.CommunityContext = text
+			logger.Infof(ctx, "community context generated: %d chars for kb=%s", len(text), knowledgeBaseIDs[0])
+		}
+	}
+
 	return next()
 }
 

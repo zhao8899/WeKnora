@@ -38,14 +38,23 @@ func InitTracer() (*Tracer, error) {
 	res := resource.NewWithAttributes(semconv.SchemaURL, labels...)
 	var err error
 
-	// First try to create OTLP exporter (can connect to Jaeger, Zipkin, etc.)
+	// First try to create OTLP exporter (can connect to Jaeger, Zipkin, Langfuse, etc.)
 	var traceExporter sdktrace.SpanExporter
 	if endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"); endpoint != "" {
-		// Use gRPC exporter
-		client := otlptracegrpc.NewClient(
+		// Build gRPC client options
+		opts := []otlptracegrpc.Option{
 			otlptracegrpc.WithEndpoint(endpoint),
 			otlptracegrpc.WithInsecure(),
-		)
+		}
+		// Support auth headers for services like Langfuse.
+		// Format: "key1=val1,key2=val2" (standard OTEL_EXPORTER_OTLP_HEADERS)
+		if headers := os.Getenv("OTEL_EXPORTER_OTLP_HEADERS"); headers != "" {
+			headerMap := parseOTLPHeaders(headers)
+			if len(headerMap) > 0 {
+				opts = append(opts, otlptracegrpc.WithHeaders(headerMap))
+			}
+		}
+		client := otlptracegrpc.NewClient(opts...)
 		traceExporter, err = otlptrace.New(context.Background(), client)
 		if err != nil {
 			return nil, err
@@ -99,7 +108,51 @@ func GetTracer() trace.Tracer {
 	return tracer
 }
 
-// Create context with span
+// noopTracer is used when the global tracer has not been initialised.
+var noopTracer = trace.NewNoopTracerProvider().Tracer("")
+
+// Create context with span. Returns a no-op span when the tracer has not been
+// initialised (e.g. in unit tests).
 func ContextWithSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return GetTracer().Start(ctx, name, opts...)
+	t := GetTracer()
+	if t == nil {
+		t = noopTracer
+	}
+	return t.Start(ctx, name, opts...)
+}
+
+// parseOTLPHeaders parses the OTEL_EXPORTER_OTLP_HEADERS format "k1=v1,k2=v2".
+func parseOTLPHeaders(raw string) map[string]string {
+	m := make(map[string]string)
+	for _, pair := range splitUnescaped(raw, ',') {
+		k, v, ok := cutString(pair, "=")
+		if ok && k != "" {
+			m[k] = v
+		}
+	}
+	return m
+}
+
+func splitUnescaped(s string, sep byte) []string {
+	var parts []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == sep {
+			parts = append(parts, s[start:i])
+			start = i + 1
+		}
+	}
+	parts = append(parts, s[start:])
+	return parts
+}
+
+func cutString(s, sep string) (string, string, bool) {
+	i := 0
+	for i < len(s) {
+		if i+len(sep) <= len(s) && s[i:i+len(sep)] == sep {
+			return s[:i], s[i+len(sep):], true
+		}
+		i++
+	}
+	return s, "", false
 }

@@ -9,7 +9,10 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	agentmemory "github.com/Tencent/WeKnora/internal/agent/memory"
+	"github.com/Tencent/WeKnora/internal/agent/memory/longterm"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	agenttoken "github.com/Tencent/WeKnora/internal/agent/token"
 	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
@@ -18,6 +21,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
+	"github.com/Tencent/WeKnora/internal/tracing"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -38,6 +42,10 @@ type AgentEngine struct {
 	imageDescriber       ImageDescriberFunc        // VLM function for describing images in tool results (optional)
 	tokenEstimator       *agenttoken.Estimator     // Token estimator for context window management
 	memoryConsolidator   *agentmemory.Consolidator // Memory consolidator for LLM-powered summarization (optional)
+	longtermStore        longterm.Store            // Longterm cross-session memory store (optional)
+	longtermTenantID     string                    // Tenant scope for longterm memory lookup
+	longtermUserID       string                    // User scope for longterm memory lookup
+	longtermTopK         int                       // Max entries surfaced from longterm memory (default 5)
 	lastUsage            types.TokenUsage          // Token usage from the most recent LLM call
 	lastSentMsgCount     int                       // Number of messages sent in the most recent LLM call
 }
@@ -135,9 +143,56 @@ func (e *AgentEngine) SetSkillsManager(manager *skills.Manager) {
 	e.skillsManager = manager
 }
 
+// SetLongtermMemory configures the cross-session memory store and its access
+// scope. When set, the engine surfaces the top-K relevant entries as a
+// "User Context" block in the system prompt on every Execute. A missing
+// tenantID or userID disables lookup (the store rejects unscoped queries).
+// topK <= 0 is replaced with the default of 5.
+func (e *AgentEngine) SetLongtermMemory(store longterm.Store, tenantID, userID string, topK int) {
+	e.longtermStore = store
+	e.longtermTenantID = tenantID
+	e.longtermUserID = userID
+	if topK <= 0 {
+		topK = 5
+	}
+	e.longtermTopK = topK
+}
+
 // GetSkillsManager returns the skills manager
 func (e *AgentEngine) GetSkillsManager() *skills.Manager {
 	return e.skillsManager
+}
+
+// loadLongtermHints returns rendered "User Context" lines for the top-K entries
+// in the longterm store that match the current query. Returns nil when the
+// store is not configured or scope is missing. Errors are logged and swallowed
+// — memory is advisory, not a hard dependency of the agent loop.
+func (e *AgentEngine) loadLongtermHints(ctx context.Context, query string) []string {
+	if e.longtermStore == nil || e.longtermTenantID == "" || e.longtermUserID == "" {
+		return nil
+	}
+	entries, err := e.longtermStore.Search(ctx, longterm.SearchQuery{
+		TenantID: e.longtermTenantID,
+		UserID:   e.longtermUserID,
+		Query:    query,
+		TopK:     e.longtermTopK,
+	})
+	if err != nil {
+		logger.Warnf(ctx, "[Agent] longterm memory lookup failed: %v", err)
+		return nil
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	hints := make([]string, 0, len(entries))
+	for _, ent := range entries {
+		if ent == nil || ent.Content == "" {
+			continue
+		}
+		hints = append(hints, fmt.Sprintf("[%s] %s", ent.Kind, ent.Content))
+	}
+	logger.Debugf(ctx, "[Agent] longterm memory surfaced %d hints", len(hints))
+	return hints
 }
 
 // estimateCurrentTokens returns the best estimate of the current context token count.
@@ -184,32 +239,23 @@ func (e *AgentEngine) Execute(
 	// If skills are enabled, include skills metadata (Level 1 - Progressive Disclosure)
 	// Extract user language from context for prompt placeholder
 	language := types.LanguageNameFromContext(ctx)
-	var systemPrompt string
+	memoryHints := e.loadLongtermHints(ctx, query)
+	var skillsMeta []*skills.SkillMetadata
 	if e.skillsManager != nil && e.skillsManager.IsEnabled() {
-		skillsMetadata := e.skillsManager.GetAllMetadata()
-		systemPrompt = BuildSystemPromptWithOptions(
-			e.knowledgeBasesInfo,
-			e.config.WebSearchEnabled,
-			e.selectedDocs,
-			&BuildSystemPromptOptions{
-				SkillsMetadata: skillsMetadata,
-				Language:       language,
-				Config:         e.appConfig,
-			},
-			e.systemPromptTemplate,
-		)
-	} else {
-		systemPrompt = BuildSystemPromptWithOptions(
-			e.knowledgeBasesInfo,
-			e.config.WebSearchEnabled,
-			e.selectedDocs,
-			&BuildSystemPromptOptions{
-				Language: language,
-				Config:   e.appConfig,
-			},
-			e.systemPromptTemplate,
-		)
+		skillsMeta = e.skillsManager.GetAllMetadata()
 	}
+	systemPrompt := BuildSystemPromptWithOptions(
+		e.knowledgeBasesInfo,
+		e.config.WebSearchEnabled,
+		e.selectedDocs,
+		&BuildSystemPromptOptions{
+			SkillsMetadata: skillsMeta,
+			Language:       language,
+			Config:         e.appConfig,
+			MemoryHints:    memoryHints,
+		},
+		e.systemPromptTemplate,
+	)
 	logger.Debugf(ctx, "[Agent] SystemPrompt: %d chars", len(systemPrompt))
 
 	// Initialize messages with history
@@ -292,6 +338,14 @@ func (e *AgentEngine) executeLoop(
 
 		roundStart := time.Now()
 
+		// Wrap each round in a tracing span for OTLP/Langfuse visibility
+		roundCtx, roundSpan := tracing.ContextWithSpan(ctx, fmt.Sprintf("agent.round.%d", state.CurrentRound+1))
+		roundSpan.SetAttributes(
+			attribute.Int("agent.round", state.CurrentRound+1),
+			attribute.String("agent.session_id", sessionID),
+		)
+		ctx = roundCtx
+
 		// Context window management: estimate current token count using
 		// the API-reported usage from the previous round plus a BPE delta
 		// for newly appended messages (assistant reply + tool results).
@@ -319,6 +373,7 @@ func (e *AgentEngine) executeLoop(
 			return state, err
 		}
 		if response == nil {
+			roundSpan.End()
 			break
 		}
 		if response.Usage.TotalTokens > 0 {
@@ -351,6 +406,7 @@ func (e *AgentEngine) executeLoop(
 						Role:    "user",
 						Content: "Please provide your answer by calling the final_answer tool.",
 					})
+					roundSpan.End()
 					continue
 				}
 				// Retries exhausted — use fallback message rather than empty answer
@@ -359,11 +415,13 @@ func (e *AgentEngine) executeLoop(
 				state.FinalAnswer = "I'm sorry, I was unable to generate a response. Please try again."
 				state.IsComplete = true
 				state.RoundSteps = append(state.RoundSteps, verdict.step)
+				roundSpan.End()
 				break
 			}
 			state.FinalAnswer = verdict.finalAnswer
 			state.IsComplete = true
 			state.RoundSteps = append(state.RoundSteps, verdict.step)
+			roundSpan.End()
 			break
 		}
 
@@ -381,6 +439,8 @@ func (e *AgentEngine) executeLoop(
 		})
 
 		// 5. Advance to next round
+		roundSpan.SetAttributes(attribute.Int("agent.tool_calls", len(step.ToolCalls)))
+		roundSpan.End()
 		state.CurrentRound++
 	}
 

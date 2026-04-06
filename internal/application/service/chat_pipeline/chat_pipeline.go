@@ -2,7 +2,12 @@ package chatpipeline
 
 import (
 	"context"
+	"fmt"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+
+	"github.com/Tencent/WeKnora/internal/tracing"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -67,14 +72,28 @@ func (e *EventManager) buildHandler(plugins []Plugin) func(
 	return next
 }
 
-// Trigger invokes the handler for the specified event type
+// Trigger invokes the handler for the specified event type.
+// Each plugin stage is wrapped in a tracing span so the full pipeline is
+// visible in Jaeger / Langfuse / any OTLP-compatible backend.
 func (e *EventManager) Trigger(ctx context.Context,
 	eventType types.EventType, chatManage *types.ChatManage,
 ) *PluginError {
-	if handler, ok := e.handlers[eventType]; ok {
-		return handler(ctx, eventType, chatManage)
+	handler, ok := e.handlers[eventType]
+	if !ok {
+		return nil
 	}
-	return nil
+	spanName := fmt.Sprintf("rag.pipeline.%s", eventType)
+	ctx, span := tracing.ContextWithSpan(ctx, spanName)
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("rag.stage", string(eventType)),
+		attribute.String("rag.session_id", chatManage.SessionID),
+	)
+	pErr := handler(ctx, eventType, chatManage)
+	if pErr != nil {
+		span.SetStatus(codes.Error, pErr.Description)
+	}
+	return pErr
 }
 
 // PluginError represents an error in plugin execution

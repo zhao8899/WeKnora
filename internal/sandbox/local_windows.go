@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build windows
 
 package sandbox
 
@@ -9,60 +9,46 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 )
 
-// LocalSandbox implements the Sandbox interface using local process isolation
-// This is a fallback option when Docker is not available
-// It provides basic isolation through:
-// - Command whitelist validation
-// - Working directory restriction
-// - Timeout enforcement
-// - Environment variable filtering
+// LocalSandbox implements the Sandbox interface using local process isolation.
+// The Windows build uses the same whitelist + timeout guardrails as the Unix
+// implementation but skips the process-group setup (Setpgid/Kill(-pid)) which
+// has no Windows analogue. Callers that need OS-level sandboxing on Windows
+// should prefer the Docker sandbox.
 type LocalSandbox struct {
 	config *Config
 }
 
-// NewLocalSandbox creates a new local process-based sandbox
+// NewLocalSandbox creates a new local process-based sandbox.
 func NewLocalSandbox(config *Config) *LocalSandbox {
 	if config == nil {
 		config = DefaultConfig()
 	}
-	return &LocalSandbox{
-		config: config,
-	}
+	return &LocalSandbox{config: config}
 }
 
-// Type returns the sandbox type
-func (s *LocalSandbox) Type() SandboxType {
-	return SandboxTypeLocal
-}
+// Type returns the sandbox type.
+func (s *LocalSandbox) Type() SandboxType { return SandboxTypeLocal }
 
-// IsAvailable checks if local sandbox is available
-func (s *LocalSandbox) IsAvailable(ctx context.Context) bool {
-	// Local sandbox is always available
-	return true
-}
+// IsAvailable reports whether the local sandbox can be used.
+func (s *LocalSandbox) IsAvailable(ctx context.Context) bool { return true }
 
-// Execute runs a script locally with basic isolation
+// Execute runs a script locally with basic isolation.
 func (s *LocalSandbox) Execute(ctx context.Context, config *ExecuteConfig) (*ExecuteResult, error) {
 	if config == nil {
 		return nil, ErrInvalidScript
 	}
-
-	// Validate the script path
 	if err := s.validateScript(config.Script); err != nil {
 		return nil, err
 	}
 
-	// Determine interpreter
 	interpreter := s.getInterpreter(config.Script)
 	if !s.isAllowedCommand(interpreter) {
 		return nil, fmt.Errorf("interpreter not allowed: %s", interpreter)
 	}
 
-	// Set default timeout
 	timeout := config.Timeout
 	if timeout == 0 {
 		timeout = s.config.DefaultTimeout
@@ -70,34 +56,21 @@ func (s *LocalSandbox) Execute(ctx context.Context, config *ExecuteConfig) (*Exe
 	if timeout == 0 {
 		timeout = DefaultTimeout
 	}
-
-	// Create context with timeout
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Build command
 	args := append([]string{config.Script}, config.Args...)
 	cmd := exec.CommandContext(execCtx, interpreter, args...)
-
-	// Set working directory
 	if config.WorkDir != "" {
 		cmd.Dir = config.WorkDir
 	} else {
 		cmd.Dir = filepath.Dir(config.Script)
 	}
-
-	// Setup minimal environment
 	cmd.Env = s.buildEnvironment(config.Env)
-
-	// Setup process group for cleanup
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-
 	if config.Stdin != "" {
 		cmd.Stdin = strings.NewReader(config.Stdin)
 	}
@@ -111,13 +84,11 @@ func (s *LocalSandbox) Execute(ctx context.Context, config *ExecuteConfig) (*Exe
 		Stderr:   stderr.String(),
 		Duration: duration,
 	}
-
 	if err != nil {
 		if execCtx.Err() == context.DeadlineExceeded {
-			// Kill the process group
-			if cmd.Process != nil {
-				syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			}
+			// CommandContext already sent os.Kill to the process — there's
+			// no process-group kill on Windows, so child grandchildren may
+			// linger. Docker sandbox is the right answer for production.
 			result.Killed = true
 			result.Error = ErrTimeout.Error()
 			result.ExitCode = -1
@@ -128,32 +99,26 @@ func (s *LocalSandbox) Execute(ctx context.Context, config *ExecuteConfig) (*Exe
 			result.ExitCode = -1
 		}
 	}
-
 	return result, nil
 }
 
-// validateScript checks if the script path is valid and safe
+// validateScript checks that the script path is absolute, exists, is a file,
+// and falls inside the configured allow-list.
 func (s *LocalSandbox) validateScript(scriptPath string) error {
 	return validateScriptCommon(s.config, scriptPath)
 }
 
-// getInterpreter returns the appropriate interpreter for a script
 func (s *LocalSandbox) getInterpreter(scriptPath string) string {
 	return getInterpreterCommon(scriptPath)
 }
 
-// isAllowedCommand checks if a command is in the allowed list
 func (s *LocalSandbox) isAllowedCommand(cmd string) bool {
 	return isAllowedCommandCommon(s.config, cmd)
 }
 
-// buildEnvironment creates a safe environment for script execution
 func (s *LocalSandbox) buildEnvironment(extra map[string]string) []string {
 	return buildEnvironmentCommon(extra)
 }
 
-// Cleanup releases any resources
-func (s *LocalSandbox) Cleanup(ctx context.Context) error {
-	// Local sandbox doesn't need cleanup
-	return nil
-}
+// Cleanup releases any resources held by the sandbox.
+func (s *LocalSandbox) Cleanup(ctx context.Context) error { return nil }

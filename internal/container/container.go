@@ -31,6 +31,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/Tencent/WeKnora/internal/agent/memory/longterm"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	memoryRepo "github.com/Tencent/WeKnora/internal/application/repository/memory/neo4j"
 	elasticsearchRepoV7 "github.com/Tencent/WeKnora/internal/application/repository/retriever/elasticsearch/v7"
@@ -174,6 +175,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewImageMultimodalService, dig.Name("imageMultimodal")))
 
 	must(container.Provide(service.NewGraphCommunityService))
+	// Also register as the pipeline's CommunityContextProvider interface
+	must(container.Provide(
+		func(s *service.GraphCommunityService) chatpipeline.CommunityContextProvider { return s },
+	))
 	must(container.Provide(service.NewMessageService))
 	must(container.Provide(service.NewMCPServiceService))
 	must(container.Provide(service.NewCustomAgentService))
@@ -191,6 +196,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// SessionService is passed as parameter to CreateAgentEngine method when creating AgentService
 	logger.Debugf(ctx, "[Container] Registering event bus and agent service...")
 	must(container.Provide(event.NewEventBus))
+	// Longterm cross-session memory store (in-memory reference impl;
+	// production deployments can override with a Redis/Postgres-backed Store).
+	must(container.Provide(func() longterm.Store { return longterm.NewMemoryStore(nil) }))
 	must(container.Provide(service.NewAgentService))
 
 	// Session service (depends on agent service)

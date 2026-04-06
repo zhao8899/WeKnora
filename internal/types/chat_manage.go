@@ -102,6 +102,10 @@ type PipelineState struct {
 	ImageDescription     string            `json:"-"`
 	SystemPromptOverride string            `json:"-"`
 	RetrievalVerdict     string            `json:"-"`
+	// CommunityContext is rendered GraphRAG community summaries text
+	// produced by GraphCommunityService.FormatForPrompt. Empty when GDS
+	// is unavailable or no communities exist for the queried namespace.
+	CommunityContext     string            `json:"-"`
 }
 
 // PipelineContext holds runtime context for the current pipeline execution.

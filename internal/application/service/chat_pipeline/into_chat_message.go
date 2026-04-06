@@ -160,6 +160,12 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 		}
 	}
 
+	// Append GraphRAG community summaries when available.
+	if chatManage.CommunityContext != "" {
+		contextsBuilder.WriteString("\n\n")
+		contextsBuilder.WriteString(chatManage.CommunityContext)
+	}
+
 	chatManage.RenderedContexts = contextsBuilder.String()
 
 	// Replace placeholders in context template

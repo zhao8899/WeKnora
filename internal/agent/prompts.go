@@ -298,6 +298,9 @@ type BuildSystemPromptOptions struct {
 	SkillsMetadata []*skills.SkillMetadata
 	Language       string         // User language name for {{language}} placeholder (e.g. "Chinese (Simplified)")
 	Config         *config.Config // Config for reading prompt templates; nil falls back to hardcoded defaults
+	// MemoryHints are rendered "User Context" lines surfaced from longterm
+	// memory (facts/preferences/summaries). Empty slice is skipped.
+	MemoryHints []string
 }
 
 // BuildSystemPrompt builds the progressive RAG system prompt
@@ -356,7 +359,30 @@ func BuildSystemPromptWithOptions(
 		basePrompt += formatSkillsMetadata(options.SkillsMetadata)
 	}
 
+	// Append longterm memory hints if available
+	if options != nil && len(options.MemoryHints) > 0 {
+		basePrompt += formatMemoryHints(options.MemoryHints)
+	}
+
 	return basePrompt
+}
+
+// formatMemoryHints renders longterm memory entries as a "User Context" block.
+// Kept as a bullet list so the LLM treats each entry as a standalone fact
+// rather than prose to paraphrase.
+func formatMemoryHints(hints []string) string {
+	var b strings.Builder
+	b.WriteString("\n\n### User Context (from prior sessions)\n")
+	for _, h := range hints {
+		h = strings.TrimSpace(h)
+		if h == "" {
+			continue
+		}
+		b.WriteString("- ")
+		b.WriteString(h)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // GetPureAgentSystemPrompt returns the Pure Agent system prompt from config templates.

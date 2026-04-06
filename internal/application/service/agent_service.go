@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/Tencent/WeKnora/internal/agent"
+	"github.com/Tencent/WeKnora/internal/agent/memory/longterm"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -40,6 +41,7 @@ type agentService struct {
 	chunkService          interfaces.ChunkService
 	duckdb                *sql.DB
 	webSearchStateService interfaces.WebSearchStateService
+	longtermMemory        longterm.Store
 }
 
 // NewAgentService creates a new agent service
@@ -57,6 +59,7 @@ func NewAgentService(
 	webSearchService interfaces.WebSearchService,
 	duckdb *sql.DB,
 	webSearchStateService interfaces.WebSearchStateService,
+	longtermMemory longterm.Store,
 ) interfaces.AgentService {
 	return &agentService{
 		cfg:                   cfg,
@@ -72,6 +75,7 @@ func NewAgentService(
 		webSearchService:      webSearchService,
 		duckdb:                duckdb,
 		webSearchStateService: webSearchStateService,
+		longtermMemory:        longtermMemory,
 	}
 }
 
@@ -121,6 +125,19 @@ func (s *agentService) CreateAgentEngine(
 		systemPromptTemplate,
 	)
 	engine.SetAppConfig(s.cfg)
+
+	// Configure longterm memory scope from request context so the engine can
+	// surface prior-session user facts on every Execute.
+	if s.longtermMemory != nil {
+		tenantID := ""
+		if tid, ok := types.TenantIDFromContext(ctx); ok && tid != 0 {
+			tenantID = strconv.FormatUint(tid, 10)
+		}
+		userID, _ := types.UserIDFromContext(ctx)
+		if tenantID != "" && userID != "" {
+			engine.SetLongtermMemory(s.longtermMemory, tenantID, userID, 5)
+		}
+	}
 
 	// Set VLM image describer for MCP tool result image analysis.
 	// When an MCP tool returns images, the engine uses VLM to generate text descriptions

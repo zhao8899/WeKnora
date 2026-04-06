@@ -166,6 +166,19 @@ func renderCommunitySummary(g *types.CommunityGroup) *CommunitySummary {
 	}
 }
 
+// FormatCommunityContext satisfies chatpipeline.CommunityContextProvider.
+// It runs community detection + summary for the given namespace and returns
+// the rendered text block suitable for appending to a prompt. Returns "" on
+// any error or when no communities exist. Errors are logged internally.
+func (s *GraphCommunityService) FormatCommunityContext(ctx context.Context, namespace types.NameSpace) string {
+	summaries, err := s.BuildSummaries(ctx, namespace, DefaultBuildSummariesOptions())
+	if err != nil {
+		logger.Warnf(ctx, "community summary generation failed: %v", err)
+		return ""
+	}
+	return FormatForPrompt(summaries)
+}
+
 // FormatForPrompt concatenates summaries into a single labelled block that
 // can be appended to a user prompt. Returns an empty string when summaries
 // is empty so callers can unconditionally append the result.
