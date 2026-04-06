@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -41,12 +42,13 @@ import (
 // repository or a backend that does not support community detection — in
 // both cases BuildSummaries returns (nil, nil) and logs a warning.
 type GraphCommunityService struct {
-	graphRepo interfaces.RetrieveGraphRepository
+	graphRepo    interfaces.RetrieveGraphRepository
+	modelService interfaces.ModelService
 }
 
 // NewGraphCommunityService wires the service. Registered in the DI container.
-func NewGraphCommunityService(graphRepo interfaces.RetrieveGraphRepository) *GraphCommunityService {
-	return &GraphCommunityService{graphRepo: graphRepo}
+func NewGraphCommunityService(graphRepo interfaces.RetrieveGraphRepository, modelService interfaces.ModelService) *GraphCommunityService {
+	return &GraphCommunityService{graphRepo: graphRepo, modelService: modelService}
 }
 
 // CommunitySummary is a single community's rendered digest. Size is copied
@@ -71,6 +73,9 @@ type CommunitySummary struct {
 type BuildSummariesOptions struct {
 	TopN    int
 	MinSize int
+	// SummaryModelID enables LLM-generated natural-language summaries for
+	// each community. When empty, the deterministic rendering is used (default).
+	SummaryModelID string
 }
 
 // DefaultBuildSummariesOptions returns production-sane defaults.
@@ -125,6 +130,12 @@ func (s *GraphCommunityService) BuildSummaries(
 			break
 		}
 	}
+
+	// Optional LLM enhancement: replace deterministic text with natural-language summaries.
+	if opts.SummaryModelID != "" && s.modelService != nil {
+		s.enhanceSummariesWithLLM(ctx, out, opts.SummaryModelID)
+	}
+
 	return out, nil
 }
 
@@ -177,6 +188,38 @@ func (s *GraphCommunityService) FormatCommunityContext(ctx context.Context, name
 		return ""
 	}
 	return FormatForPrompt(summaries)
+}
+
+// enhanceSummariesWithLLM replaces the deterministic Text field with an
+// LLM-generated natural-language summary. The deterministic rendering is kept
+// as fallback context in the prompt. Errors are logged but non-fatal — the
+// deterministic text remains intact if the LLM call fails.
+func (s *GraphCommunityService) enhanceSummariesWithLLM(ctx context.Context, summaries []*CommunitySummary, modelID string) {
+	chatModel, err := s.modelService.GetChatModel(ctx, modelID)
+	if err != nil {
+		logger.Warnf(ctx, "failed to get chat model %s for community summarisation: %v", modelID, err)
+		return
+	}
+
+	for _, cs := range summaries {
+		prompt := fmt.Sprintf(
+			"Below is a structured description of a community of related entities in a knowledge graph. "+
+				"Summarize what this community represents in 2-3 concise sentences. "+
+				"Focus on the theme, key entities, and how they relate.\n\n%s",
+			cs.Text,
+		)
+		resp, err := chatModel.Chat(ctx, []chat.Message{
+			{Role: "system", Content: "You are a knowledge graph analyst. Produce concise, factual summaries."},
+			{Role: "user", Content: prompt},
+		}, &chat.ChatOptions{Temperature: 0.3, MaxTokens: 200})
+		if err != nil {
+			logger.Warnf(ctx, "LLM summarisation failed for community #%d: %v", cs.CommunityID, err)
+			continue
+		}
+		if resp.Content != "" {
+			cs.Text = resp.Content
+		}
+	}
 }
 
 // FormatForPrompt concatenates summaries into a single labelled block that

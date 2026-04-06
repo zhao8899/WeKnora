@@ -133,6 +133,13 @@ type ChunkingConfig struct {
 	// ChildChunkSize is the size of child chunks used for embedding (default: 384).
 	// Only used when EnableParentChild is true.
 	ChildChunkSize int `yaml:"child_chunk_size,omitempty" json:"child_chunk_size,omitempty"`
+	// EnableSemantic enables embedding-based semantic chunking. When enabled,
+	// chunk boundaries are placed at points where embedding similarity between
+	// consecutive sentence groups drops below SimilarityThreshold.
+	EnableSemantic bool `yaml:"enable_semantic,omitempty" json:"enable_semantic,omitempty"`
+	// SimilarityThreshold for semantic chunking (default: 0.5). Lower values
+	// produce larger chunks; higher values produce finer-grained splits.
+	SimilarityThreshold float64 `yaml:"similarity_threshold,omitempty" json:"similarity_threshold,omitempty"`
 }
 
 // ResolveParserEngine returns the engine name for the given file type

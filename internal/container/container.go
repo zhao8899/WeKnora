@@ -31,6 +31,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/Tencent/WeKnora/internal/agent/dispatcher"
 	"github.com/Tencent/WeKnora/internal/agent/memory/longterm"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	memoryRepo "github.com/Tencent/WeKnora/internal/application/repository/memory/neo4j"
@@ -196,10 +197,18 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// SessionService is passed as parameter to CreateAgentEngine method when creating AgentService
 	logger.Debugf(ctx, "[Container] Registering event bus and agent service...")
 	must(container.Provide(event.NewEventBus))
-	// Longterm cross-session memory store (in-memory reference impl;
-	// production deployments can override with a Redis/Postgres-backed Store).
-	must(container.Provide(func() longterm.Store { return longterm.NewMemoryStore(nil) }))
+	// Longterm cross-session memory store: Redis-backed when available,
+	// falling back to in-memory for Lite mode / local development.
+	must(container.Provide(func(redisClient *redis.Client) longterm.Store {
+		if redisClient != nil {
+			return longterm.NewRedisStore(redisClient, 0, "")
+		}
+		return longterm.NewMemoryStore(nil)
+	}))
 	must(container.Provide(service.NewAgentService))
+
+	// Query router for automatic QA mode selection (keyword-based, zero LLM cost).
+	must(container.Provide(newQueryRouter))
 
 	// Session service (depends on agent service)
 	// SessionService is created after AgentService and passes itself to AgentService.CreateAgentEngine when needed
@@ -314,6 +323,34 @@ func must(err error) {
 //   - Error if initialization fails
 func initTracer() (*tracing.Tracer, error) {
 	return tracing.InitTracer()
+}
+
+// newQueryRouter builds the query-mode dispatcher with pre-configured routes.
+// Routes map query patterns to ChatMode handlers (rag_fast, rag_deep, chat).
+func newQueryRouter() *dispatcher.Dispatcher {
+	d := dispatcher.New(nil) // default KeywordClassifier
+
+	d.Register(&dispatcher.Route{
+		Name:        "greeting",
+		Description: "casual greeting hello hi hey chitchat 你好 嗨 闲聊",
+		Keywords:    []string{"你好", "hello", "hi", "hey", "嗨", "早上好", "晚上好"},
+		Handler:     string(types.ChatModeChat),
+	})
+	d.Register(&dispatcher.Route{
+		Name:        "simple_qa",
+		Description: "simple factual question about knowledge documents",
+		Keywords:    []string{"什么是", "是什么", "定义", "what is", "define", "explain"},
+		Handler:     string(types.ChatModeRAGFast),
+	})
+	d.Register(&dispatcher.Route{
+		Name:        "deep_analysis",
+		Description: "complex multi-step reasoning comparison analysis across documents",
+		Keywords:    []string{"对比", "分析", "比较", "总结", "区别", "compare", "analyze", "summarize", "difference", "why"},
+		Handler:     string(types.ChatModeRAGDeep),
+	})
+
+	_ = d.SetDefault("simple_qa")
+	return d
 }
 
 func initRedisClient() (*redis.Client, error) {

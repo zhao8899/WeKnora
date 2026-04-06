@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/agent/dispatcher"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -40,6 +41,7 @@ type sessionService struct {
 	webSearchProviderRepo interfaces.WebSearchProviderRepository   // Repository for web search provider entities
 	kbShareService        interfaces.KBShareService                // Service for KB sharing operations
 	memoryService         interfaces.MemoryService                 // Service for memory operations
+	queryRouter           *dispatcher.Dispatcher                   // Query routing classifier for auto mode selection
 }
 
 // NewSessionService creates a new session service instance with all required dependencies
@@ -58,6 +60,7 @@ func NewSessionService(cfg *config.Config,
 	webSearchProviderRepo interfaces.WebSearchProviderRepository,
 	kbShareService interfaces.KBShareService,
 	memoryService interfaces.MemoryService,
+	queryRouter *dispatcher.Dispatcher,
 ) interfaces.SessionService {
 	return &sessionService{
 		cfg:                   cfg,
@@ -75,6 +78,7 @@ func NewSessionService(cfg *config.Config,
 		webSearchProviderRepo: webSearchProviderRepo,
 		kbShareService:        kbShareService,
 		memoryService:         memoryService,
+		queryRouter:           queryRouter,
 	}
 }
 

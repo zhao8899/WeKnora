@@ -498,6 +498,11 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 		"total_stages":      len(eventList),
 		"total_duration_ms": time.Since(pipelineStart).Milliseconds(),
 	})
+
+	// Record online RAG quality metrics (context precision, retrieval count)
+	// as OTLP span attributes for observability in Jaeger / Langfuse / Grafana.
+	chatpipeline.RecordRAGMetrics(ctx, chatManage)
+
 	return nil
 }
 
@@ -798,15 +803,29 @@ func (s *sessionService) resolveWebFetchEnabled(req *types.QARequest) bool {
 }
 
 func (s *sessionService) resolveKnowledgeQAMode(ctx context.Context, req *types.QARequest, hasKB bool) types.ChatMode {
+	// 1. Explicit mode always wins.
 	switch req.Mode {
 	case types.ChatModeChat, types.ChatModeRAGFast, types.ChatModeRAGDeep:
 		logger.Infof(ctx, "Using requested knowledge QA mode: %s", req.Mode)
 		return req.Mode
 	}
 
+	// 2. Web search forces deep mode.
 	if req.WebSearchEnabled {
 		return types.ChatModeRAGDeep
 	}
+
+	// 3. Smart routing via dispatcher (keyword classifier, no LLM cost).
+	if s.queryRouter != nil && hasKB {
+		if decision, err := s.queryRouter.Dispatch(ctx, req.Query); err == nil && decision.Route != nil {
+			routed := types.ChatMode(decision.Route.Handler)
+			logger.Infof(ctx, "Query router selected mode %s (route=%s, score=%.2f, fallback=%v)",
+				routed, decision.Route.Name, decision.Score, decision.Fallback)
+			return routed
+		}
+	}
+
+	// 4. Static fallback: KB present → rag_fast, otherwise → chat.
 	if hasKB {
 		return types.ChatModeRAGFast
 	}
