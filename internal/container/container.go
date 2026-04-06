@@ -287,6 +287,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		must(container.Invoke(router.RegisterSyncHandlers))
 	}
 
+	// Initialize default web search provider (SerpAPI) if none exists
+	must(container.Invoke(initDefaultWebSearchProvider))
+
 	logger.Infof(ctx, "[Container] Container initialization completed successfully")
 	return container
 }
@@ -1305,6 +1308,68 @@ func startDataSourceScheduler(scheduler *datasource.Scheduler, cleaner interface
 
 	cleaner.RegisterWithName("DataSourceScheduler", func() error {
 		scheduler.Stop()
+		logger.Info(context.Background(), "[Container] Data source scheduler stopped")
 		return nil
 	})
+}
+
+// initDefaultWebSearchProvider creates a default SerpAPI web search provider for each tenant
+// that doesn't have any web search providers configured yet.
+func initDefaultWebSearchProvider(
+	db *gorm.DB,
+	providerService interfaces.WebSearchProviderService,
+) {
+	ctx := context.Background()
+
+	// Get all active tenants
+	var tenants []struct {
+		ID uint64 `gorm:"column:id"`
+	}
+	if err := db.Table("tenants").Select("id").Where("deleted_at IS NULL").Find(&tenants).Error; err != nil {
+		logger.Warnf(ctx, "[Container] Failed to query tenants for web search provider init: %v", err)
+		return
+	}
+
+	// Read SerpAPI key from environment, fallback to empty if not set
+	serpAPIKey := os.Getenv("SERPAPI_API_KEY")
+	if serpAPIKey == "" {
+		logger.Debug(ctx, "[Container] SERPAPI_API_KEY not set, skipping default web search provider initialization")
+		return
+	}
+
+	for _, t := range tenants {
+		// Check if tenant already has web search providers
+		var count int64
+		if err := db.Table("web_search_providers").Where("tenant_id = ? AND deleted_at IS NULL", t.ID).Count(&count).Error; err != nil {
+			logger.Warnf(ctx, "[Container] Failed to check web search providers for tenant %d: %v", t.ID, err)
+			continue
+		}
+
+		if count > 0 {
+			// Tenant already has providers, skip
+			continue
+		}
+
+		// Create default SerpAPI provider for this tenant
+		logger.Infof(ctx, "[Container] Creating default SerpAPI web search provider for tenant %d", t.ID)
+
+		params := types.WebSearchProviderParameters{
+			APIKey: serpAPIKey,
+		}
+
+		provider := &types.WebSearchProviderEntity{
+			TenantID:    t.ID,
+			Name:        "SerpAPI (Google)",
+			Provider:    types.WebSearchProviderTypeSerpAPI,
+			Description: "SerpAPI Google Search - Default web search provider",
+			Parameters:  params,
+			IsDefault:   true,
+		}
+
+		if err := providerService.CreateProvider(ctx, provider); err != nil {
+			logger.Warnf(ctx, "[Container] Failed to create default SerpAPI provider for tenant %d: %v", t.ID, err)
+		} else {
+			logger.Infof(ctx, "[Container] Default SerpAPI web search provider created for tenant %d", t.ID)
+		}
+	}
 }

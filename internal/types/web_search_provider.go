@@ -157,9 +157,9 @@ func GetWebSearchProviderTypes() []WebSearchProviderTypeInfo {
 		},
 		{
 			ID:             "serpapi",
-			Name:           "SerpAPI",
+			Name:           "SerpAPI (Recommended)",
 			RequiresAPIKey: true,
-			Description:    "SerpAPI - Google, Bing, Yahoo and more search results via API",
+			Description:    "SerpAPI - Google Search Results API (Recommended, high quality)",
 			DocsURL:        "https://serpapi.com/dashboard",
 		},
 		{

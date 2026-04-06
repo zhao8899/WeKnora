@@ -116,6 +116,7 @@ services:
       - SSRF_WHITELIST=${SSRF_WHITELIST:-}
       - CONCURRENCY_POOL_SIZE=${CONCURRENCY_POOL_SIZE:-5}
       - JWT_SECRET=${JWT_SECRET:-}
+      - SERPAPI_API_KEY=${SERPAPI_API_KEY:-}
       # File size limit (in MB)
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
       # Agent Skills Sandbox
