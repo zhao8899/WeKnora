@@ -76,6 +76,8 @@ func (c *Chunk) SetDocumentMetadata(meta *DocumentChunkMetadata) error {
 		return err
 	}
 	c.Metadata = JSON(bytes)
+	// Sync materialized flag for indexed queries
+	c.HasGeneratedQuestions = len(meta.GeneratedQuestions) > 0
 	return nil
 }
 
@@ -167,6 +169,8 @@ func (c *Chunk) SetFAQMetadata(meta *FAQChunkMetadata) error {
 		return err
 	}
 	c.Metadata = JSON(bytes)
+	// Sync dedicated column for indexed queries
+	c.StandardQuestion = meta.StandardQuestion
 	// ContentHash 基于归一化后的数据计算，用于去重匹配
 	normalized := meta.Normalize()
 	c.ContentHash = CalculateFAQContentHash(normalized)

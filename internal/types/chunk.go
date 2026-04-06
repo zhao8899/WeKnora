@@ -143,6 +143,11 @@ type Chunk struct {
 	IndirectRelationChunks JSON `json:"indirect_relation_chunks" gorm:"type:json"`
 	// Metadata 存储 chunk 级别的扩展信息，例如 FAQ 元数据
 	Metadata JSON `json:"metadata"                 gorm:"type:json"`
+	// StandardQuestion is the FAQ standard question extracted from Metadata for efficient querying.
+	// Only populated for FAQ chunks; NULL for document chunks.
+	StandardQuestion string `json:"standard_question,omitempty" gorm:"type:text;index"`
+	// HasGeneratedQuestions is a materialized flag indicating whether this chunk has AI-generated questions in Metadata.
+	HasGeneratedQuestions bool `json:"has_generated_questions"   gorm:"default:false"`
 	// ContentHash 存储内容的 hash 值，用于快速匹配（主要用于 FAQ）
 	ContentHash string `json:"content_hash"             gorm:"type:varchar(64);index"`
 	// 图片信息，存储为 JSON

@@ -162,13 +162,11 @@ func (r *chunkRepository) ListPagedChunksByKnowledgeID(
 
 			switch searchField {
 			case "standard_question":
-				// Search only in standard_question field of metadata
+				// Search in dedicated standard_question column (faster than JSONB extraction)
 				if isPostgres {
-					db = db.Where("metadata->>'standard_question' ILIKE ?", like)
+					db = db.Where("standard_question ILIKE ?", like)
 				} else {
-					// MySQL: metadata->>'$.standard_question' (MySQL 5.7.13+)
-					// 也可以用 JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.standard_question'))
-					db = db.Where("metadata->>'$.standard_question' LIKE ?", like)
+					db = db.Where("standard_question LIKE ?", like)
 				}
 			case "similar_questions":
 				// Search in similar_questions array of metadata
@@ -638,9 +636,9 @@ func (r *chunkRepository) FindFAQChunkWithDuplicateQuestion(
 
 	switch r.db.Name() {
 	case "mysql":
-		// MySQL 5.7+: JSON_EXTRACT for standard_question, JSON_CONTAINS for similar_questions
+		// Use dedicated standard_question column + JSONB fallback for similar_questions
 		parts := []string{
-			"JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.standard_question')) IN ?",
+			"standard_question IN ?",
 		}
 		args := []interface{}{questions}
 		for _, q := range questions {
@@ -651,15 +649,16 @@ func (r *chunkRepository) FindFAQChunkWithDuplicateQuestion(
 		}
 		db = db.Where(strings.Join(parts, " OR "), args...)
 	case "postgres":
+		// Use dedicated standard_question column (B-tree indexed) + JSONB for similar_questions
 		db = db.Where(
-			"(metadata->>'standard_question' IN ? OR EXISTS ("+
+			"(standard_question IN ? OR EXISTS ("+
 				"SELECT 1 FROM jsonb_array_elements_text("+
 				"COALESCE(metadata->'similar_questions', '[]'::jsonb)) elem "+
 				"WHERE elem.value IN ?))",
 			questions, questions)
 	default: // sqlite
 		db = db.Where(
-			"(json_extract(metadata, '$.standard_question') IN ? OR EXISTS ("+
+			"(standard_question IN ? OR EXISTS ("+
 				"SELECT 1 FROM json_each("+
 				"CASE WHEN json_extract(metadata, '$.similar_questions') IS NOT NULL "+
 				"THEN json_extract(metadata, '$.similar_questions') ELSE '[]' END) "+
@@ -993,32 +992,13 @@ func (r *chunkRepository) ListRecentDocumentChunksWithQuestions(
 		baseQuery = baseQuery.Where("knowledge_base_id IN ?", kbIDs)
 	}
 
-	// Query chunks that have non-empty generated_questions in metadata
-	switch r.db.Name() {
-	case "postgres":
-		if err := baseQuery.
-			Where("metadata IS NOT NULL AND metadata::text != '{}' AND jsonb_array_length(COALESCE(metadata->'generated_questions', '[]'::jsonb)) > 0").
-			Order("updated_at DESC").
-			Limit(limit).
-			Find(&chunks).Error; err != nil {
-			return nil, err
-		}
-	case "mysql":
-		if err := baseQuery.
-			Where("metadata IS NOT NULL AND JSON_LENGTH(JSON_EXTRACT(metadata, '$.generated_questions')) > 0").
-			Order("updated_at DESC").
-			Limit(limit).
-			Find(&chunks).Error; err != nil {
-			return nil, err
-		}
-	default: // sqlite
-		if err := baseQuery.
-			Where("metadata IS NOT NULL AND json_array_length(json_extract(metadata, '$.generated_questions')) > 0").
-			Order("updated_at DESC").
-			Limit(limit).
-			Find(&chunks).Error; err != nil {
-			return nil, err
-		}
+	// Query chunks that have generated questions — use the materialized boolean column
+	if err := baseQuery.
+		Where("has_generated_questions = true").
+		Order("updated_at DESC").
+		Limit(limit).
+		Find(&chunks).Error; err != nil {
+		return nil, err
 	}
 
 	return chunks, nil
