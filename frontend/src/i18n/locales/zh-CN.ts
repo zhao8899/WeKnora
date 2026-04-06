@@ -2507,6 +2507,8 @@ export default {
     toasts: {
       chatModelSaved: "LLM 模型已保存",
       rerankModelSaved: "ReRank 模型已保存",
+      saveFailed: "保存失败: {message}",
+      adminRequired: "保存失败，需要管理员权限",
       contextTemplateSaved: "总结Prompt已保存",
       systemPromptSaved: "系统Prompt已保存",
       temperatureSaved: "温度参数已保存",

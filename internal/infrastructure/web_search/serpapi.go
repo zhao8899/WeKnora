@@ -113,6 +113,29 @@ func (p *SerpAPIProvider) Search(
 	return results, nil
 }
 
+type stringOrNumber string
+
+func (s *stringOrNumber) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*s = ""
+		return nil
+	}
+
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		*s = stringOrNumber(str)
+		return nil
+	}
+
+	var num json.Number
+	if err := json.Unmarshal(data, &num); err == nil {
+		*s = stringOrNumber(num.String())
+		return nil
+	}
+
+	return fmt.Errorf("unsupported JSON value for stringOrNumber: %s", string(data))
+}
+
 // serpAPISearchResponse defines the response structure for SerpAPI.
 type serpAPISearchResponse struct {
 	OrganicResults []struct {
@@ -123,8 +146,8 @@ type serpAPISearchResponse struct {
 		Date     string `json:"date,omitempty"`
 	} `json:"organic_results"`
 	SearchInformation struct {
-		TotalResults         string  `json:"total_results"`
-		TimeTakenDisplayed   float64 `json:"time_taken_displayed"`
-		QueryDisplayed       string  `json:"query_displayed"`
+		TotalResults       stringOrNumber `json:"total_results"`
+		TimeTakenDisplayed float64        `json:"time_taken_displayed"`
+		QueryDisplayed     string         `json:"query_displayed"`
 	} `json:"search_information"`
 }

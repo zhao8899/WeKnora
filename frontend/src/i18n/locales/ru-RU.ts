@@ -2192,6 +2192,8 @@ export default {
       enableQueryExpansionSaved: 'Настройка расширения запросов сохранена',
       chatModelSaved: 'LLM model saved',
       rerankModelSaved: 'ReRank model saved',
+      saveFailed: 'Не удалось сохранить: {message}',
+      adminRequired: 'Не удалось сохранить. Требуются права администратора.',
       contextTemplateSaved: 'Retrieval result summary prompt saved',
       systemPromptSaved: 'System prompt saved',
       temperatureSaved: 'Temperature saved',

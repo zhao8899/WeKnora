@@ -2511,6 +2511,8 @@ export default {
     toasts: {
       chatModelSaved: 'LLM model saved',
       rerankModelSaved: 'ReRank model saved',
+      saveFailed: 'Failed to save: {message}',
+      adminRequired: 'Save failed. Admin permission is required.',
       contextTemplateSaved: 'Retrieval result summary prompt saved',
       systemPromptSaved: 'System prompt saved',
       temperatureSaved: 'Temperature saved',

@@ -2543,6 +2543,8 @@ export default {
     toasts: {
       chatModelSaved: "LLM 모델이 저장되었습니다",
       rerankModelSaved: "ReRank 모델이 저장되었습니다",
+      saveFailed: "저장 실패: {message}",
+      adminRequired: "저장 실패, 관리자 권한이 필요합니다",
       contextTemplateSaved: "요약 Prompt가 저장되었습니다",
       systemPromptSaved: "시스템 Prompt가 저장되었습니다",
       temperatureSaved: "온도 파라미터가 저장되었습니다",

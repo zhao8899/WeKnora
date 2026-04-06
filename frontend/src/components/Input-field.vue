@@ -165,6 +165,17 @@ watch([selectedAgentId, agentKnowledgeBases, agentKBSelectionMode], ([newAgentId
   }
 }, { immediate: true });
 
+// 当智能体改变时，同步网络搜索状态（从智能体配置同步）
+watch([selectedAgentId, agentWebSearchEnabled], async ([newAgentId, newWebSearchEnabled], [oldAgentId]) => {
+  // 只在智能体 ID 变化时同步（避免初始化时重复设置）
+  if (newAgentId !== oldAgentId && oldAgentId !== undefined) {
+    // 仅当智能体明确配置了 web_search_enabled 时才同步
+    if (newWebSearchEnabled !== null) {
+      settingsStore.toggleWebSearch(newWebSearchEnabled);
+    }
+  }
+}, { immediate: false });
+
 // 共享智能体时预取该智能体知识库列表，使已选标签在未打开 @ 时也能显示共享空间角标
 watch([selectedAgentId, () => settingsStore.selectedAgentSourceTenantId], async ([agentId, sourceTenantId]) => {
   if (sourceTenantId && agentId) {
@@ -610,6 +621,16 @@ const ensureModelSelection = () => {
   }
 };
 
+const getConversationConfigErrorMessage = (error: any) => {
+  const message = error?.message || error?.error?.message;
+  if (error?.status === 403) {
+    return message || t('conversationSettings.toasts.adminRequired');
+  }
+  return t('conversationSettings.toasts.saveFailed', {
+    message: message || t('common.saveFailed'),
+  });
+};
+
 const handleGoToConversationModels = () => {
   showModelSelector.value = false;
   router.push('/platform/settings');
@@ -632,6 +653,10 @@ const handleModelChange = async (value: string | number | Array<string | number>
   if (val === '__add_model__') {
     selectedModelId.value = conversationConfig.value?.summary_model_id || '';
     handleGoToConversationModels();
+    return;
+  }
+  if (val === conversationConfig.value?.summary_model_id) {
+    showModelSelector.value = false;
     return;
   }
   
@@ -660,7 +685,7 @@ const handleModelChange = async (value: string | number | Array<string | number>
     }
   } catch (error) {
     console.error('保存模型配置失败:', error);
-    MessagePlugin.error(t('conversationSettings.toasts.saveFailed'));
+    MessagePlugin.error(getConversationConfigErrorMessage(error));
     // 恢复到之前的值
     selectedModelId.value = conversationConfig.value?.summary_model_id || '';
   }
@@ -1253,6 +1278,20 @@ onMounted(() => {
   loadConversationConfig();
   loadChatModels();
   loadAgents();
+
+  // 智能体加载完成后，同步默认智能体的网络搜索状态
+  nextTick(async () => {
+    await nextTick(); // 等待 agents 列表填充
+    const defaultAgentId = settingsStore.selectedAgentId;
+    const defaultAgent = agents.value.find(a => a.id === defaultAgentId);
+    if (defaultAgent) {
+      const agentWebSearch = defaultAgent.config?.web_search_enabled;
+      // 仅当智能体明确配置了 web_search_enabled 时才同步
+      if (agentWebSearch !== undefined && isWebSearchConfigured.value) {
+        settingsStore.toggleWebSearch(agentWebSearch);
+      }
+    }
+  });
 
   // 从持久化恢复 fileId -> kbId，刷新后共享知识库文件可带 kb_id 拉取（仅保留当前仍选中的文件）
   const persisted = settingsStore.settings.selectedFileKbMap;
@@ -3115,5 +3154,4 @@ const getImgSrc = (url: string) => {
   }
 }
 </style>
-
 

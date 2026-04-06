@@ -32,6 +32,8 @@ services:
       dockerfile: docker/Dockerfile.app
       args:
         - APK_MIRROR_ARG=${APK_MIRROR_ARG:-}
+        - GOPROXY_ARG=https://goproxy.cn,direct
+        - GOSUMDB_ARG=off
     container_name: WeKnora-app
     ports:
       - "${APP_PORT:-8080}:8080"
@@ -135,7 +137,7 @@ services:
       - WeKnora-network
     restart: unless-stopped
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:192.168.0.1"
 
   # Sandbox 镜像：仅用于 build/pull，非常驻服务；app 执行 Skills 时按需 docker run 该镜像，用毕即释
   sandbox:
@@ -174,7 +176,7 @@ services:
       - WeKnora-network
     restart: unless-stopped
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:192.168.0.1"
 
   # 修改的PostgreSQL配置
   postgres:
