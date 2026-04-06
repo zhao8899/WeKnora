@@ -59,14 +59,14 @@ type EmbeddingParameters struct {
 }
 
 type ModelParameters struct {
-	BaseURL             string              `yaml:"base_url"             json:"base_url"`
-	APIKey              string              `yaml:"api_key"              json:"api_key"`
-	InterfaceType       string              `yaml:"interface_type"       json:"interface_type"`
-	EmbeddingParameters EmbeddingParameters `yaml:"embedding_parameters" json:"embedding_parameters"`
-	ParameterSize       string              `yaml:"parameter_size"       json:"parameter_size"`  // Ollama model parameter size (e.g., "7B", "13B", "70B")
-	Provider            string              `yaml:"provider"             json:"provider"`        // Provider identifier: openai, aliyun, zhipu, generic
-	ExtraConfig         map[string]string   `yaml:"extra_config"         json:"extra_config"`    // Provider-specific configuration
-	SupportsVision      bool                `yaml:"supports_vision"      json:"supports_vision"` // Whether the model accepts image/multimodal input
+	BaseURL             string                 `yaml:"base_url"             json:"base_url"`
+	APIKey              string                 `yaml:"api_key"              json:"api_key"`
+	InterfaceType       string                 `yaml:"interface_type"       json:"interface_type"`
+	EmbeddingParameters EmbeddingParameters    `yaml:"embedding_parameters" json:"embedding_parameters"`
+	ParameterSize       string                 `yaml:"parameter_size"       json:"parameter_size"`  // Ollama model parameter size (e.g., "7B", "13B", "70B")
+	Provider            string                 `yaml:"provider"             json:"provider"`        // Provider identifier: openai, aliyun, zhipu, generic
+	ExtraConfig         map[string]interface{} `yaml:"extra_config"         json:"extra_config"`    // Provider-specific configuration (supports mixed types)
+	SupportsVision      bool                   `yaml:"supports_vision"      json:"supports_vision"` // Whether the model accepts image/multimodal input
 }
 
 // Model represents the AI model
