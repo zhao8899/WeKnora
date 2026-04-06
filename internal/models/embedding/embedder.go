@@ -30,6 +30,17 @@ type Embedder interface {
 	EmbedderPooler
 }
 
+// MultimodalEmbedder extends Embedder with native image embedding support.
+// Providers that support multimodal embedding (e.g. Volcengine, Aliyun) implement this
+// so images can be embedded directly without OCR/caption text intermediaries.
+type MultimodalEmbedder interface {
+	Embedder
+	// EmbedImage embeds an image by its URL, returning a vector in the same space as text embeddings.
+	EmbedImage(ctx context.Context, imageURL string) ([]float32, error)
+	// EmbedImageText embeds an image together with associated text, returning a fused vector.
+	EmbedImageText(ctx context.Context, imageURL string, text string) ([]float32, error)
+}
+
 type EmbedderPooler interface {
 	BatchEmbedWithPool(ctx context.Context, model Embedder, texts []string) ([][]float32, error)
 }

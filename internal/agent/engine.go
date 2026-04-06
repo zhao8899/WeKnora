@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/Tencent/WeKnora/internal/agent/checkpoint"
 	agentmemory "github.com/Tencent/WeKnora/internal/agent/memory"
 	"github.com/Tencent/WeKnora/internal/agent/memory/longterm"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
@@ -48,6 +49,8 @@ type AgentEngine struct {
 	longtermTopK         int                       // Max entries surfaced from longterm memory (default 5)
 	lastUsage            types.TokenUsage          // Token usage from the most recent LLM call
 	lastSentMsgCount     int                       // Number of messages sent in the most recent LLM call
+	checkpointStore      checkpoint.Store          // Checkpoint store for durable execution (optional)
+	executionID          string                    // Unique execution ID for checkpoint tracking
 }
 
 // ImageDescriberFunc generates a text description of an image.
@@ -158,6 +161,45 @@ func (e *AgentEngine) SetLongtermMemory(store longterm.Store, tenantID, userID s
 	e.longtermTopK = topK
 }
 
+// SetCheckpointStore enables durable execution by persisting agent state
+// after each round. When set, the agent can be resumed from the last
+// checkpoint if the process crashes or the connection drops.
+func (e *AgentEngine) SetCheckpointStore(store checkpoint.Store) {
+	e.checkpointStore = store
+}
+
+// saveCheckpoint persists the current execution state. Non-fatal: errors
+// are logged but do not interrupt the agent loop.
+func (e *AgentEngine) saveCheckpoint(ctx context.Context, state *types.AgentState, messages []chat.Message, sessionID, messageID, query string) {
+	if e.checkpointStore == nil {
+		return
+	}
+	cp := &checkpoint.Checkpoint{
+		SessionID:   sessionID,
+		MessageID:   messageID,
+		ExecutionID: e.executionID,
+		Query:       query,
+		State:       state,
+		Messages:    messages,
+		Round:       state.CurrentRound,
+		SavedAt:     time.Now(),
+		Completed:   state.IsComplete,
+	}
+	if err := e.checkpointStore.Save(ctx, cp); err != nil {
+		logger.Warnf(ctx, "[Agent] Failed to save checkpoint at round %d: %v", state.CurrentRound, err)
+	}
+}
+
+// cleanupCheckpoint removes the checkpoint after successful completion.
+func (e *AgentEngine) cleanupCheckpoint(ctx context.Context, sessionID string) {
+	if e.checkpointStore == nil {
+		return
+	}
+	if err := e.checkpointStore.Delete(ctx, sessionID); err != nil {
+		logger.Warnf(ctx, "[Agent] Failed to delete checkpoint: %v", err)
+	}
+}
+
 // GetSkillsManager returns the skills manager
 func (e *AgentEngine) GetSkillsManager() *skills.Manager {
 	return e.skillsManager
@@ -226,6 +268,9 @@ func (e *AgentEngine) Execute(
 		"query":        query,
 		"context_msgs": len(llmContext),
 	})
+
+	// Assign execution ID for checkpoint tracking
+	e.executionID = fmt.Sprintf("exec-%d", time.Now().UnixNano())
 
 	// Initialize state
 	state := &types.AgentState{
@@ -442,12 +487,18 @@ func (e *AgentEngine) executeLoop(
 		roundSpan.SetAttributes(attribute.Int("agent.tool_calls", len(step.ToolCalls)))
 		roundSpan.End()
 		state.CurrentRound++
+
+		// 6. Checkpoint: persist state for durable execution
+		e.saveCheckpoint(ctx, state, messages, sessionID, messageID, query)
 	}
 
 	// If loop finished without final answer, generate one
 	if !state.IsComplete {
 		e.handleMaxIterations(ctx, query, state, sessionID)
 	}
+
+	// Clean up checkpoint on successful completion
+	e.cleanupCheckpoint(ctx, sessionID)
 
 	// Emit completion event
 	e.emitCompletionEvent(ctx, state, sessionID, messageID, startTime)

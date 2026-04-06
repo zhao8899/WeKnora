@@ -237,6 +237,68 @@ func (e *VolcengineEmbedder) BatchEmbed(ctx context.Context, texts []string) ([]
 
 }
 
+// EmbedImage embeds an image by URL using Volcengine multimodal embedding API.
+func (e *VolcengineEmbedder) EmbedImage(ctx context.Context, imageURL string) ([]float32, error) {
+	return e.embedMultimodal(ctx, imageURL, "")
+}
+
+// EmbedImageText embeds an image together with text using Volcengine multimodal embedding API.
+func (e *VolcengineEmbedder) EmbedImageText(ctx context.Context, imageURL string, text string) ([]float32, error) {
+	return e.embedMultimodal(ctx, imageURL, text)
+}
+
+// embedMultimodal sends a multimodal embedding request with image and optional text.
+func (e *VolcengineEmbedder) embedMultimodal(ctx context.Context, imageURL string, text string) ([]float32, error) {
+	input := []VolcengineInputContent{
+		{
+			Type:     "image_url",
+			ImageURL: &VolcengineImageURL{URL: imageURL},
+		},
+	}
+	if text != "" {
+		input = append(input, VolcengineInputContent{
+			Type: "text",
+			Text: text,
+		})
+	}
+
+	reqBody := VolcengineEmbedRequest{
+		Model: e.modelName,
+		Input: input,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal multimodal request: %w", err)
+	}
+
+	resp, err := e.doRequestWithRetry(ctx, jsonData)
+	if err != nil {
+		return nil, fmt.Errorf("send multimodal request: %w", err)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read multimodal response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp VolcengineErrorResponse
+		if json.Unmarshal(body, &errResp) == nil && errResp.Error.Message != "" {
+			return nil, fmt.Errorf("multimodal API error: %s - %s", errResp.Error.Code, errResp.Error.Message)
+		}
+		return nil, fmt.Errorf("multimodal API error: HTTP %s", resp.Status)
+	}
+
+	var response VolcengineEmbedResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("unmarshal multimodal response: %w", err)
+	}
+
+	return response.Data.Embedding, nil
+}
+
 // GetModelName returns the model name
 func (e *VolcengineEmbedder) GetModelName() string {
 	return e.modelName

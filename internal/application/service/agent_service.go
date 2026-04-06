@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/Tencent/WeKnora/internal/agent"
+	"github.com/Tencent/WeKnora/internal/agent/checkpoint"
 	"github.com/Tencent/WeKnora/internal/agent/memory/longterm"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
@@ -42,6 +43,7 @@ type agentService struct {
 	duckdb                *sql.DB
 	webSearchStateService interfaces.WebSearchStateService
 	longtermMemory        longterm.Store
+	checkpointStore       checkpoint.Store
 }
 
 // NewAgentService creates a new agent service
@@ -60,6 +62,7 @@ func NewAgentService(
 	duckdb *sql.DB,
 	webSearchStateService interfaces.WebSearchStateService,
 	longtermMemory longterm.Store,
+	checkpointStore checkpoint.Store,
 ) interfaces.AgentService {
 	return &agentService{
 		cfg:                   cfg,
@@ -76,6 +79,7 @@ func NewAgentService(
 		duckdb:                duckdb,
 		webSearchStateService: webSearchStateService,
 		longtermMemory:        longtermMemory,
+		checkpointStore:       checkpointStore,
 	}
 }
 
@@ -137,6 +141,11 @@ func (s *agentService) CreateAgentEngine(
 		if tenantID != "" && userID != "" {
 			engine.SetLongtermMemory(s.longtermMemory, tenantID, userID, 5)
 		}
+	}
+
+	// Enable checkpoint-based durable execution when store is available.
+	if s.checkpointStore != nil {
+		engine.SetCheckpointStore(s.checkpointStore)
 	}
 
 	// Set VLM image describer for MCP tool result image analysis.

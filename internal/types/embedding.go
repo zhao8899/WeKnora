@@ -29,6 +29,7 @@ const (
 type IndexInfo struct {
 	ID              string     // Unique identifier
 	Content         string     // Content text
+	ImageURL        string     // Image URL for native multimodal embedding (when set, embedder uses image directly)
 	SourceID        string     // ID of the source document
 	SourceType      SourceType // Type of the source
 	ChunkID         string     // ID of the text chunk

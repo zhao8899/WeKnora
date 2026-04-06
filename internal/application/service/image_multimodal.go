@@ -286,14 +286,20 @@ func (s *ImageMultimodalService) indexChunks(ctx context.Context, payload types.
 
 	indexInfoList := make([]*types.IndexInfo, 0, len(chunks))
 	for _, chunk := range chunks {
-		indexInfoList = append(indexInfoList, &types.IndexInfo{
+		info := &types.IndexInfo{
 			Content:         chunk.Content,
 			SourceID:        chunk.ID,
 			SourceType:      types.ChunkSourceType,
 			ChunkID:         chunk.ID,
 			KnowledgeID:     chunk.KnowledgeID,
 			KnowledgeBaseID: chunk.KnowledgeBaseID,
-		})
+		}
+		// Pass image URL for native multimodal embedding (when the embedder supports it,
+		// the image will be embedded directly instead of relying solely on OCR/caption text).
+		if payload.ImageURL != "" {
+			info.ImageURL = payload.ImageURL
+		}
+		indexInfoList = append(indexInfoList, info)
 	}
 
 	if err := engine.BatchIndex(ctx, embeddingModel, indexInfoList); err != nil {

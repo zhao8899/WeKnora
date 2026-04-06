@@ -143,8 +143,8 @@ type ChunkingConfig struct {
 }
 
 // ResolveParserEngine returns the engine name for the given file type
-// based on the configured rules. Returns empty string (builtin) when
-// no rule matches.
+// based on the configured rules. When no explicit rules match, falls back
+// to DefaultParserEngineForType for intelligent auto-routing.
 func (c ChunkingConfig) ResolveParserEngine(fileType string) string {
 	for _, rule := range c.ParserEngineRules {
 		for _, ft := range rule.FileTypes {
@@ -153,7 +153,28 @@ func (c ChunkingConfig) ResolveParserEngine(fileType string) string {
 			}
 		}
 	}
-	return ""
+	return DefaultParserEngineForType(fileType)
+}
+
+// DefaultParserEngineForType returns the optimal parser engine for a file type
+// when no explicit rules are configured. The routing priorities are:
+//   - Simple text formats (md, txt, csv, json) → "simple" (Go-native, no external service)
+//   - Complex document formats (pdf, docx, pptx, xlsx) → "" (builtin/DocReader)
+//   - Images → "simple" (Go-native OCR/VLM pipeline)
+//   - Audio → "simple" (Go-native whisper pipeline)
+//   - Unknown → "" (fallback to builtin)
+func DefaultParserEngineForType(fileType string) string {
+	switch fileType {
+	case "md", "markdown", "txt", "csv", "json":
+		return "simple"
+	case "mp3", "wav", "m4a", "flac", "ogg":
+		return "simple"
+	case "jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp":
+		return "simple"
+	default:
+		// pdf, docx, doc, pptx, xlsx, xls, html, htm → builtin (DocReader)
+		return ""
+	}
 }
 
 // StorageProviderConfig stores the KB-level storage provider selection.

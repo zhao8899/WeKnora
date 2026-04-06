@@ -31,6 +31,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	agentcheckpoint "github.com/Tencent/WeKnora/internal/agent/checkpoint"
 	"github.com/Tencent/WeKnora/internal/agent/dispatcher"
 	"github.com/Tencent/WeKnora/internal/agent/memory/longterm"
 	"github.com/Tencent/WeKnora/internal/application/repository"
@@ -204,6 +205,14 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			return longterm.NewRedisStore(redisClient, 0, "")
 		}
 		return longterm.NewMemoryStore(nil)
+	}))
+	// Agent checkpoint store for durable execution: Redis-backed when available,
+	// falling back to in-memory for development.
+	must(container.Provide(func(redisClient *redis.Client) agentcheckpoint.Store {
+		if redisClient != nil {
+			return agentcheckpoint.NewRedisStore(redisClient, 0)
+		}
+		return agentcheckpoint.NewMemoryStore()
 	}))
 	must(container.Provide(service.NewAgentService))
 

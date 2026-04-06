@@ -45,7 +45,8 @@ type AliyunEmbedInput struct {
 
 // AliyunContent represents a single content item in the input
 type AliyunContent struct {
-	Text string `json:"text,omitempty"`
+	Text  string `json:"text,omitempty"`
+	Image string `json:"image,omitempty"`
 }
 
 // AliyunEmbedResponse represents an Aliyun DashScope embedding response
@@ -229,6 +230,70 @@ func (e *AliyunEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 	}
 
 	return embeddings, nil
+}
+
+// EmbedImage embeds an image by URL using Aliyun DashScope multimodal embedding API.
+func (e *AliyunEmbedder) EmbedImage(ctx context.Context, imageURL string) ([]float32, error) {
+	return e.embedMultimodal(ctx, imageURL, "")
+}
+
+// EmbedImageText embeds an image together with text using Aliyun DashScope multimodal embedding API.
+func (e *AliyunEmbedder) EmbedImageText(ctx context.Context, imageURL string, text string) ([]float32, error) {
+	return e.embedMultimodal(ctx, imageURL, text)
+}
+
+// embedMultimodal sends a multimodal embedding request with image and optional text.
+func (e *AliyunEmbedder) embedMultimodal(ctx context.Context, imageURL string, text string) ([]float32, error) {
+	contents := []AliyunContent{
+		{Image: imageURL},
+	}
+	if text != "" {
+		contents = append(contents, AliyunContent{Text: text})
+	}
+
+	reqBody := AliyunEmbedRequest{
+		Model: e.modelName,
+		Input: AliyunEmbedInput{
+			Contents: contents,
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal multimodal request: %w", err)
+	}
+
+	resp, err := e.doRequestWithRetry(ctx, jsonData)
+	if err != nil {
+		return nil, fmt.Errorf("send multimodal request: %w", err)
+	}
+	if resp.Body != nil {
+		defer resp.Body.Close()
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read multimodal response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		var errResp AliyunErrorResponse
+		if json.Unmarshal(body, &errResp) == nil && errResp.Message != "" {
+			return nil, fmt.Errorf("multimodal API error: %s - %s", errResp.Code, errResp.Message)
+		}
+		return nil, fmt.Errorf("multimodal API error: HTTP %s", resp.Status)
+	}
+
+	var response AliyunEmbedResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("unmarshal multimodal response: %w", err)
+	}
+
+	if len(response.Output.Embeddings) == 0 {
+		return nil, fmt.Errorf("no embedding returned for multimodal input")
+	}
+
+	return response.Output.Embeddings[0].Embedding, nil
 }
 
 // GetModelName returns the model name

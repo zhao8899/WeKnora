@@ -2,6 +2,7 @@ package retriever
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"time"
 
@@ -48,11 +49,30 @@ func (v *KeywordsVectorHybridRetrieveEngineService) Index(ctx context.Context,
 	params := make(map[string]any)
 	embeddingMap := make(map[string][]float32)
 	if slices.Contains(retrieverTypes, types.VectorRetrieverType) {
-		embedding, err := embedder.Embed(ctx, indexInfo.Content)
+		var vec []float32
+		var err error
+		// Use native image embedding when available
+		if indexInfo.ImageURL != "" {
+			if me, ok := embedder.(embedding.MultimodalEmbedder); ok {
+				if indexInfo.Content != "" {
+					vec, err = me.EmbedImageText(ctx, indexInfo.ImageURL, indexInfo.Content)
+				} else {
+					vec, err = me.EmbedImage(ctx, indexInfo.ImageURL)
+				}
+				if err != nil {
+					logger.Warnf(ctx, "MultimodalEmbedder failed for %s, falling back to text: %v", indexInfo.ImageURL, err)
+					vec, err = embedder.Embed(ctx, indexInfo.Content)
+				}
+			} else {
+				vec, err = embedder.Embed(ctx, indexInfo.Content)
+			}
+		} else {
+			vec, err = embedder.Embed(ctx, indexInfo.Content)
+		}
 		if err != nil {
 			return err
 		}
-		embeddingMap[indexInfo.SourceID] = embedding
+		embeddingMap[indexInfo.SourceID] = vec
 	}
 	params["embedding"] = embeddingMap
 	return v.indexRepository.Save(ctx, indexInfo, params)
@@ -68,23 +88,63 @@ func (v *KeywordsVectorHybridRetrieveEngineService) BatchIndex(ctx context.Conte
 	}
 
 	if slices.Contains(retrieverTypes, types.VectorRetrieverType) {
-		var contentList []string
-		for _, indexInfo := range indexInfoList {
-			contentList = append(contentList, indexInfo.Content)
-		}
-		var embeddings [][]float32
-		var err error
-		for range 5 {
-			embeddings, err = embedder.BatchEmbedWithPool(ctx, embedder, contentList)
-			if err == nil {
-				break
+		// Separate items into text-only and multimodal (image) groups
+		multimodalEmbedder, hasMultimodal := embedder.(embedding.MultimodalEmbedder)
+		var textIndices []int
+		var imageIndices []int
+		for i, info := range indexInfoList {
+			if info.ImageURL != "" && hasMultimodal {
+				imageIndices = append(imageIndices, i)
 			} else {
+				textIndices = append(textIndices, i)
+			}
+		}
+
+		embeddings := make([][]float32, len(indexInfoList))
+
+		// Batch embed text items
+		if len(textIndices) > 0 {
+			textContents := make([]string, len(textIndices))
+			for i, idx := range textIndices {
+				textContents[i] = indexInfoList[idx].Content
+			}
+			var textEmbeddings [][]float32
+			var err error
+			for range 5 {
+				textEmbeddings, err = embedder.BatchEmbedWithPool(ctx, embedder, textContents)
+				if err == nil {
+					break
+				}
 				logger.Errorf(ctx, "BatchEmbedWithPool failed: %v", err)
 				time.Sleep(100 * time.Millisecond)
 			}
+			if err != nil {
+				return err
+			}
+			for i, idx := range textIndices {
+				embeddings[idx] = textEmbeddings[i]
+			}
 		}
-		if err != nil {
-			return err
+
+		// Embed image items natively (one by one, multimodal APIs return single vectors)
+		for _, idx := range imageIndices {
+			info := indexInfoList[idx]
+			var vec []float32
+			var err error
+			if info.Content != "" {
+				vec, err = multimodalEmbedder.EmbedImageText(ctx, info.ImageURL, info.Content)
+			} else {
+				vec, err = multimodalEmbedder.EmbedImage(ctx, info.ImageURL)
+			}
+			if err != nil {
+				logger.Warnf(ctx, "MultimodalEmbedder image embed failed for %s, falling back to text: %v", info.ImageURL, err)
+				// Fallback: embed the text content instead
+				vec, err = embedder.Embed(ctx, info.Content)
+				if err != nil {
+					return fmt.Errorf("fallback text embed for image chunk: %w", err)
+				}
+			}
+			embeddings[idx] = vec
 		}
 
 		batchSize := 40
