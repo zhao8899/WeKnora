@@ -721,9 +721,13 @@ watch(() => cardList.value, (newValue) => {
   // Filter items that need polling: parsing in progress OR summary generation in progress
   analyzeList = newValue.filter(item => {
     const isParsing = item.parse_status == 'pending' || item.parse_status == 'processing';
-    const isSummaryPending = item.parse_status == 'completed' && 
+    const isSummaryPending = item.parse_status == 'completed' &&
       (item.summary_status == 'pending' || item.summary_status == 'processing');
-    return isParsing || isSummaryPending;
+    // URL 类型且标题为空或是 URL 本身时，继续轮询等待标题更新
+    const isURLWaitingTitle = item.parse_status == 'completed' &&
+      item.type == 'url' &&
+      (!item.title || item.title == '' || item.title.startsWith('http'));
+    return isParsing || isSummaryPending || isURLWaitingTitle;
   })
   if (timeout !== null) {
     clearInterval(timeout);

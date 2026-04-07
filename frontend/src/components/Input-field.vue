@@ -1286,7 +1286,6 @@ onMounted(() => {
 
   // 监听点击外部关闭下拉菜单
   document.addEventListener('click', closeAgentModeSelector);
-  document.addEventListener('click', closeModelSelector);
   document.addEventListener('click', closeMentionSelector);
   
   // 监听窗口大小变化和滚动，重新计算位置
@@ -1313,7 +1312,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', closeAgentModeSelector);
-  document.removeEventListener('click', closeModelSelector);
   document.removeEventListener('click', closeMentionSelector);
   if (resizeHandler) {
     window.removeEventListener('resize', resizeHandler);
@@ -2051,6 +2049,7 @@ defineExpose({
               ref="modelButtonRef"
               class="model-selector-trigger"
               @click.stop="toggleModelSelector"
+              @mousedown.stop
             >
               <span class="model-selector-name">
                 {{ selectedModelDisplayName }}
@@ -2071,8 +2070,8 @@ defineExpose({
       </div>
 
       <Teleport to="body">
-        <div v-if="showModelSelector" class="model-selector-overlay" @click="closeModelSelector">
-            <div class="model-selector-dropdown" :style="modelDropdownStyle" @click.stop>
+        <div v-if="showModelSelector" class="model-selector-overlay" @mousedown="closeModelSelector">
+            <div class="model-selector-dropdown" @click.stop>
             <div class="model-selector-header">
               <span>{{ $t('conversationSettings.models.chatGroupLabel') }}</span>
               <button class="model-selector-add" type="button" @click="handleModelChange('__add_model__')">
@@ -2847,12 +2846,16 @@ const getImgSrc = (url: string) => {
   position: fixed;
   inset: 0;
   z-index: 9998;
-  background: transparent;
+  background: rgba(15, 23, 42, 0.18);
   touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
 }
 
 .model-selector-dropdown {
-  position: fixed !important;
+  position: relative;
   z-index: 9999;
   background: var(--td-bg-color-container, #fff);
   border-radius: 10px;
@@ -2861,9 +2864,11 @@ const getImgSrc = (url: string) => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  margin: 0 !important;
-  padding: 0 !important;
-  transform: none !important;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(360px, calc(100vh - 32px));
+  margin: 0;
+  padding: 0;
+  transform: none;
 }
 
 .model-selector-header {
