@@ -1754,7 +1754,7 @@ async function createNewSession(value: string): Promise<void> {
                   >
                     <div class="card-content">
                       <div class="card-content-nav">
-                        <span class="card-content-title" :title="item.file_name">{{ item.file_name }}</span>
+                        <span class="card-content-title" :title="item.title || item.file_name">{{ item.title || item.file_name }}</span>
                         <t-popup
                           v-if="canEdit"
                           v-model="item.isMore"
@@ -1924,7 +1924,7 @@ async function createNewSession(value: string): Promise<void> {
                     :style="{ left: cardPopoverPos.x + 'px', top: cardPopoverPos.y + 'px' }"
                   >
                     <template v-if="hoveredCardItem">
-                      <div class="card-popover-title">{{ hoveredCardItem.file_name }}</div>
+                      <div class="card-popover-title">{{ hoveredCardItem.title || hoveredCardItem.file_name }}</div>
                       <div v-if="hoveredCardItem.parse_status === 'processing' || hoveredCardItem.parse_status === 'pending'" class="card-popover-status parsing">
                         <t-icon name="loading" size="14px" /> {{ t('knowledgeBase.parsingInProgress') }}
                       </div>

@@ -165,7 +165,8 @@ export default function (knowledgeBaseId?: string) {
         if (result.success && result.data) {
           const { data } = result;
           Object.assign(details, {
-            title: data.file_name || data.title || data.source || t('knowledgeBase.untitledDocument'),
+            // 优先使用 title（URL 导入解析后的标题），其次 file_name
+            title: data.title || data.file_name || data.source || t('knowledgeBase.untitledDocument'),
             time: formatStringDate(new Date(data.updated_at)),
             id: data.id,
             type: data.type || 'file',
