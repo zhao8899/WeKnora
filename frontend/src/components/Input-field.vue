@@ -165,17 +165,6 @@ watch([selectedAgentId, agentKnowledgeBases, agentKBSelectionMode], ([newAgentId
   }
 }, { immediate: true });
 
-// 当智能体改变时，同步网络搜索状态（从智能体配置同步）
-watch([selectedAgentId, agentWebSearchEnabled], async ([newAgentId, newWebSearchEnabled], [oldAgentId]) => {
-  // 只在智能体 ID 变化时同步（避免初始化时重复设置）
-  if (newAgentId !== oldAgentId && oldAgentId !== undefined) {
-    // 仅当智能体明确配置了 web_search_enabled 时才同步
-    if (newWebSearchEnabled !== null) {
-      settingsStore.toggleWebSearch(newWebSearchEnabled);
-    }
-  }
-}, { immediate: false });
-
 // 共享智能体时预取该智能体知识库列表，使已选标签在未打开 @ 时也能显示共享空间角标
 watch([selectedAgentId, () => settingsStore.selectedAgentSourceTenantId], async ([agentId, sourceTenantId]) => {
   if (sourceTenantId && agentId) {
@@ -202,6 +191,17 @@ const agentWebSearchEnabled = computed(() => {
   if (!hasAgentConfig.value) return null; // null 表示不受智能体控制
   return currentAgentConfig.value?.web_search_enabled ?? true;
 });
+
+// 当智能体改变时，同步网络搜索状态（从智能体配置同步）
+watch([selectedAgentId, agentWebSearchEnabled], async ([newAgentId, newWebSearchEnabled], [oldAgentId]) => {
+  // 只在智能体 ID 变化时同步（避免初始化时重复设置）
+  if (newAgentId !== oldAgentId && oldAgentId !== undefined) {
+    // 仅当智能体明确配置了 web_search_enabled 时才同步
+    if (newWebSearchEnabled !== null) {
+      settingsStore.toggleWebSearch(newWebSearchEnabled);
+    }
+  }
+}, { immediate: false });
 
 // 网络搜索是否被智能体禁用（只读状态）- 只有明确设置为 false 时才禁用
 const isWebSearchDisabledByAgent = computed(() => {
@@ -2071,7 +2071,7 @@ defineExpose({
 
       <Teleport to="body">
         <div v-if="showModelSelector" class="model-selector-overlay" @mousedown="closeModelSelector">
-            <div class="model-selector-dropdown" @click.stop>
+            <div class="model-selector-dropdown" @mousedown.stop @click.stop>
             <div class="model-selector-header">
               <span>{{ $t('conversationSettings.models.chatGroupLabel') }}</span>
               <button class="model-selector-add" type="button" @click="handleModelChange('__add_model__')">

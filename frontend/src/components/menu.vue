@@ -501,27 +501,39 @@ const getMessageList = async (isLoadMore = false) => {
     if (loading.value) return Promise.resolve();
     loading.value = true;
     
-    // 只有在首次加载或路由变化时才清空数组，滚动加载时不清空
     if (!isLoadMore) {
         currentPage.value = 1; // 重置页码
-        usemenuStore.clearMenuArr();
     }
     
     return getSessionsList(currentPage.value, page_size.value).then((res: any) => {
-        if (res.data && res.data.length) {
-            // Display all sessions globally without filtering
-            res.data.forEach((item: any) => {
-                let obj = { 
-                    title: item.title ? item.title : t('menu.newSession'),
-                    path: `chat/${item.id}`, 
-                    id: item.id, 
-                    isMore: false, 
-                    isNoTitle: item.title ? false : true,
-                    created_at: item.created_at,
-                    updated_at: item.updated_at
-                }
-                usemenuStore.updatemenuArr(obj)
-            });
+        const list = Array.isArray(res?.data) ? res.data : [];
+        const mapped = list.map((item: any) => ({
+            title: item.title ? item.title : t('menu.newSession'),
+            path: `chat/${item.id}`,
+            id: item.id,
+            isMore: false,
+            isNoTitle: item.title ? false : true,
+            created_at: item.created_at,
+            updated_at: item.updated_at
+        }));
+
+        const chatMenuItem = (menuArr.value as any[]).find((m: any) => m.path === 'creatChat');
+        if (chatMenuItem) {
+            if (!Array.isArray(chatMenuItem.children)) {
+                chatMenuItem.children = [];
+            }
+            if (!isLoadMore) {
+                // 保留本地刚创建但后端分页列表尚未返回的会话，避免“新会话闪退/丢失”
+                const existing = chatMenuItem.children as any[];
+                const fetchedIdSet = new Set(mapped.map((s: any) => s.id));
+                const optimisticSessions = existing.filter((s: any) => s?.id && !fetchedIdSet.has(s.id) && s.isNoTitle);
+                chatMenuItem.children = [...optimisticSessions, ...mapped];
+            } else {
+                const existing = chatMenuItem.children as any[];
+                const existingIdSet = new Set(existing.map((s: any) => s.id));
+                const appendOnly = mapped.filter((s: any) => !existingIdSet.has(s.id));
+                existing.push(...appendOnly);
+            }
         }
         if ((res as any).total) {
             total.value = (res as any).total;

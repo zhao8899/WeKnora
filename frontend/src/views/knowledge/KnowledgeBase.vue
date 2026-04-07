@@ -708,6 +708,10 @@ onUnmounted(() => {
   window.removeEventListener('knowledgeFileUploaded', handleFileUploaded as EventListener);
   window.removeEventListener('openURLImportDialog', handleOpenURLImportDialog as EventListener);
   stopMovePoll();
+  if (timeout !== null) {
+    clearInterval(timeout);
+    timeout = null;
+  }
 });
 watch(() => cardList.value, (newValue) => {
   if (isFAQ.value) return;
@@ -723,10 +727,13 @@ watch(() => cardList.value, (newValue) => {
     const isParsing = item.parse_status == 'pending' || item.parse_status == 'processing';
     const isSummaryPending = item.parse_status == 'completed' &&
       (item.summary_status == 'pending' || item.summary_status == 'processing');
-    // URL 类型且标题为空或是 URL 本身时，继续轮询等待标题更新
+    // URL 类型（或来源看起来是 URL）且标题为空/仍是 URL 本身时，继续轮询等待标题更新
+    const sourceOrName = String(item.title || item.file_name || '').trim();
+    const looksLikeURL = /^(https?:\/\/|www\.)/i.test(sourceOrName);
+    const isURLType = item.type == 'url' || looksLikeURL;
     const isURLWaitingTitle = item.parse_status == 'completed' &&
-      item.type == 'url' &&
-      (!item.title || item.title == '' || item.title.startsWith('http'));
+      isURLType &&
+      (!item.title || item.title == '' || /^(https?:\/\/|www\.)/i.test(item.title));
     return isParsing || isSummaryPending || isURLWaitingTitle;
   })
   if (timeout !== null) {
@@ -757,10 +764,8 @@ type KnowledgeCard = {
   tag_id?: string;
 };
 const updateStatus = (analyzeList: KnowledgeCard[]) => {
-  let query = ``;
-  for (let i = 0; i < analyzeList.length; i++) {
-    query += `ids=${analyzeList[i].id}&`;
-  }
+  const query = analyzeList.map((item) => `ids=${encodeURIComponent(item.id)}`).join('&');
+  if (!query) return;
   timeout = setInterval(() => {
     batchQueryKnowledge(query).then((result: any) => {
       if (result.success && result.data) {
@@ -773,8 +778,11 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
           cardList.value[index].summary_status = item.summary_status;
           cardList.value[index].description = item.description;
           // 同步更新标题（URL 导入解析成功后标题会异步更新）
-          if (item.title) {
-            cardList.value[index].title = item.title;
+          const titleCandidate = String(item.title || item.file_name || '').trim();
+          if (titleCandidate && !/^(https?:\/\/|www\.)/i.test(titleCandidate)) {
+            cardList.value[index].title = titleCandidate;
+            cardList.value[index].display_name = titleCandidate;
+            cardList.value[index].file_name = titleCandidate;
           }
         });
       }

@@ -46,7 +46,7 @@ export default function (knowledgeBaseId?: string) {
       .then((result: any) => {
         const { data, total: totalResult } = result;
     const cardList_ = data.map((item: any) => {
-      const rawName = item.file_name || item.title || item.source || t('knowledgeBase.untitledDocument')
+      const rawName = item.title || item.file_name || item.source || t('knowledgeBase.untitledDocument')
       const dotIndex = rawName.lastIndexOf('.')
       const displayName = dotIndex > 0 ? rawName.substring(0, dotIndex) : rawName
       const fileTypeSource = item.file_type || (item.type === 'manual' ? 'MANUAL' : '')

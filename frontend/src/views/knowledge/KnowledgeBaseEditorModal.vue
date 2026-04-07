@@ -743,6 +743,7 @@ const doSubmit = async () => {
       }
       MessagePlugin.success(t('knowledgeEditor.messages.createSuccess'))
       emit('success', result.data.id)
+      handleClose()
     } else {
       // 编辑模式：分别更新基本信息和配置
       if (!props.kbId) {
@@ -798,9 +799,10 @@ const doSubmit = async () => {
       await updateKBConfig(props.kbId, config)
       MessagePlugin.success(t('knowledgeEditor.messages.updateSuccess'))
       emit('success', props.kbId)
+      // 编辑模式保存后保持弹窗打开，便于连续配置多个分组
+      // 同步刷新数据，确保后续分组看到最新配置状态
+      await loadKBData()
     }
-    
-    handleClose()
   } catch (error: any) {
     console.error('Knowledge base operation failed:', error)
     MessagePlugin.error(error?.message || t('common.operationFailed'))
@@ -1242,4 +1244,3 @@ watch(
   }
 }
 </style>
-
