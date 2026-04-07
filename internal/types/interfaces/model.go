@@ -35,6 +35,8 @@ type ModelService interface {
 	GetVLMModel(ctx context.Context, modelId string) (vlm.VLM, error)
 	// GetASRModel gets an automatic speech recognition model
 	GetASRModel(ctx context.Context, modelId string) (asr.ASR, error)
+	// ResolvePlatformDefault returns the default platform model for a given type.
+	ResolvePlatformDefault(ctx context.Context, modelType types.ModelType) (*types.Model, error)
 }
 
 // ModelRepository defines the model repository interface
@@ -57,4 +59,6 @@ type ModelRepository interface {
 	// ClearDefaultByType clears the default flag for all models of a specific type
 	// optionally excluding a specific model ID.
 	ClearDefaultByType(ctx context.Context, tenantID uint64, modelType types.ModelType, excludeID string) error
+	// ListPlatformDefaults returns platform-shared models, optionally filtered by type.
+	ListPlatformDefaults(ctx context.Context, modelType types.ModelType) ([]*types.Model, error)
 }

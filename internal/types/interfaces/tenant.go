@@ -46,4 +46,6 @@ type TenantRepository interface {
 	DeleteTenant(ctx context.Context, id uint64) error
 	// AdjustStorageUsed adjusts the storage used for a tenant
 	AdjustStorageUsed(ctx context.Context, tenantID uint64, delta int64) error
+	// AdjustTokenUsed atomically adjusts the token usage for a tenant
+	AdjustTokenUsed(ctx context.Context, tenantID uint64, delta int64) error
 }

@@ -500,3 +500,16 @@ func (s *modelService) GetASRModel(ctx context.Context, modelId string) (asr.ASR
 
 	return sttModel, nil
 }
+
+// ResolvePlatformDefault returns the first active platform model of the given type.
+// It prefers models marked is_default=true, then falls back to the earliest created.
+func (s *modelService) ResolvePlatformDefault(ctx context.Context, modelType types.ModelType) (*types.Model, error) {
+	models, err := s.repo.ListPlatformDefaults(ctx, modelType)
+	if err != nil {
+		return nil, err
+	}
+	if len(models) == 0 {
+		return nil, nil
+	}
+	return models[0], nil
+}

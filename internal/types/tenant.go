@@ -81,6 +81,8 @@ type Tenant struct {
 	APIKey string `yaml:"api_key"             json:"api_key"`
 	// Status
 	Status string `yaml:"status"              json:"status"              gorm:"default:'active'"`
+	// Owner user ID — the user who created this tenant (tenant admin)
+	OwnerID string `yaml:"owner_id"            json:"owner_id"            gorm:"type:varchar(36);index"`
 	// Retriever engines
 	RetrieverEngines RetrieverEngines `yaml:"retriever_engines"   json:"retriever_engines"   gorm:"type:json"`
 	// Business
@@ -89,6 +91,12 @@ type Tenant struct {
 	StorageQuota int64 `yaml:"storage_quota"       json:"storage_quota"       gorm:"default:10737418240"`
 	// Storage used (Bytes)
 	StorageUsed int64 `yaml:"storage_used"        json:"storage_used"        gorm:"default:0"`
+	// Token quota (total tokens allowed per period), 0 means unlimited
+	TokenQuota int64 `yaml:"token_quota"         json:"token_quota"         gorm:"default:0"`
+	// Token usage (tokens consumed in current period)
+	TokenUsed int64 `yaml:"token_used"          json:"token_used"          gorm:"default:0"`
+	// When the current quota period resets (nil means never reset)
+	QuotaResetAt *time.Time `yaml:"quota_reset_at"      json:"quota_reset_at"`
 	// Deprecated: AgentConfig is deprecated, use CustomAgent (builtin-smart-reasoning) config instead.
 	// This field is kept for backward compatibility and will be removed in future versions.
 	AgentConfig *AgentConfig `yaml:"agent_config"        json:"agent_config"        gorm:"type:jsonb"`

@@ -42,6 +42,7 @@ type sessionService struct {
 	kbShareService        interfaces.KBShareService                // Service for KB sharing operations
 	memoryService         interfaces.MemoryService                 // Service for memory operations
 	queryRouter           *dispatcher.Dispatcher                   // Query routing classifier for auto mode selection
+	tokenUsageService     *TokenUsageService                       // Service for token quota enforcement
 }
 
 // NewSessionService creates a new session service instance with all required dependencies
@@ -61,6 +62,7 @@ func NewSessionService(cfg *config.Config,
 	kbShareService interfaces.KBShareService,
 	memoryService interfaces.MemoryService,
 	queryRouter *dispatcher.Dispatcher,
+	tokenUsageService *TokenUsageService,
 ) interfaces.SessionService {
 	return &sessionService{
 		cfg:                   cfg,
@@ -79,6 +81,7 @@ func NewSessionService(cfg *config.Config,
 		kbShareService:        kbShareService,
 		memoryService:         memoryService,
 		queryRouter:           queryRouter,
+		tokenUsageService:     tokenUsageService,
 	}
 }
 

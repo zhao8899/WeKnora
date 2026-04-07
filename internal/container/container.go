@@ -219,6 +219,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// Query router for automatic QA mode selection (keyword-based, zero LLM cost).
 	must(container.Provide(newQueryRouter))
 
+	// Token usage service for quota enforcement
+	must(container.Provide(service.NewTokenUsageService))
+
 	// Session service (depends on agent service)
 	// SessionService is created after AgentService and passes itself to AgentService.CreateAgentEngine when needed
 	logger.Debugf(ctx, "[Container] Registering session service...")

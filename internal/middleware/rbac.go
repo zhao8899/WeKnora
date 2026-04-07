@@ -36,8 +36,9 @@ func RequireRole(required types.OrgMemberRole) gin.HandlerFunc {
 		// If user has the role stored in context (set during auth when org membership is resolved)
 		role, _ := c.Request.Context().Value(types.OrgRoleContextKey).(types.OrgMemberRole)
 		if role == "" {
-			// No organization role — default to admin for tenant owner, viewer for others
-			role = resolveDefaultRole(user)
+			// No organization role — resolve from user + tenant ownership
+			tenant, _ := c.Request.Context().Value(types.TenantInfoContextKey).(*types.Tenant)
+			role = resolveDefaultRole(user, tenant)
 		}
 
 		if !role.HasPermission(required) {
@@ -55,10 +56,15 @@ func RequireRole(required types.OrgMemberRole) gin.HandlerFunc {
 	}
 }
 
-// resolveDefaultRole assigns a default role based on user properties.
-// Tenant owners (first user) get admin; others get editor as a safe default.
-func resolveDefaultRole(user *types.User) types.OrgMemberRole {
+// resolveDefaultRole assigns a default role based on user properties and tenant ownership.
+// Super-admins and tenant owners get admin; others get editor as a safe default.
+func resolveDefaultRole(user *types.User, tenant *types.Tenant) types.OrgMemberRole {
+	// Super-admin: can access all tenants
 	if user.CanAccessAllTenants {
+		return types.OrgRoleAdmin
+	}
+	// Tenant owner: the user who created this tenant
+	if tenant != nil && tenant.OwnerID != "" && tenant.OwnerID == user.ID {
 		return types.OrgRoleAdmin
 	}
 	// Default to editor for regular authenticated users within their own tenant.

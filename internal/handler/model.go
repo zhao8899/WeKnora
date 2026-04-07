@@ -33,7 +33,7 @@ func NewModelHandler(service interfaces.ModelService) *ModelHandler {
 // hideSensitiveInfo hides sensitive information (APIKey, BaseURL) for builtin models
 // Returns a copy of the model with sensitive fields cleared if it's a builtin model
 func hideSensitiveInfo(model *types.Model) *types.Model {
-	if !model.IsBuiltin {
+	if !model.IsBuiltin && !model.IsPlatform {
 		return model
 	}
 
@@ -53,8 +53,9 @@ func hideSensitiveInfo(model *types.Model) *types.Model {
 			EmbeddingParameters: model.Parameters.EmbeddingParameters,
 			ParameterSize:       model.Parameters.ParameterSize,
 		},
-		IsBuiltin: model.IsBuiltin,
-		Status:    model.Status,
+		IsBuiltin:  model.IsBuiltin,
+		IsPlatform: model.IsPlatform,
+		Status:     model.Status,
 		CreatedAt: model.CreatedAt,
 		UpdatedAt: model.UpdatedAt,
 	}
@@ -485,4 +486,96 @@ func (h *ModelHandler) ListModelProviders(c *gin.Context) {
 		"success": true,
 		"data":    result,
 	})
+}
+
+// CreatePlatformModel creates a platform-shared model (super-admin only)
+func (h *ModelHandler) CreatePlatformModel(c *gin.Context) {
+	ctx := c.Request.Context()
+	user, _ := ctx.Value(types.UserContextKey).(*types.User)
+	if user == nil || !user.CanAccessAllTenants {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "super-admin access required"})
+		return
+	}
+
+	var model types.Model
+	if err := c.ShouldBindJSON(&model); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	model.IsPlatform = true
+	model.TenantID = types.MustTenantIDFromContext(ctx)
+
+	if err := h.service.CreateModel(ctx, &model); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"success": true, "data": model})
+}
+
+// ListPlatformModels lists all platform-shared models
+func (h *ModelHandler) ListPlatformModels(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	models, err := h.service.ListModels(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	var platformModels []*types.Model
+	for _, m := range models {
+		if m.IsPlatform {
+			platformModels = append(platformModels, m)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": platformModels})
+}
+
+// UpdatePlatformModel updates a platform-shared model (super-admin only)
+func (h *ModelHandler) UpdatePlatformModel(c *gin.Context) {
+	ctx := c.Request.Context()
+	user, _ := ctx.Value(types.UserContextKey).(*types.User)
+	if user == nil || !user.CanAccessAllTenants {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "super-admin access required"})
+		return
+	}
+
+	id := c.Param("id")
+	var model types.Model
+	if err := c.ShouldBindJSON(&model); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	model.ID = id
+	model.IsPlatform = true
+	model.TenantID = types.MustTenantIDFromContext(ctx)
+
+	if err := h.service.UpdateModel(ctx, &model); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": model})
+}
+
+// DeletePlatformModel deletes a platform-shared model (super-admin only)
+func (h *ModelHandler) DeletePlatformModel(c *gin.Context) {
+	ctx := c.Request.Context()
+	user, _ := ctx.Value(types.UserContextKey).(*types.User)
+	if user == nil || !user.CanAccessAllTenants {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "super-admin access required"})
+		return
+	}
+
+	id := c.Param("id")
+	if err := h.service.DeleteModel(ctx, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }

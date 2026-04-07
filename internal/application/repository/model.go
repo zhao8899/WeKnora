@@ -28,7 +28,7 @@ func (r *modelRepository) Create(ctx context.Context, m *types.Model) error {
 func (r *modelRepository) GetByID(ctx context.Context, tenantID uint64, id string) (*types.Model, error) {
 	var m types.Model
 	if err := r.db.WithContext(ctx).Where("id = ?", id).Where(
-		"tenant_id = ? OR is_builtin = true", tenantID,
+		"tenant_id = ? OR is_builtin = true OR is_platform = true", tenantID,
 	).First(&m).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -44,7 +44,7 @@ func (r *modelRepository) List(
 ) ([]*types.Model, error) {
 	var models []*types.Model
 	query := r.db.WithContext(ctx).Where(
-		"tenant_id = ? OR is_builtin = true", tenantID,
+		"tenant_id = ? OR is_builtin = true OR is_platform = true", tenantID,
 	)
 
 	if modelType != "" {
@@ -96,4 +96,17 @@ func (r *modelRepository) ClearDefaultByType(
 
 	// Batch update: set is_default to false for all matching records
 	return query.Update("is_default", false).Error
+}
+
+// ListPlatformDefaults returns all platform-shared models, optionally filtered by type.
+func (r *modelRepository) ListPlatformDefaults(ctx context.Context, modelType types.ModelType) ([]*types.Model, error) {
+	var models []*types.Model
+	query := r.db.WithContext(ctx).Where("is_platform = ? AND status = ?", true, types.ModelStatusActive)
+	if modelType != "" {
+		query = query.Where("type = ?", modelType)
+	}
+	if err := query.Order("is_default DESC, created_at ASC").Find(&models).Error; err != nil {
+		return nil, err
+	}
+	return models, nil
 }

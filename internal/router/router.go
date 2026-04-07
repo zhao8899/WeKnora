@@ -398,6 +398,16 @@ func RegisterModelRoutes(r *gin.RouterGroup, handler *handler.ModelHandler) {
 		// 删除模型（仅管理员）
 		models.DELETE("/:id", requireAdmin, handler.DeleteModel)
 	}
+
+	// Platform model management (super-admin only)
+	platform := models.Group("/platform")
+	platform.Use(requireAdmin)
+	{
+		platform.POST("", handler.CreatePlatformModel)
+		platform.GET("", handler.ListPlatformModels)
+		platform.PUT("/:id", handler.UpdatePlatformModel)
+		platform.DELETE("/:id", handler.DeletePlatformModel)
+	}
 }
 
 func RegisterEvaluationRoutes(r *gin.RouterGroup, handler *handler.EvaluationHandler) {

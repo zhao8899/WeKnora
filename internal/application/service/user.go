@@ -137,6 +137,13 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		return nil, errors.New("failed to create user")
 	}
 
+	// Set the tenant owner to the newly created user
+	createdTenant.OwnerID = user.ID
+	if _, err := s.tenantService.UpdateTenant(ctx, createdTenant); err != nil {
+		logger.Errorf(ctx, "Failed to set tenant owner: %v", err)
+		// Non-fatal: user is created, ownership can be fixed later
+	}
+
 	logger.Info(ctx, "User registered successfully")
 	return user, nil
 }

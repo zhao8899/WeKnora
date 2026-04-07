@@ -31,6 +31,13 @@ func (s *sessionService) KnowledgeQA(
 		req.EnableMemory,
 	)
 
+	// Check token quota before proceeding
+	if tenantInfo, ok := ctx.Value(types.TenantInfoContextKey).(*types.Tenant); ok && tenantInfo != nil {
+		if err := s.tokenUsageService.CheckQuota(ctx, tenantInfo); err != nil {
+			return err
+		}
+	}
+
 	// Resolve knowledge bases using shared helper
 	knowledgeBaseIDs, knowledgeIDs := s.resolveKnowledgeBases(ctx, req)
 
@@ -250,7 +257,7 @@ func (s *sessionService) selectChatModelID(
 		}
 	}
 
-	// No knowledge bases - try to find any available chat model
+	// No knowledge bases - try to find any available tenant-owned chat model
 	models, err := s.modelService.ListModels(ctx)
 	if err != nil {
 		logger.Errorf(ctx, "Failed to list models: %v", err)
@@ -261,6 +268,16 @@ func (s *sessionService) selectChatModelID(
 			logger.Infof(ctx, "Using first available KnowledgeQA model: %s", model.ID)
 			return model.ID, nil
 		}
+	}
+
+	// Final fallback: platform default chat model
+	platformModel, err := s.modelService.ResolvePlatformDefault(ctx, types.ModelTypeKnowledgeQA)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to resolve platform default chat model: %v", err)
+	}
+	if platformModel != nil {
+		logger.Infof(ctx, "Using platform default chat model: %s (%s)", platformModel.ID, platformModel.Name)
+		return platformModel.ID, nil
 	}
 
 	logger.Error(ctx, "No chat model ID available")

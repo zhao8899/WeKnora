@@ -89,6 +89,8 @@ type Model struct {
 	IsDefault bool `yaml:"is_default"  json:"is_default"`
 	// Whether the model is a builtin model (visible to all tenants)
 	IsBuiltin bool `yaml:"is_builtin"  json:"is_builtin"  gorm:"default:false"`
+	// Whether the model is a platform-shared model (configured by admin, usable by all tenants)
+	IsPlatform bool `yaml:"is_platform" json:"is_platform" gorm:"default:false"`
 	// Model status, default: active, possible: downloading, download_failed
 	Status ModelStatus `yaml:"status"      json:"status"`
 	// Creation time of the model

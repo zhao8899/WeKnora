@@ -19,6 +19,23 @@ func NewStorageQuotaExceededError() *StorageQuotaExceededError {
 	}
 }
 
+// TokenQuotaExceededError represents the token quota exceeded error
+type TokenQuotaExceededError struct {
+	Message string
+}
+
+// Error implements the error interface
+func (e *TokenQuotaExceededError) Error() string {
+	return e.Message
+}
+
+// NewTokenQuotaExceededError creates a token quota exceeded error
+func NewTokenQuotaExceededError() *TokenQuotaExceededError {
+	return &TokenQuotaExceededError{
+		Message: "Token quota exceeded: your workspace has reached its token usage limit",
+	}
+}
+
 // DuplicateKnowledgeError duplicate knowledge error, contains the existing knowledge object
 type DuplicateKnowledgeError struct {
 	Message   string
