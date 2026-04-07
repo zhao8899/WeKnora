@@ -16,7 +16,7 @@ import { getCaretCoordinates } from '@/utils/caret';
 import { listModels, type ModelConfig } from '@/api/model';
 import { listAgents, type CustomAgent, BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from '@/api/agent';
 import { getTenantWebSearchConfig } from '@/api/web-search';
-import { getConversationConfig, updateConversationConfig, type ConversationConfig } from '@/api/system';
+import { getConversationConfig, type ConversationConfig } from '@/api/system';
 import { useI18n } from 'vue-i18n';
 
 const route = useRoute();
@@ -621,16 +621,6 @@ const ensureModelSelection = () => {
   }
 };
 
-const getConversationConfigErrorMessage = (error: any) => {
-  const message = error?.message || error?.error?.message;
-  if (error?.status === 403) {
-    return message || t('conversationSettings.toasts.adminRequired');
-  }
-  return t('conversationSettings.toasts.saveFailed', {
-    message: message || t('common.saveFailed'),
-  });
-};
-
 const handleGoToConversationModels = () => {
   showModelSelector.value = false;
   router.push('/platform/settings');
@@ -659,36 +649,11 @@ const handleModelChange = async (value: string | number | Array<string | number>
     showModelSelector.value = false;
     return;
   }
-  
-  // 保存到后端
-  try {
-    if (conversationConfig.value) {
-      const updatedConfig = {
-        ...conversationConfig.value,
-        summary_model_id: val
-      };
-      const response = await updateConversationConfig(updatedConfig);
-      
-      // 更新本地状态
-      conversationConfig.value = response.data;
-      selectedModelId.value = val;
-      showModelSelector.value = false;
-      
-      // 同步到 store
-      settingsStore.updateConversationModels({
-        summaryModelId: val,
-        selectedChatModelId: val,
-        rerankModelId: conversationConfig.value?.rerank_model_id || '',
-      });
-      
-      MessagePlugin.success(t('conversationSettings.toasts.chatModelSaved'));
-    }
-  } catch (error) {
-    console.error('保存模型配置失败:', error);
-    MessagePlugin.error(getConversationConfigErrorMessage(error));
-    // 恢复到之前的值
-    selectedModelId.value = conversationConfig.value?.summary_model_id || '';
-  }
+
+  // 聊天输入框里的模型切换仅影响当前用户本地选择，不写回租户级配置
+  selectedModelId.value = val;
+  showModelSelector.value = false;
+  MessagePlugin.success(t('conversationSettings.toasts.chatModelSaved'));
 };
 
 const selectedModel = computed(() => {
@@ -3154,4 +3119,3 @@ const getImgSrc = (url: string) => {
   }
 }
 </style>
-

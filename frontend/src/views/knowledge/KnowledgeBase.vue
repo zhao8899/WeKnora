@@ -763,11 +763,15 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
         (result.data as KnowledgeCard[]).forEach((item: KnowledgeCard) => {
           const index = cardList.value.findIndex(card => card.id == item.id);
           if (index == -1) return;
-          
+
           // Always update the card data
           cardList.value[index].parse_status = item.parse_status;
           cardList.value[index].summary_status = item.summary_status;
           cardList.value[index].description = item.description;
+          // 同步更新标题（URL 导入解析成功后标题会异步更新）
+          if (item.title) {
+            cardList.value[index].title = item.title;
+          }
         });
       }
     }).catch((_err) => {
