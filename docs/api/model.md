@@ -2,14 +2,18 @@
 
 [返回目录](./README.md)
 
-| 方法   | 路径                    | 描述                  |
-| ------ | ----------------------- | --------------------- |
-| POST   | `/models`               | 创建模型              |
-| GET    | `/models`               | 获取模型列表          |
-| GET    | `/models/:id`           | 获取模型详情          |
-| PUT    | `/models/:id`           | 更新模型              |
-| DELETE | `/models/:id`           | 删除模型              |
-| GET    | `/models/providers`     | 获取模型服务商列表    |
+| 方法   | 路径                        | 描述                              |
+| ------ | --------------------------- | --------------------------------- |
+| POST   | `/models`                   | 创建模型                          |
+| GET    | `/models`                   | 获取模型列表                      |
+| GET    | `/models/:id`               | 获取模型详情                      |
+| PUT    | `/models/:id`               | 更新模型                          |
+| DELETE | `/models/:id`               | 删除模型                          |
+| GET    | `/models/providers`         | 获取模型服务商列表                |
+| POST   | `/models/platform`          | 创建平台共享模型（超级管理员）    |
+| GET    | `/models/platform`          | 获取平台共享模型列表（超级管理员）|
+| PUT    | `/models/platform/:id`      | 更新平台共享模型（超级管理员）    |
+| DELETE | `/models/platform/:id`      | 删除平台共享模型（超级管理员）    |
 
 ## 服务商支持 (Provider Support)
 
@@ -499,3 +503,67 @@ curl --location --request DELETE 'http://localhost:8080/api/v1/models/8fdc464d-8
 | ---------------------- | ---- | -------------------------- |
 | dimension              | int  | 向量维度（如：768, 1024）  |
 | truncate_prompt_tokens | int  | 截断 Token 数（0 表示不截断）|
+
+### 模型标志字段
+
+| 字段         | 类型 | 说明                                                     |
+| ------------ | ---- | -------------------------------------------------------- |
+| is_default   | bool | 是否为该类型的默认模型                                   |
+| is_builtin   | bool | 内置模型（所有租户可见，只读，敏感信息隐藏）             |
+| is_platform  | bool | 平台共享模型（所有租户可用，管理员管理，敏感信息隐藏）   |
+
+## 平台共享模型 API
+
+平台共享模型由超级管理员（`can_access_all_tenants=true`）管理，所有租户自动可用。当租户没有自有模型时，系统会自动 fallback 到平台共享模型。
+
+### POST `/models/platform` - 创建平台共享模型
+
+需要超级管理员权限（`can_access_all_tenants=true`）。
+
+```curl
+curl -X POST 'http://localhost:8080/api/v1/models/platform' \
+--header 'Authorization: Bearer <admin-token>' \
+--header 'Content-Type: application/json' \
+--data '{
+    "name": "GPT-4o",
+    "type": "KnowledgeQA",
+    "source": "remote",
+    "description": "平台共享 LLM 模型",
+    "parameters": {
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-xxx",
+        "provider": "openai"
+    },
+    "is_default": true
+}'
+```
+
+### GET `/models/platform` - 获取平台共享模型列表
+
+```curl
+curl 'http://localhost:8080/api/v1/models/platform' \
+--header 'Authorization: Bearer <admin-token>'
+```
+
+### PUT `/models/platform/:id` - 更新平台共享模型
+
+```curl
+curl -X PUT 'http://localhost:8080/api/v1/models/platform/<model-id>' \
+--header 'Authorization: Bearer <admin-token>' \
+--header 'Content-Type: application/json' \
+--data '{
+    "name": "GPT-4o-mini",
+    "parameters": {
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "sk-new-key",
+        "provider": "openai"
+    }
+}'
+```
+
+### DELETE `/models/platform/:id` - 删除平台共享模型
+
+```curl
+curl -X DELETE 'http://localhost:8080/api/v1/models/platform/<model-id>' \
+--header 'Authorization: Bearer <admin-token>'
+```

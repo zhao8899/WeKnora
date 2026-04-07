@@ -2,17 +2,40 @@
 
 [返回目录](./README.md)
 
-| 方法   | 路径           | 描述                  |
-| ------ | -------------- | --------------------- |
-| POST   | `/tenants`     | 创建新租户            |
-| GET    | `/tenants/:id` | 获取指定租户信息      |
-| PUT    | `/tenants/:id` | 更新租户信息          |
-| DELETE | `/tenants/:id` | 删除租户              |
-| GET    | `/tenants`     | 获取租户列表          |
-| GET    | `/tenants/all` | 获取所有租户列表（需跨租户权限） |
-| GET    | `/tenants/search` | 搜索租户（需跨租户权限）      |
-| GET    | `/tenants/kv/:key` | 获取租户KV配置               |
-| PUT    | `/tenants/kv/:key` | 更新租户KV配置               |
+| 方法   | 路径              | 描述                                 |
+| ------ | ----------------- | ------------------------------------ |
+| POST   | `/tenants`        | 创建新租户                           |
+| GET    | `/tenants/:id`    | 获取指定租户信息                     |
+| PUT    | `/tenants/:id`    | 更新租户信息                         |
+| DELETE | `/tenants/:id`    | 删除租户                             |
+| GET    | `/tenants`        | 获取租户列表                         |
+| GET    | `/tenants/all`    | 获取所有租户列表（需跨租户权限）     |
+| GET    | `/tenants/search` | 搜索租户（需跨租户权限）             |
+| GET    | `/tenants/kv/:key`| 获取租户KV配置                       |
+| PUT    | `/tenants/kv/:key`| 更新租户KV配置                       |
+
+## 权限模型
+
+租户权限采用三层模型：
+
+| 角色 | 判定条件 | 权限 |
+|------|---------|------|
+| **超级管理员** | `can_access_all_tenants=true` | 跨租户访问、全局 admin |
+| **租户所有者** | `tenant.owner_id == user.id` | 本租户 admin（管理设置、模型、成员） |
+| **普通用户** | 默认 | editor（基本 CRUD，无管理权限） |
+
+用户注册时自动成为其创建的租户的所有者（`owner_id` 自动设置）。
+
+## Token 配额字段
+
+| 字段           | 类型      | 说明                              |
+| -------------- | --------- | --------------------------------- |
+| `owner_id`     | string    | 租户所有者用户ID                  |
+| `token_quota`  | int64     | Token 配额，0 = 不限制           |
+| `token_used`   | int64     | 当前已使用 Token 数               |
+| `quota_reset_at` | timestamp | 配额重置时间（nil = 不重置）    |
+
+当 `token_used >= token_quota`（且 `token_quota > 0`）时，QA 请求会返回配额超限错误。
 
 ## POST `/tenants` - 创建新租户
 
