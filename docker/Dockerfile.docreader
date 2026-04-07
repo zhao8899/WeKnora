@@ -54,7 +54,7 @@ RUN echo "检查本地protoc安装包..." && \
 # 复制依赖文件
 COPY docreader/pyproject.toml docreader/uv.lock ./
 RUN pip install uv --break-system-packages && \
-    python -m uv sync --locked --no-dev
+    python -m uv sync --no-dev
 
 # 复制源代码和生成脚本
 COPY docreader docreader
