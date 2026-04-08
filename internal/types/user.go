@@ -99,6 +99,9 @@ type RegisterRequest struct {
 	Username string `json:"username" binding:"required,min=2,max=50"`
 	Email    string `json:"email"    binding:"required,email"`
 	Password string `json:"password" binding:"required,min=6"`
+	// TenantID is optional. If provided, user joins that tenant as a regular member.
+	// If empty, a new tenant is created and the user becomes its owner.
+	TenantID uint64 `json:"tenant_id,omitempty"`
 }
 
 // LoginResponse represents a login response

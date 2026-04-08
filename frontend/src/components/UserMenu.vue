@@ -18,15 +18,11 @@
     <!-- 下拉菜单 -->
     <Transition name="dropdown">
       <div v-if="menuVisible" class="user-dropdown" @click.stop>
-        <!-- 管理快捷入口 — 仅管理员可见 -->
+        <!-- 租户管理快捷入口 — 仅租户管理员/超管可见 -->
         <template v-if="isAdminUser">
           <div class="menu-item" @click="handleQuickNav('models')">
             <t-icon name="control-platform" class="menu-icon" />
             <span>{{ $t('settings.modelManagement') }}</span>
-          </div>
-          <div class="menu-item" @click="handleQuickNav('ollama')">
-            <t-icon name="server" class="menu-icon" />
-            <span>Ollama</span>
           </div>
           <div class="menu-item" @click="handleQuickNav('websearch')">
             <svg

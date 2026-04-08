@@ -207,7 +207,7 @@ const navGroups = computed<NavGroup[]>(() => {
     ]
   })
 
-  // 租户配置 — 仅管理员可见（租户Owner或超管）
+  // 租户配置 — 仅租户管理员（Owner）或超管可见
   if (isAdmin.value) {
     groups.push({
       section: 'tenant',
@@ -224,8 +224,21 @@ const navGroups = computed<NavGroup[]>(() => {
             { key: 'vllm', label: t('model.vlmModel') }
           ]
         },
-        { key: 'ollama', icon: 'server', label: 'Ollama' },
         { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig') },
+        { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
+        { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
+        { key: 'api', icon: 'secured', label: t('settings.apiInfo') },
+      ]
+    })
+  }
+
+  // 平台管理 — 仅超级管理员可见（平台基础设施配置）
+  if (isSuperAdmin.value) {
+    groups.push({
+      section: 'platform',
+      label: t('settings.sectionPlatform'),
+      items: [
+        { key: 'ollama', icon: 'server', label: 'Ollama' },
         {
           key: 'parser',
           icon: 'file-search',
@@ -250,19 +263,6 @@ const navGroups = computed<NavGroup[]>(() => {
             { key: 's3', label: 'AWS S3' },
           ]
         },
-        { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
-        { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
-        { key: 'api', icon: 'secured', label: t('settings.apiInfo') },
-      ]
-    })
-  }
-
-  // 平台管理 — 仅超级管理员可见
-  if (isSuperAdmin.value) {
-    groups.push({
-      section: 'platform',
-      label: t('settings.sectionPlatform'),
-      items: [
         { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') },
       ]
     })

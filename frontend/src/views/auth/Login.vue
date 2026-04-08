@@ -323,8 +323,18 @@
               type="password"
               size="large"
               :disabled="loading"
+            />
+          </t-form-item>
+
+          <t-form-item :label="$t('auth.tenantId')" name="tenantId">
+            <t-input
+              v-model="registerData.tenantId"
+              :placeholder="$t('auth.tenantIdPlaceholder')"
+              size="large"
+              :disabled="loading"
               @keydown.enter="handleRegister"
             />
+            <template #help>{{ $t('auth.tenantIdHelp') }}</template>
           </t-form-item>
 
           <t-button
@@ -454,7 +464,8 @@ const registerData = reactive<{[key: string]: any}>({
   username: '',
   email: '',
   password: '',
-  confirmPassword: ''
+  confirmPassword: '',
+  tenantId: ''
 })
 
 // Login form validation rules
@@ -643,11 +654,16 @@ const handleRegister = async () => {
 
     loading.value = true
     
-    const response = await register({
+    const reqData: any = {
       username: registerData.username,
       email: registerData.email,
       password: registerData.password
-    })
+    }
+    // 如果填写了租户ID，传给后端以加入已有租户
+    if (registerData.tenantId && registerData.tenantId.trim()) {
+      reqData.tenant_id = Number(registerData.tenantId.trim())
+    }
+    const response = await register(reqData)
 
     if (response.success) {
       MessagePlugin.success(t('auth.registerSuccess'))
