@@ -559,6 +559,9 @@ export default {
   },
   settings: {
     title: 'Settings',
+    sectionPlatform: 'Platform',
+    sectionTenant: 'Tenant',
+    sectionPersonal: 'Personal',
     modelConfig: 'Model Settings',
     modelManagement: 'Model Management',
     agentConfig: 'Agent Settings',

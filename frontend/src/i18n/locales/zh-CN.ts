@@ -413,6 +413,9 @@ export default {
   },
   settings: {
     title: "设置",
+    sectionPlatform: "平台管理",
+    sectionTenant: "租户配置",
+    sectionPersonal: "个人设置",
     modelConfig: "模型配置",
     modelManagement: "模型管理",
     agentConfig: "Agent配置",

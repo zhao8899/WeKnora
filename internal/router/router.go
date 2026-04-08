@@ -162,6 +162,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 // RegisterChunkRoutes 注册分块相关的路由
 func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler) {
+	requireEditor := middleware.RequireRole(types.OrgRoleEditor)
+
 	// 分块路由组
 	chunks := r.Group("/chunks")
 	{
@@ -169,32 +171,35 @@ func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler) {
 		chunks.GET("/:knowledge_id", handler.ListKnowledgeChunks)
 		// 通过chunk_id获取单个chunk（不需要knowledge_id）
 		chunks.GET("/by-id/:id", handler.GetChunkByIDOnly)
-		// 删除分块
-		chunks.DELETE("/:knowledge_id/:id", handler.DeleteChunk)
-		// 删除知识下的所有分块
-		chunks.DELETE("/:knowledge_id", handler.DeleteChunksByKnowledgeID)
-		// 更新分块信息
-		chunks.PUT("/:knowledge_id/:id", handler.UpdateChunk)
-		// 删除单个生成的问题（通过问题ID）
-		chunks.DELETE("/by-id/:id/questions", handler.DeleteGeneratedQuestion)
+		// 删除分块（需要编辑者以上权限）
+		chunks.DELETE("/:knowledge_id/:id", requireEditor, handler.DeleteChunk)
+		// 删除知识下的所有分块（需要编辑者以上权限）
+		chunks.DELETE("/:knowledge_id", requireEditor, handler.DeleteChunksByKnowledgeID)
+		// 更新分块信息（需要编辑者以上权限）
+		chunks.PUT("/:knowledge_id/:id", requireEditor, handler.UpdateChunk)
+		// 删除单个生成的问题（需要编辑者以上权限）
+		chunks.DELETE("/by-id/:id/questions", requireEditor, handler.DeleteGeneratedQuestion)
 	}
 }
 
 // RegisterKnowledgeRoutes 注册知识相关的路由
 func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandler) {
+	requireEditor := middleware.RequireRole(types.OrgRoleEditor)
+	requireAdmin := middleware.RequireRole(types.OrgRoleAdmin)
+
 	// 知识库下的知识路由组
 	kb := r.Group("/knowledge-bases/:id/knowledge")
 	{
-		// 从文件创建知识
-		kb.POST("/file", handler.CreateKnowledgeFromFile)
-		// 从URL创建知识（支持网页URL和文件URL，传 file_name/file_type 或 URL 含已知扩展名时自动切换为文件下载模式）
-		kb.POST("/url", handler.CreateKnowledgeFromURL)
-		// 手工 Markdown 录入
-		kb.POST("/manual", handler.CreateManualKnowledge)
+		// 从文件创建知识（需要编辑者以上权限）
+		kb.POST("/file", requireEditor, handler.CreateKnowledgeFromFile)
+		// 从URL创建知识（需要编辑者以上权限）
+		kb.POST("/url", requireEditor, handler.CreateKnowledgeFromURL)
+		// 手工 Markdown 录入（需要编辑者以上权限）
+		kb.POST("/manual", requireEditor, handler.CreateManualKnowledge)
 		// 获取知识库下的知识列表
 		kb.GET("", handler.ListKnowledge)
-		// 清空知识库下的所有知识
-		kb.DELETE("", handler.ClearKnowledgeBaseContents)
+		// 清空知识库下的所有知识（需要管理员权限）
+		kb.DELETE("", requireAdmin, handler.ClearKnowledgeBaseContents)
 	}
 
 	// 知识路由组
@@ -204,26 +209,26 @@ func RegisterKnowledgeRoutes(r *gin.RouterGroup, handler *handler.KnowledgeHandl
 		k.GET("/batch", handler.GetKnowledgeBatch)
 		// 获取知识详情
 		k.GET("/:id", handler.GetKnowledge)
-		// 删除知识
-		k.DELETE("/:id", handler.DeleteKnowledge)
-		// 更新知识
-		k.PUT("/:id", handler.UpdateKnowledge)
-		// 更新手工 Markdown 知识
-		k.PUT("/manual/:id", handler.UpdateManualKnowledge)
-		// 重新解析知识
-		k.POST("/:id/reparse", handler.ReparseKnowledge)
+		// 删除知识（需要编辑者以上权限）
+		k.DELETE("/:id", requireEditor, handler.DeleteKnowledge)
+		// 更新知识（需要编辑者以上权限）
+		k.PUT("/:id", requireEditor, handler.UpdateKnowledge)
+		// 更新手工 Markdown 知识（需要编辑者以上权限）
+		k.PUT("/manual/:id", requireEditor, handler.UpdateManualKnowledge)
+		// 重新解析知识（需要编辑者以上权限）
+		k.POST("/:id/reparse", requireEditor, handler.ReparseKnowledge)
 		// 获取知识文件
 		k.GET("/:id/download", handler.DownloadKnowledgeFile)
 		// 预览知识文件（内联显示，返回正确 Content-Type）
 		k.GET("/:id/preview", handler.PreviewKnowledgeFile)
-		// 更新图像分块信息
-		k.PUT("/image/:id/:chunk_id", handler.UpdateImageInfo)
-		// 批量更新知识标签
-		k.PUT("/tags", handler.UpdateKnowledgeTagBatch)
+		// 更新图像分块信息（需要编辑者以上权限）
+		k.PUT("/image/:id/:chunk_id", requireEditor, handler.UpdateImageInfo)
+		// 批量更新知识标签（需要编辑者以上权限）
+		k.PUT("/tags", requireEditor, handler.UpdateKnowledgeTagBatch)
 		// 搜索知识
 		k.GET("/search", handler.SearchKnowledge)
-		// 移动知识到其他知识库
-		k.POST("/move", handler.MoveKnowledge)
+		// 移动知识到其他知识库（需要编辑者以上权限）
+		k.POST("/move", requireEditor, handler.MoveKnowledge)
 		// 获取知识移动进度
 		k.GET("/move/progress/:task_id", handler.GetKnowledgeMoveProgress)
 	}
@@ -234,22 +239,24 @@ func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler) {
 	if handler == nil {
 		return
 	}
+	requireEditor := middleware.RequireRole(types.OrgRoleEditor)
+
 	faq := r.Group("/knowledge-bases/:id/faq")
 	{
 		faq.GET("/entries", handler.ListEntries)
 		faq.GET("/entries/export", handler.ExportEntries)
 		faq.GET("/entries/:entry_id", handler.GetEntry)
-		faq.POST("/entries", handler.UpsertEntries)
-		faq.POST("/entry", handler.CreateEntry)
-		faq.PUT("/entries/:entry_id", handler.UpdateEntry)
-		faq.POST("/entries/:entry_id/similar-questions", handler.AddSimilarQuestions)
+		faq.POST("/entries", requireEditor, handler.UpsertEntries)
+		faq.POST("/entry", requireEditor, handler.CreateEntry)
+		faq.PUT("/entries/:entry_id", requireEditor, handler.UpdateEntry)
+		faq.POST("/entries/:entry_id/similar-questions", requireEditor, handler.AddSimilarQuestions)
 		// Unified batch update API - supports is_enabled, is_recommended, tag_id
-		faq.PUT("/entries/fields", handler.UpdateEntryFieldsBatch)
-		faq.PUT("/entries/tags", handler.UpdateEntryTagBatch)
-		faq.DELETE("/entries", handler.DeleteEntries)
+		faq.PUT("/entries/fields", requireEditor, handler.UpdateEntryFieldsBatch)
+		faq.PUT("/entries/tags", requireEditor, handler.UpdateEntryTagBatch)
+		faq.DELETE("/entries", requireEditor, handler.DeleteEntries)
 		faq.POST("/search", handler.SearchFAQ)
 		// FAQ import result display status
-		faq.PUT("/import/last-result/display", handler.UpdateLastImportResultDisplayStatus)
+		faq.PUT("/import/last-result/display", requireEditor, handler.UpdateLastImportResultDisplayStatus)
 	}
 	// FAQ import progress route (outside of knowledge-base scope)
 	faqImport := r.Group("/faq/import")
@@ -260,25 +267,28 @@ func RegisterFAQRoutes(r *gin.RouterGroup, handler *handler.FAQHandler) {
 
 // RegisterKnowledgeBaseRoutes 注册知识库相关的路由
 func RegisterKnowledgeBaseRoutes(r *gin.RouterGroup, handler *handler.KnowledgeBaseHandler) {
+	requireEditor := middleware.RequireRole(types.OrgRoleEditor)
+	requireAdmin := middleware.RequireRole(types.OrgRoleAdmin)
+
 	// 知识库路由组
 	kb := r.Group("/knowledge-bases")
 	{
-		// 创建知识库
-		kb.POST("", handler.CreateKnowledgeBase)
+		// 创建知识库（需要编辑者以上权限）
+		kb.POST("", requireEditor, handler.CreateKnowledgeBase)
 		// 获取知识库列表
 		kb.GET("", handler.ListKnowledgeBases)
 		// 获取知识库详情
 		kb.GET("/:id", handler.GetKnowledgeBase)
-		// 更新知识库
-		kb.PUT("/:id", handler.UpdateKnowledgeBase)
-		// 删除知识库
-		kb.DELETE("/:id", handler.DeleteKnowledgeBase)
+		// 更新知识库（需要编辑者以上权限，handler 层做资源级细粒度校验）
+		kb.PUT("/:id", requireEditor, handler.UpdateKnowledgeBase)
+		// 删除知识库（需要管理员权限，handler 层校验所有者）
+		kb.DELETE("/:id", requireAdmin, handler.DeleteKnowledgeBase)
 		// 置顶/取消置顶知识库
 		kb.PUT("/:id/pin", handler.TogglePinKnowledgeBase)
 		// 混合搜索
 		kb.GET("/:id/hybrid-search", handler.HybridSearch)
-		// 拷贝知识库
-		kb.POST("/copy", handler.CopyKnowledgeBase)
+		// 拷贝知识库（需要编辑者以上权限）
+		kb.POST("/copy", requireEditor, handler.CopyKnowledgeBase)
 		// 获取知识库复制进度
 		kb.GET("/copy/progress/:task_id", handler.GetKBCloneProgress)
 		// 获取可移动目标知识库列表
@@ -433,10 +443,12 @@ func RegisterAuthRoutes(r *gin.RouterGroup, handler *handler.AuthHandler) {
 }
 
 func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.InitializationHandler) {
+	requireEditor := middleware.RequireRole(types.OrgRoleEditor)
+
 	// 初始化接口
 	r.GET("/initialization/config/:kbId", handler.GetCurrentConfigByKB)
-	r.POST("/initialization/initialize/:kbId", handler.InitializeByKB)
-	r.PUT("/initialization/config/:kbId", handler.UpdateKBConfig) // 新的简化版接口，只传模型ID
+	r.POST("/initialization/initialize/:kbId", requireEditor, handler.InitializeByKB)
+	r.PUT("/initialization/config/:kbId", requireEditor, handler.UpdateKBConfig) // 新的简化版接口，只传模型ID
 
 	// Ollama相关接口
 	r.GET("/initialization/ollama/status", handler.CheckOllamaStatus)
@@ -475,20 +487,22 @@ func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler) {
 
 // RegisterMCPServiceRoutes registers MCP service routes
 func RegisterMCPServiceRoutes(r *gin.RouterGroup, handler *handler.MCPServiceHandler) {
+	requireAdmin := middleware.RequireRole(types.OrgRoleAdmin)
+
 	mcpServices := r.Group("/mcp-services")
 	{
-		// Create MCP service
-		mcpServices.POST("", handler.CreateMCPService)
+		// Create MCP service（需要管理员权限）
+		mcpServices.POST("", requireAdmin, handler.CreateMCPService)
 		// List MCP services
 		mcpServices.GET("", handler.ListMCPServices)
 		// Get MCP service by ID
 		mcpServices.GET("/:id", handler.GetMCPService)
-		// Update MCP service
-		mcpServices.PUT("/:id", handler.UpdateMCPService)
-		// Delete MCP service
-		mcpServices.DELETE("/:id", handler.DeleteMCPService)
-		// Test MCP service connection
-		mcpServices.POST("/:id/test", handler.TestMCPService)
+		// Update MCP service（需要管理员权限）
+		mcpServices.PUT("/:id", requireAdmin, handler.UpdateMCPService)
+		// Delete MCP service（需要管理员权限）
+		mcpServices.DELETE("/:id", requireAdmin, handler.DeleteMCPService)
+		// Test MCP service connection（需要管理员权限）
+		mcpServices.POST("/:id/test", requireAdmin, handler.TestMCPService)
 		// Get MCP service tools
 		mcpServices.GET("/:id/tools", handler.GetMCPServiceTools)
 		// Get MCP service resources
@@ -508,41 +522,45 @@ func RegisterWebSearchRoutes(r *gin.RouterGroup, webSearchHandler *handler.WebSe
 
 // RegisterWebSearchProviderRoutes registers CRUD routes for web search provider configurations
 func RegisterWebSearchProviderRoutes(r *gin.RouterGroup, h *handler.WebSearchProviderHandler) {
+	requireAdmin := middleware.RequireRole(types.OrgRoleAdmin)
+
 	providers := r.Group("/web-search-providers")
 	{
 		// List available provider types (metadata for UI forms)
 		providers.GET("/types", h.ListProviderTypes)
-		// Test with raw credentials (no persistence)
-		providers.POST("/test", h.TestProviderRaw)
-		// CRUD
-		providers.POST("", h.CreateProvider)
+		// Test with raw credentials (no persistence)（需要管理员权限）
+		providers.POST("/test", requireAdmin, h.TestProviderRaw)
+		// CRUD（写操作需要管理员权限）
+		providers.POST("", requireAdmin, h.CreateProvider)
 		providers.GET("", h.ListProviders)
 		providers.GET("/:id", h.GetProvider)
-		providers.PUT("/:id", h.UpdateProvider)
-		providers.DELETE("/:id", h.DeleteProvider)
-		// Test existing saved provider
-		providers.POST("/:id/test", h.TestProviderByID)
+		providers.PUT("/:id", requireAdmin, h.UpdateProvider)
+		providers.DELETE("/:id", requireAdmin, h.DeleteProvider)
+		// Test existing saved provider（需要管理员权限）
+		providers.POST("/:id/test", requireAdmin, h.TestProviderByID)
 	}
 }
 
 // RegisterCustomAgentRoutes registers custom agent routes
 func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomAgentHandler) {
+	requireEditor := middleware.RequireRole(types.OrgRoleEditor)
+
 	agents := r.Group("/agents")
 	{
 		// Get placeholder definitions (must be before /:id to avoid conflict)
 		agents.GET("/placeholders", agentHandler.GetPlaceholders)
-		// Create custom agent
-		agents.POST("", agentHandler.CreateAgent)
+		// Create custom agent（需要编辑者以上权限）
+		agents.POST("", requireEditor, agentHandler.CreateAgent)
 		// List all agents (including built-in)
 		agents.GET("", agentHandler.ListAgents)
 		// Get agent by ID
 		agents.GET("/:id", agentHandler.GetAgent)
-		// Update agent
-		agents.PUT("/:id", agentHandler.UpdateAgent)
-		// Delete agent
-		agents.DELETE("/:id", agentHandler.DeleteAgent)
-		// Copy agent
-		agents.POST("/:id/copy", agentHandler.CopyAgent)
+		// Update agent（需要编辑者以上权限）
+		agents.PUT("/:id", requireEditor, agentHandler.UpdateAgent)
+		// Delete agent（需要编辑者以上权限）
+		agents.DELETE("/:id", requireEditor, agentHandler.DeleteAgent)
+		// Copy agent（需要编辑者以上权限）
+		agents.POST("/:id/copy", requireEditor, agentHandler.CopyAgent)
 	}
 	// Registered outside the group to avoid Gin route conflict with /agents/:id/shares in organization routes
 	r.GET("/agents/:id/suggested-questions", agentHandler.GetSuggestedQuestions)
@@ -652,19 +670,21 @@ func RegisterIMRoutes(r *gin.Engine, imHandler *handler.IMHandler) {
 
 // RegisterIMChannelRoutes registers IM channel CRUD routes (requires authentication).
 func RegisterIMChannelRoutes(r *gin.RouterGroup, imHandler *handler.IMHandler) {
-	// Channel CRUD under agents
+	requireAdmin := middleware.RequireRole(types.OrgRoleAdmin)
+
+	// Channel CRUD under agents（IM渠道管理需要管理员权限）
 	agentChannels := r.Group("/agents/:id/im-channels")
 	{
-		agentChannels.POST("", imHandler.CreateIMChannel)
+		agentChannels.POST("", requireAdmin, imHandler.CreateIMChannel)
 		agentChannels.GET("", imHandler.ListIMChannels)
 	}
 
-	// Channel operations by channel ID
+	// Channel operations by channel ID（需要管理员权限）
 	channels := r.Group("/im-channels")
 	{
-		channels.PUT("/:id", imHandler.UpdateIMChannel)
-		channels.DELETE("/:id", imHandler.DeleteIMChannel)
-		channels.POST("/:id/toggle", imHandler.ToggleIMChannel)
+		channels.PUT("/:id", requireAdmin, imHandler.UpdateIMChannel)
+		channels.DELETE("/:id", requireAdmin, imHandler.DeleteIMChannel)
+		channels.POST("/:id/toggle", requireAdmin, imHandler.ToggleIMChannel)
 	}
 }
 
@@ -793,30 +813,32 @@ func serveFiles(r *gin.Engine) {
 
 // RegisterDataSourceRoutes 注册数据源相关的路由
 func RegisterDataSourceRoutes(r *gin.RouterGroup, handler *handler.DataSourceHandler) {
+	requireAdmin := middleware.RequireRole(types.OrgRoleAdmin)
+
 	// Data source routes
 	ds := r.Group("/datasource")
 	{
 		// Get available connector types
 		ds.GET("/types", handler.GetAvailableConnectors)
 
-		// Validate credentials without persistence (for "Test Connection" button)
-		ds.POST("/validate-credentials", handler.ValidateCredentials)
+		// Validate credentials without persistence (for "Test Connection" button)（需要管理员权限）
+		ds.POST("/validate-credentials", requireAdmin, handler.ValidateCredentials)
 
-		// CRUD operations
-		ds.POST("", handler.CreateDataSource)
+		// CRUD operations（写操作需要管理员权限）
+		ds.POST("", requireAdmin, handler.CreateDataSource)
 		ds.GET("", handler.ListDataSources)
 		ds.GET("/:id", handler.GetDataSource)
-		ds.PUT("/:id", handler.UpdateDataSource)
-		ds.DELETE("/:id", handler.DeleteDataSource)
+		ds.PUT("/:id", requireAdmin, handler.UpdateDataSource)
+		ds.DELETE("/:id", requireAdmin, handler.DeleteDataSource)
 
-		// Connection and resource management
-		ds.POST("/:id/validate", handler.ValidateConnection)
+		// Connection and resource management（需要管理员权限）
+		ds.POST("/:id/validate", requireAdmin, handler.ValidateConnection)
 		ds.GET("/:id/resources", handler.ListAvailableResources)
 
-		// Sync management
-		ds.POST("/:id/sync", handler.ManualSync)
-		ds.POST("/:id/pause", handler.PauseDataSource)
-		ds.POST("/:id/resume", handler.ResumeDataSource)
+		// Sync management（需要管理员权限）
+		ds.POST("/:id/sync", requireAdmin, handler.ManualSync)
+		ds.POST("/:id/pause", requireAdmin, handler.PauseDataSource)
+		ds.POST("/:id/resume", requireAdmin, handler.ResumeDataSource)
 
 		// Sync logs
 		ds.GET("/:id/logs", handler.GetSyncLogs)

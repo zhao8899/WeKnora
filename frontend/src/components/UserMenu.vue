@@ -18,36 +18,39 @@
     <!-- 下拉菜单 -->
     <Transition name="dropdown">
       <div v-if="menuVisible" class="user-dropdown" @click.stop>
-        <div class="menu-item" @click="handleQuickNav('models')">
-          <t-icon name="control-platform" class="menu-icon" />
-          <span>{{ $t('settings.modelManagement') }}</span>
-        </div>
-        <div class="menu-item" @click="handleQuickNav('ollama')">
-          <t-icon name="server" class="menu-icon" />
-          <span>Ollama</span>
-        </div>
-        <div class="menu-item" @click="handleQuickNav('websearch')">
-          <svg 
-            width="16" 
-            height="16" 
-            viewBox="0 0 18 18" 
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            class="menu-icon svg-icon"
-          >
-            <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
-            <path d="M 9 2 A 3.5 7 0 0 0 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
-            <path d="M 9 2 A 3.5 7 0 0 1 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
-            <line x1="2.94" y1="5.5" x2="15.06" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-            <line x1="2.94" y1="12.5" x2="15.06" y2="12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-          </svg>
-          <span>{{ $t('settings.webSearchConfig') }}</span>
-        </div>
-        <div class="menu-item" @click="handleQuickNav('mcp')">
-          <t-icon name="tools" class="menu-icon" />
-          <span>{{ $t('settings.mcpService') }}</span>
-        </div>
-        <div class="menu-divider"></div>
+        <!-- 管理快捷入口 — 仅管理员可见 -->
+        <template v-if="isAdminUser">
+          <div class="menu-item" @click="handleQuickNav('models')">
+            <t-icon name="control-platform" class="menu-icon" />
+            <span>{{ $t('settings.modelManagement') }}</span>
+          </div>
+          <div class="menu-item" @click="handleQuickNav('ollama')">
+            <t-icon name="server" class="menu-icon" />
+            <span>Ollama</span>
+          </div>
+          <div class="menu-item" @click="handleQuickNav('websearch')">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 18 18"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              class="menu-icon svg-icon"
+            >
+              <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              <path d="M 9 2 A 3.5 7 0 0 0 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              <path d="M 9 2 A 3.5 7 0 0 1 9 16" stroke="currentColor" stroke-width="1.2" fill="none"/>
+              <line x1="2.94" y1="5.5" x2="15.06" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              <line x1="2.94" y1="12.5" x2="15.06" y2="12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+            <span>{{ $t('settings.webSearchConfig') }}</span>
+          </div>
+          <div class="menu-item" @click="handleQuickNav('mcp')">
+            <t-icon name="tools" class="menu-icon" />
+            <span>{{ $t('settings.mcpService') }}</span>
+          </div>
+          <div class="menu-divider"></div>
+        </template>
         <div class="menu-item" @click="handleSettings">
           <t-icon name="setting" class="menu-icon" />
           <span>{{ $t('general.allSettings') }}</span>
@@ -116,6 +119,15 @@ const authStore = useAuthStore()
 
 const menuRef = ref<HTMLElement>()
 const menuVisible = ref(false)
+
+// 角色判断：超管或租户 Owner 为管理员
+const isAdminUser = computed(() => {
+  const isSuperAdmin = authStore.canAccessAllTenants
+  const tenantOwnerId = authStore.tenant?.owner_id
+  const userId = authStore.user?.id
+  const isTenantOwner = !!tenantOwnerId && !!userId && tenantOwnerId === userId
+  return isSuperAdmin || isTenantOwner
+})
 
 // 用户信息
 const userInfo = ref({
@@ -222,13 +234,14 @@ const loadUserInfo = async () => {
       })
       // 如果返回了租户信息，也更新租户信息
       if (response.data.tenant) {
+        const tenantData = response.data.tenant as any
         authStore.setTenant({
-          id: String(response.data.tenant.id),
-          name: response.data.tenant.name,
-          api_key: response.data.tenant.api_key || '',
-          owner_id: user.id,
-          created_at: response.data.tenant.created_at,
-          updated_at: response.data.tenant.updated_at
+          id: String(tenantData.id),
+          name: tenantData.name,
+          api_key: tenantData.api_key || '',
+          owner_id: tenantData.owner_id || '',
+          created_at: tenantData.created_at,
+          updated_at: tenantData.updated_at
         })
       }
     }

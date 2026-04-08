@@ -445,6 +445,11 @@ func (s *modelService) GetChatModel(ctx context.Context, modelId string) (chat.C
 		return nil, ErrModelNotFound
 	}
 
+	if model.Status != types.ModelStatusActive {
+		logger.Errorf(ctx, "Chat model is not active, status: %s", model.Status)
+		return nil, errors.New("chat model is not active (status: " + string(model.Status) + ")")
+	}
+
 	logger.Infof(ctx, "Getting chat model: %s, source: %s", model.Name, model.Source)
 
 	// Initialize the chat model with model configuration
@@ -485,6 +490,11 @@ func (s *modelService) GetVLMModel(ctx context.Context, modelId string) (vlm.VLM
 
 	if model == nil {
 		return nil, ErrModelNotFound
+	}
+
+	if model.Status != types.ModelStatusActive {
+		logger.Errorf(ctx, "VLM model is not active, status: %s", model.Status)
+		return nil, errors.New("VLM model is not active (status: " + string(model.Status) + ")")
 	}
 
 	logger.Infof(ctx, "Getting VLM model: %s, source: %s", model.Name, model.Source)
@@ -539,6 +549,11 @@ func (s *modelService) GetASRModel(ctx context.Context, modelId string) (asr.ASR
 
 	if model == nil {
 		return nil, ErrModelNotFound
+	}
+
+	if model.Status != types.ModelStatusActive {
+		logger.Errorf(ctx, "ASR model is not active, status: %s", model.Status)
+		return nil, errors.New("ASR model is not active (status: " + string(model.Status) + ")")
 	}
 
 	logger.Infof(ctx, "Getting ASR model: %s, source: %s", model.Name, model.Source)

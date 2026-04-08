@@ -565,7 +565,7 @@ const persistLoginResponse = async (response: any) => {
       id: String(response.tenant.id) || '',
       name: response.tenant.name || '',
       api_key: response.tenant.api_key || '',
-      owner_id: response.user.id || '',
+      owner_id: (response.tenant as any).owner_id || '',
       created_at: response.tenant.created_at || new Date().toISOString(),
       updated_at: response.tenant.updated_at || new Date().toISOString()
     })
