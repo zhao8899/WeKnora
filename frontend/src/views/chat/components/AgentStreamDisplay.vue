@@ -341,6 +341,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { marked } from 'marked';
+import type { Tokens } from 'marked';
 import DOMPurify from 'dompurify';
 import ToolResultRenderer from './ToolResultRenderer.vue';
 import picturePreview from '@/components/picture-preview.vue';
@@ -593,7 +594,8 @@ const activeThinkingIds = ref<Set<string>>(new Set());
 // Reactive version number to force template re-evaluation when activeThinkingIds changes
 const activeThinkingVersion = ref(0);
 
-const isThinkingActive = (eventId: string): boolean => {
+const isThinkingActive = (eventId?: string): boolean => {
+  if (!eventId) return false;
   // Reference version to create reactive dependency
   void activeThinkingVersion.value;
   return activeThinkingIds.value.has(eventId);
@@ -1380,9 +1382,9 @@ const preprocessMarkdown = (contentStr: string): string => {
 };
 
 // Get tokens from markdown content (with sanitization for user-friendly display)
-const getTokens = (content: unknown) => {
+const getTokens = (content: unknown): TokensList => {
   const contentStr = typeof content === 'string' ? content : String(content || '');
-  if (!contentStr.trim()) return [];
+  if (!contentStr.trim()) return [] as unknown as TokensList;
 
   // Extract <kb.../> and <web.../> tags before sanitization to prevent
   // sanitizeForDisplay from stripping chunk_id labels and UUIDs inside them.
@@ -1418,8 +1420,11 @@ const getTokens = (content: unknown) => {
 const agentRenderer = new marked.Renderer();
 agentRenderer.code = createMermaidCodeRenderer('mermaid-agent');
 
+type TokensList = ReturnType<typeof marked.lexer>;
+type MarkdownToken = TokensList[number];
+
 // Render HTML from a single token
-const getTokenHTML = (token: unknown): string => {
+const getTokenHTML = (token: MarkdownToken): string => {
   try {
     const html = marked.parser([token], { renderer: agentRenderer });
     const protectedHTML = protectProviderImageSrcInHTML(html);
@@ -1657,7 +1662,7 @@ const getQueryText = (args: unknown): string => {
   if (!args) return '';
   
   // Parse if it's a string
-  let parsedArgs = args;
+  let parsedArgs: unknown = args;
   if (typeof parsedArgs === 'string') {
     try {
       parsedArgs = JSON.parse(parsedArgs);
@@ -1667,17 +1672,18 @@ const getQueryText = (args: unknown): string => {
   }
   
   if (!parsedArgs || typeof parsedArgs !== 'object') return '';
+  const parsedArgsObj = parsedArgs as Record<string, unknown>;
   
   const queries: string[] = [];
   
   // Add query if exists
-  if (parsedArgs.query && typeof parsedArgs.query === 'string') {
-    queries.push(parsedArgs.query);
+  if (typeof parsedArgsObj.query === 'string') {
+    queries.push(parsedArgsObj.query);
   }
   
   // Add vector_queries if exists
-  if (Array.isArray(parsedArgs.queries) && parsedArgs.queries.length > 0) {
-    queries.push(...parsedArgs.queries
+  if (Array.isArray(parsedArgsObj.queries) && parsedArgsObj.queries.length > 0) {
+    queries.push(...parsedArgsObj.queries
       .filter((q: any) => q && typeof q === 'string')
       );
   }

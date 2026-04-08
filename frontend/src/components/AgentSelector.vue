@@ -305,12 +305,12 @@ const dropdownStyle = ref<Record<string, string>>({});
 const agentsList = computed(() => props.agents ?? []);
 
 // 内置智能体（从 API 获取，对特定 ID 使用本地化名称）
-const builtinAgents = computed(() => {
+const builtinAgents = computed<CustomAgent[]>(() => {
   // 从 API 获取的内置智能体（内置无 disabled 概念，全部展示）
   const apiBuiltins = agentsList.value.filter(a => a.is_builtin);
   
   // 对特定内置智能体使用本地化名称和描述
-  return apiBuiltins.map(agent => {
+  return apiBuiltins.map((agent): CustomAgent => {
     if (agent.id === BUILTIN_QUICK_ANSWER_ID) {
       return {
         ...agent,
@@ -349,8 +349,12 @@ const isSharedAgentSelected = (shared: SharedAgentInfo) =>
 const isMyAgentSelected = (agent: CustomAgent) =>
   props.currentAgentId === agent.id && !currentAgentSourceTenantId.value;
 
+type AgentWithConfig = Record<string, any> & {
+  config?: CustomAgent['config']
+}
+
 // 获取知识库能力描述
-const getKbCapability = (agent: CustomAgent): string => {
+const getKbCapability = (agent: AgentWithConfig): string => {
   const config = agent.config || {};
   if (config.kb_selection_mode === 'none') {
     return '';
@@ -363,7 +367,7 @@ const getKbCapability = (agent: CustomAgent): string => {
 };
 
 // 获取 MCP 能力描述（更详细：全部 / 指定 N 个）
-const getMcpCapability = (agent: CustomAgent): string => {
+const getMcpCapability = (agent: AgentWithConfig): string => {
   const config = agent.config || {};
   if (config.mcp_selection_mode === 'none' || (!config.mcp_services?.length && config.mcp_selection_mode !== 'all')) {
     return '';

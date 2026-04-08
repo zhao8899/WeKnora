@@ -220,7 +220,7 @@ async function renderMarkdown(blob: Blob) {
     return `<pre><code class="hljs">${highlighted}</code></pre>`;
   };
   marked.use({ renderer });
-  markdownHtml.value = marked.parse(text);
+  markdownHtml.value = String(marked.parse(text));
 }
 
 function onImageLoad(e: Event) {

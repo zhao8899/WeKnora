@@ -47,17 +47,18 @@ let mermaidCount = 0;
 export const createMermaidCodeRenderer = (idPrefix: string) => {
   return ({text, lang}: Tokens.Code) => {
     let highlighted = '';
+    const codeText = typeof text === 'string' ? text : '';
     let highlightLang: string = lang || 'Code';
     if (highlightLang && hljs.getLanguage(highlightLang)) {
         try {
-            highlighted = hljs.highlight(text, { language: lang }).value;
+            highlighted = hljs.highlight(codeText, { language: highlightLang }).value;
         } catch {
-            let ret = hljs.highlightAuto(text);
+            let ret = hljs.highlightAuto(codeText);
             highlighted = ret.value;
             highlightLang = ret.language || "Code";
         }
     } else {
-        let ret = hljs.highlightAuto(text);
+        let ret = hljs.highlightAuto(codeText);
         highlighted = ret.value;
         highlightLang = ret.language || "Code";
     }

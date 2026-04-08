@@ -1,5 +1,6 @@
 // @ts-nocheck
 <script setup lang="ts">
+// @ts-nocheck
 import { marked } from "marked";
 
 import hljs from "highlight.js";

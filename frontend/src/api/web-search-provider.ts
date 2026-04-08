@@ -21,6 +21,7 @@ export interface WebSearchProviderEntity {
 export interface WebSearchProviderTypeInfo {
   id: string
   name: string
+  free?: boolean
   requires_api_key: boolean
   requires_engine_id?: boolean
   description?: string

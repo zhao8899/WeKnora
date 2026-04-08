@@ -982,6 +982,8 @@ const getTextareaElement = (): HTMLTextAreaElement | null => {
   return wrapper?.querySelector('textarea') || null
 }
 
+const getActivePromptRef = () => localSystemPrompt
+
 // 初始化加载
 onMounted(async () => {
   // 防止重复加载
@@ -2276,4 +2278,3 @@ const handleConversationRerankModelChange = async (value: string) => {
 }
 
 </style>
-

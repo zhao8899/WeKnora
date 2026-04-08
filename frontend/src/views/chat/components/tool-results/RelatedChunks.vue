@@ -37,7 +37,6 @@
 </template>
 
 <script setup lang="ts">
-import { ref, defineProps, computed } from 'vue';
 import type { RelatedChunksData } from '@/types/tool-results';
 import ContentPopup from './ContentPopup.vue';
 
@@ -151,4 +150,3 @@ code {
   border-radius: 3px;
 }
 </style>
-

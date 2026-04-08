@@ -40,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, defineProps, computed } from 'vue';
+import { computed } from 'vue';
 import type { SearchResultsData, SearchResultItem, RelevanceLevel } from '@/types/tool-results';
 import { getMatchTypeIcon } from '@/utils/tool-icons';
 import ContentPopup from './ContentPopup.vue';
@@ -244,5 +244,4 @@ code {
   border-radius: 2px;
 }
 </style>
-
 

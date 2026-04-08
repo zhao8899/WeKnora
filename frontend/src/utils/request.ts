@@ -210,15 +210,15 @@ instance.interceptors.response.use(
   }
 );
 
-export function get(url: string) {
+export function get<T = any>(url: string): Promise<T> {
   return instance.get(url);
 }
 
-export async function getDown(url: string) {
-  let res = await instance.get(url, {
+export async function getDown(url: string): Promise<Blob> {
+  const res = await instance.get(url, {
     responseType: "blob",
   });
-  return res
+  return res as unknown as Blob
 }
 
 export function postUpload(url: string, data = {}, onUploadProgress?: (progressEvent: any) => void) {
@@ -240,14 +240,14 @@ export function postChat(url: string, data = {}) {
   });
 }
 
-export function post(url: string, data = {}, config?: any) {
+export function post<T = any>(url: string, data = {}, config?: any): Promise<T> {
   return instance.post(url, data, config);
 }
 
-export function put(url: string, data = {}) {
+export function put<T = any>(url: string, data = {}): Promise<T> {
   return instance.put(url, data);
 }
 
-export function del(url: string, data?: any) {
+export function del<T = any>(url: string, data?: any): Promise<T> {
   return instance.delete(url, { data });
 }
