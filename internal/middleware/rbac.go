@@ -56,8 +56,37 @@ func RequireRole(required types.OrgMemberRole) gin.HandlerFunc {
 	}
 }
 
+// RequireSuperAdmin enforces super-admin access.
+// Super-admin is defined as a user with can_access_all_tenants=true.
+func RequireSuperAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, ok := c.Request.Context().Value(types.UserContextKey).(*types.User)
+		if !ok || user == nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"error": gin.H{
+					"code":    "unauthorized",
+					"message": "Authentication required",
+				},
+			})
+			return
+		}
+		if !user.CanAccessAllTenants {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"error": gin.H{
+					"code":    "forbidden",
+					"message": "Super-admin access required",
+				},
+			})
+			return
+		}
+		c.Next()
+	}
+}
+
 // resolveDefaultRole assigns a default role based on user properties and tenant ownership.
-// Super-admins and tenant owners get admin; others get editor as a safe default.
+// Super-admins and tenant owners get admin; other authenticated users default to viewer.
 func resolveDefaultRole(user *types.User, tenant *types.Tenant) types.OrgMemberRole {
 	// Super-admin: can access all tenants
 	if user.CanAccessAllTenants {
@@ -67,7 +96,6 @@ func resolveDefaultRole(user *types.User, tenant *types.Tenant) types.OrgMemberR
 	if tenant != nil && tenant.OwnerID != "" && tenant.OwnerID == user.ID {
 		return types.OrgRoleAdmin
 	}
-	// Default to editor for regular authenticated users within their own tenant.
-	// This allows basic CRUD while restricting admin-level operations.
-	return types.OrgRoleEditor
+	// Strict default for non-owner users: viewer only.
+	return types.OrgRoleViewer
 }

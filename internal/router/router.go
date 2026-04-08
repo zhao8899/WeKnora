@@ -401,7 +401,7 @@ func RegisterModelRoutes(r *gin.RouterGroup, handler *handler.ModelHandler) {
 
 	// Platform model management (super-admin only)
 	platform := models.Group("/platform")
-	platform.Use(requireAdmin)
+	platform.Use(middleware.RequireSuperAdmin())
 	{
 		platform.POST("", handler.CreatePlatformModel)
 		platform.GET("", handler.ListPlatformModels)
