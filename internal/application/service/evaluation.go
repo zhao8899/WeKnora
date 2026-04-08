@@ -144,36 +144,27 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 	// Handle knowledge base creation if not provided
 	if knowledgeBaseID == "" {
 		logger.Info(ctx, "No knowledge base ID provided, creating new knowledge base")
-		// Create new knowledge base with default evaluation settings
-		// 获取默认的嵌入模型和LLM模型
-		models, err := e.modelService.ListModels(ctx)
+		// Create new knowledge base with preferred runtime models.
+		embeddingModel, err := e.modelService.ResolvePreferredModel(ctx, types.ModelTypeEmbedding)
 		if err != nil {
-			logger.Errorf(ctx, "Failed to list models: %v", err)
+			logger.Errorf(ctx, "Failed to resolve preferred embedding model: %v", err)
+			return nil, err
+		}
+		llmModel, err := e.modelService.ResolvePreferredModel(ctx, types.ModelTypeKnowledgeQA)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to resolve preferred chat model: %v", err)
 			return nil, err
 		}
 
-		var embeddingModelID, llmModelID string
-		for _, model := range models {
-			if model == nil {
-				continue
-			}
-			if model.Type == types.ModelTypeEmbedding {
-				embeddingModelID = model.ID
-			}
-			if model.Type == types.ModelTypeKnowledgeQA {
-				llmModelID = model.ID
-			}
-		}
-
-		if embeddingModelID == "" || llmModelID == "" {
+		if embeddingModel == nil || llmModel == nil {
 			return nil, fmt.Errorf("no default models found for evaluation")
 		}
 
 		kb, err := e.knowledgeBaseService.CreateKnowledgeBase(ctx, &types.KnowledgeBase{
 			Name:             "evaluation",
 			Description:      "evaluation",
-			EmbeddingModelID: embeddingModelID,
-			SummaryModelID:   llmModelID,
+			EmbeddingModelID: embeddingModel.ID,
+			SummaryModelID:   llmModel.ID,
 		})
 		if err != nil {
 			logger.Errorf(ctx, "Failed to create knowledge base: %v", err)
@@ -211,18 +202,9 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 	}
 
 	if rerankModelID == "" {
-		// 获取默认的重排模型
-		models, err := e.modelService.ListModels(ctx)
-		if err == nil {
-			for _, model := range models {
-				if model == nil {
-					continue
-				}
-				if model.Type == types.ModelTypeRerank {
-					rerankModelID = model.ID
-					break
-				}
-			}
+		rerankModel, err := e.modelService.ResolvePreferredModel(ctx, types.ModelTypeRerank)
+		if err == nil && rerankModel != nil {
+			rerankModelID = rerankModel.ID
 		}
 		if rerankModelID == "" {
 			logger.Warnf(ctx, "No rerank model found, skipping rerank")
@@ -232,18 +214,9 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 	}
 
 	if chatModelID == "" {
-		// 获取默认的LLM模型
-		models, err := e.modelService.ListModels(ctx)
-		if err == nil {
-			for _, model := range models {
-				if model == nil {
-					continue
-				}
-				if model.Type == types.ModelTypeKnowledgeQA {
-					chatModelID = model.ID
-					break
-				}
-			}
+		chatModel, err := e.modelService.ResolvePreferredModel(ctx, types.ModelTypeKnowledgeQA)
+		if err == nil && chatModel != nil {
+			chatModelID = chatModel.ID
 		}
 		if chatModelID == "" {
 			return nil, fmt.Errorf("no default chat model found")

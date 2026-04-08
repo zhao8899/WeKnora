@@ -257,27 +257,15 @@ func (s *sessionService) selectChatModelID(
 		}
 	}
 
-	// No knowledge bases - try to find any available tenant-owned chat model
-	models, err := s.modelService.ListModels(ctx)
+	// No knowledge bases: resolve runtime default with tenant > platform > builtin fallback.
+	preferredModel, err := s.modelService.ResolvePreferredModel(ctx, types.ModelTypeKnowledgeQA)
 	if err != nil {
-		logger.Errorf(ctx, "Failed to list models: %v", err)
-		return "", fmt.Errorf("failed to list models: %w", err)
+		logger.Errorf(ctx, "Failed to resolve preferred chat model: %v", err)
+		return "", fmt.Errorf("failed to resolve preferred chat model: %w", err)
 	}
-	for _, model := range models {
-		if model != nil && model.Type == types.ModelTypeKnowledgeQA {
-			logger.Infof(ctx, "Using first available KnowledgeQA model: %s", model.ID)
-			return model.ID, nil
-		}
-	}
-
-	// Final fallback: platform default chat model
-	platformModel, err := s.modelService.ResolvePlatformDefault(ctx, types.ModelTypeKnowledgeQA)
-	if err != nil {
-		logger.Warnf(ctx, "Failed to resolve platform default chat model: %v", err)
-	}
-	if platformModel != nil {
-		logger.Infof(ctx, "Using platform default chat model: %s (%s)", platformModel.ID, platformModel.Name)
-		return platformModel.ID, nil
+	if preferredModel != nil {
+		logger.Infof(ctx, "Using preferred KnowledgeQA model: %s (%s)", preferredModel.ID, preferredModel.Name)
+		return preferredModel.ID, nil
 	}
 
 	logger.Error(ctx, "No chat model ID available")
@@ -579,25 +567,16 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 		},
 	}
 
-	// Get default models
-	models, err := s.modelService.ListModels(ctx)
-	if err != nil {
-		logger.Errorf(ctx, "Failed to get models: %v", err)
-		return nil, err
-	}
-
-	// Use rerank model from RetrievalConfig if set, otherwise auto-select the first available
 	if rc != nil && rc.RerankModelID != "" {
 		chatManage.RerankModelID = rc.RerankModelID
 	} else {
-		for _, model := range models {
-			if model == nil {
-				continue
-			}
-			if model.Type == types.ModelTypeRerank {
-				chatManage.RerankModelID = model.ID
-				break
-			}
+		model, err := s.modelService.ResolvePreferredModel(ctx, types.ModelTypeRerank)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to resolve preferred rerank model: %v", err)
+			return nil, err
+		}
+		if model != nil {
+			chatManage.RerankModelID = model.ID
 		}
 	}
 

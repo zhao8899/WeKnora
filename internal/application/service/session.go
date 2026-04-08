@@ -26,23 +26,23 @@ func generateEventID(suffix string) string {
 
 // sessionService implements the SessionService interface for managing conversation sessions
 type sessionService struct {
-	cfg                  *config.Config                   // Application configuration
-	sessionRepo          interfaces.SessionRepository     // Repository for session data
-	messageRepo          interfaces.MessageRepository     // Repository for message data
-	knowledgeBaseService interfaces.KnowledgeBaseService  // Service for knowledge base operations
-	modelService         interfaces.ModelService          // Service for model operations
-	tenantService        interfaces.TenantService         // Service for tenant operations
-	eventManager         *chatpipeline.EventManager        // Event manager for chat pipeline
-	agentService         interfaces.AgentService          // Service for agent operations
-	sessionStorage       llmcontext.ContextStorage        // Session storage
-	knowledgeService     interfaces.KnowledgeService      // Service for knowledge operations
-	chunkService         interfaces.ChunkService          // Service for chunk operations
-	webSearchStateRepo    interfaces.WebSearchStateService          // Service for web search state
-	webSearchProviderRepo interfaces.WebSearchProviderRepository   // Repository for web search provider entities
-	kbShareService        interfaces.KBShareService                // Service for KB sharing operations
-	memoryService         interfaces.MemoryService                 // Service for memory operations
-	queryRouter           *dispatcher.Dispatcher                   // Query routing classifier for auto mode selection
-	tokenUsageService     *TokenUsageService                       // Service for token quota enforcement
+	cfg                   *config.Config                         // Application configuration
+	sessionRepo           interfaces.SessionRepository           // Repository for session data
+	messageRepo           interfaces.MessageRepository           // Repository for message data
+	knowledgeBaseService  interfaces.KnowledgeBaseService        // Service for knowledge base operations
+	modelService          interfaces.ModelService                // Service for model operations
+	tenantService         interfaces.TenantService               // Service for tenant operations
+	eventManager          *chatpipeline.EventManager             // Event manager for chat pipeline
+	agentService          interfaces.AgentService                // Service for agent operations
+	sessionStorage        llmcontext.ContextStorage              // Session storage
+	knowledgeService      interfaces.KnowledgeService            // Service for knowledge operations
+	chunkService          interfaces.ChunkService                // Service for chunk operations
+	webSearchStateRepo    interfaces.WebSearchStateService       // Service for web search state
+	webSearchProviderRepo interfaces.WebSearchProviderRepository // Repository for web search provider entities
+	kbShareService        interfaces.KBShareService              // Service for KB sharing operations
+	memoryService         interfaces.MemoryService               // Service for memory operations
+	queryRouter           *dispatcher.Dispatcher                 // Query routing classifier for auto mode selection
+	tokenUsageService     *TokenUsageService                     // Service for token quota enforcement
 }
 
 // NewSessionService creates a new session service instance with all required dependencies
@@ -380,27 +380,19 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 		return "", errors.New("no user message found")
 	}
 
-	// Use provided modelID, or fallback to first available KnowledgeQA model
+	// Use provided modelID, or fallback to the preferred runtime KnowledgeQA model.
 	if modelID == "" {
-		models, err := s.modelService.ListModels(ctx)
+		model, err := s.modelService.ResolvePreferredModel(ctx, types.ModelTypeKnowledgeQA)
 		if err != nil {
 			logger.ErrorWithFields(ctx, err, nil)
-			return "", fmt.Errorf("failed to list models: %w", err)
+			return "", fmt.Errorf("failed to resolve preferred KnowledgeQA model: %w", err)
 		}
-		for _, model := range models {
-			if model == nil {
-				continue
-			}
-			if model.Type == types.ModelTypeKnowledgeQA {
-				modelID = model.ID
-				logger.Infof(ctx, "Using first available KnowledgeQA model for title: %s", modelID)
-				break
-			}
-		}
-		if modelID == "" {
+		if model == nil {
 			logger.Error(ctx, "No KnowledgeQA model found")
 			return "", errors.New("no KnowledgeQA model available for title generation")
 		}
+		modelID = model.ID
+		logger.Infof(ctx, "Using preferred KnowledgeQA model for title: %s", modelID)
 	} else {
 		logger.Infof(ctx, "Using specified model for title generation: %s", modelID)
 	}

@@ -509,7 +509,6 @@ curl --location --request DELETE 'http://localhost:8080/api/v1/models/8fdc464d-8
 | 字段         | 类型 | 说明                                                     |
 | ------------ | ---- | -------------------------------------------------------- |
 | is_default   | bool | 是否为该类型的默认模型                                   |
-| is_builtin   | bool | 内置模型（所有租户可见，只读，敏感信息隐藏）             |
 | is_platform  | bool | 平台共享模型（所有租户可用，管理员管理，敏感信息隐藏）   |
 
 ## 平台共享模型 API

@@ -3,25 +3,6 @@
     <div class="section-header">
       <h2>{{ $t('modelSettings.title') }}</h2>
       <p class="section-description">{{ $t('modelSettings.description') }}</p>
-      
-      <!-- 内置模型说明 -->
-      <div class="builtin-models-info">
-        <div class="info-box">
-          <div class="info-header">
-            <t-icon name="info-circle" class="info-icon" />
-            <span class="info-title">{{ $t('modelSettings.builtinModels.title') }}</span>
-          </div>
-          <div class="info-content">
-            <p>{{ $t('modelSettings.builtinModels.description') }}</p>
-            <p class="doc-link">
-              <t-icon name="link" class="link-icon" />
-              <a href="https://github.com/Tencent/WeKnora/blob/main/docs/BUILTIN_MODELS.md" target="_blank" rel="noopener noreferrer">
-                {{ $t('modelSettings.builtinModels.viewGuide') }}
-              </a>
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- 对话模型 -->
@@ -31,7 +12,7 @@
           <h3>{{ $t('modelSettings.chat.title') }}</h3>
           <p>{{ $t('modelSettings.chat.desc') }}</p>
         </div>
-        <t-button size="small" theme="primary" @click="openAddDialog('chat')" class="add-model-btn">
+        <t-button v-if="canManageTenantModels" size="small" theme="primary" @click="openAddDialog('chat')" class="add-model-btn">
           <template #icon>
             <t-icon name="add" class="add-icon" />
           </template>
@@ -40,18 +21,18 @@
       </div>
       
       <div v-if="chatModels.length > 0" class="model-list-container">
-        <div v-for="model in chatModels" :key="model.id" class="model-card" :class="{ 'builtin-model': model.isBuiltin }">
+        <div v-for="model in chatModels" :key="model.id" class="model-card" :class="{ 'shared-model': model.isShared }">
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
-              <t-tag v-if="model.isBuiltin" theme="primary" size="small">{{ $t('modelSettings.builtinTag') }}</t-tag>
+              <t-tag v-if="model.isShared" theme="primary" size="small">{{ $t('modelSettings.platformTag') }}</t-tag>
             </div>
             <div class="model-meta">
               <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
               <!-- <span class="model-id">{{ model.modelName }}</span> -->
             </div>
           </div>
-          <div class="model-actions">
+          <div v-if="hasModelActions('chat', model)" class="model-actions">
             <t-dropdown 
               :options="getModelOptions('chat', model)" 
               @click="(data: any) => handleMenuAction(data, 'chat', model)"
@@ -67,7 +48,7 @@
       </div>
       <div v-else class="empty-state">
         <p class="empty-text">{{ $t('modelSettings.chat.empty') }}</p>
-        <t-button theme="default" variant="outline" size="small" @click="openAddDialog('chat')">
+        <t-button v-if="canManageTenantModels" theme="default" variant="outline" size="small" @click="openAddDialog('chat')">
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
@@ -80,7 +61,7 @@
           <h3>{{ $t('modelSettings.embedding.title') }}</h3>
           <p>{{ $t('modelSettings.embedding.desc') }}</p>
         </div>
-        <t-button size="small" theme="primary" @click="openAddDialog('embedding')" class="add-model-btn">
+        <t-button v-if="canManageTenantModels" size="small" theme="primary" @click="openAddDialog('embedding')" class="add-model-btn">
           <template #icon>
             <t-icon name="add" class="add-icon" />
           </template>
@@ -89,11 +70,11 @@
       </div>
       
       <div v-if="embeddingModels.length > 0" class="model-list-container">
-        <div v-for="model in embeddingModels" :key="model.id" class="model-card" :class="{ 'builtin-model': model.isBuiltin }">
+        <div v-for="model in embeddingModels" :key="model.id" class="model-card" :class="{ 'shared-model': model.isShared }">
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
-              <t-tag v-if="model.isBuiltin" theme="primary" size="small">{{ $t('modelSettings.builtinTag') }}</t-tag>
+              <t-tag v-if="model.isShared" theme="primary" size="small">{{ $t('modelSettings.platformTag') }}</t-tag>
             </div>
             <div class="model-meta">
               <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
@@ -101,7 +82,7 @@
               <span v-if="model.dimension" class="dimension">{{ $t('model.editor.dimensionLabel') }}: {{ model.dimension }}</span>
             </div>
           </div>
-          <div class="model-actions">
+          <div v-if="hasModelActions('embedding', model)" class="model-actions">
             <t-dropdown 
               :options="getModelOptions('embedding', model)" 
               @click="(data: any) => handleMenuAction(data, 'embedding', model)"
@@ -117,7 +98,7 @@
       </div>
       <div v-else class="empty-state">
         <p class="empty-text">{{ $t('modelSettings.embedding.empty') }}</p>
-        <t-button theme="default" variant="outline" size="small" @click="openAddDialog('embedding')">
+        <t-button v-if="canManageTenantModels" theme="default" variant="outline" size="small" @click="openAddDialog('embedding')">
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
@@ -130,7 +111,7 @@
           <h3>{{ $t('modelSettings.rerank.title') }}</h3>
           <p>{{ $t('modelSettings.rerank.desc') }}</p>
         </div>
-        <t-button size="small" theme="primary" @click="openAddDialog('rerank')" class="add-model-btn">
+        <t-button v-if="canManageTenantModels" size="small" theme="primary" @click="openAddDialog('rerank')" class="add-model-btn">
           <template #icon>
             <t-icon name="add" class="add-icon" />
           </template>
@@ -139,18 +120,18 @@
       </div>
       
       <div v-if="rerankModels.length > 0" class="model-list-container">
-        <div v-for="model in rerankModels" :key="model.id" class="model-card" :class="{ 'builtin-model': model.isBuiltin }">
+        <div v-for="model in rerankModels" :key="model.id" class="model-card" :class="{ 'shared-model': model.isShared }">
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
-              <t-tag v-if="model.isBuiltin" theme="primary" size="small">{{ $t('modelSettings.builtinTag') }}</t-tag>
+              <t-tag v-if="model.isShared" theme="primary" size="small">{{ $t('modelSettings.platformTag') }}</t-tag>
             </div>
             <div class="model-meta">
               <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.remote') }}</span>
               <!-- <span class="model-id">{{ model.modelName }}</span> -->
             </div>
           </div>
-          <div class="model-actions">
+          <div v-if="hasModelActions('rerank', model)" class="model-actions">
             <t-dropdown 
               :options="getModelOptions('rerank', model)" 
               @click="(data: any) => handleMenuAction(data, 'rerank', model)"
@@ -166,7 +147,7 @@
       </div>
       <div v-else class="empty-state">
         <p class="empty-text">{{ $t('modelSettings.rerank.empty') }}</p>
-        <t-button theme="default" variant="outline" size="small" @click="openAddDialog('rerank')">
+        <t-button v-if="canManageTenantModels" theme="default" variant="outline" size="small" @click="openAddDialog('rerank')">
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
@@ -179,7 +160,7 @@
           <h3>{{ $t('modelSettings.vllm.title') }}</h3>
           <p>{{ $t('modelSettings.vllm.desc') }}</p>
         </div>
-        <t-button size="small" theme="primary" @click="openAddDialog('vllm')" class="add-model-btn">
+        <t-button v-if="canManageTenantModels" size="small" theme="primary" @click="openAddDialog('vllm')" class="add-model-btn">
           <template #icon>
             <t-icon name="add" class="add-icon" />
           </template>
@@ -188,18 +169,18 @@
       </div>
       
       <div v-if="vllmModels.length > 0" class="model-list-container">
-        <div v-for="model in vllmModels" :key="model.id" class="model-card" :class="{ 'builtin-model': model.isBuiltin }">
+        <div v-for="model in vllmModels" :key="model.id" class="model-card" :class="{ 'shared-model': model.isShared }">
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
-              <t-tag v-if="model.isBuiltin" theme="primary" size="small">{{ $t('modelSettings.builtinTag') }}</t-tag>
+              <t-tag v-if="model.isShared" theme="primary" size="small">{{ $t('modelSettings.platformTag') }}</t-tag>
             </div>
             <div class="model-meta">
               <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.openaiCompatible') }}</span>
               <!-- <span class="model-id">{{ model.modelName }}</span> -->
             </div>
           </div>
-          <div class="model-actions">
+          <div v-if="hasModelActions('vllm', model)" class="model-actions">
             <t-dropdown 
               :options="getModelOptions('vllm', model)" 
               @click="(data: any) => handleMenuAction(data, 'vllm', model)"
@@ -215,7 +196,7 @@
       </div>
       <div v-else class="empty-state">
         <p class="empty-text">{{ $t('modelSettings.vllm.empty') }}</p>
-        <t-button theme="default" variant="outline" size="small" @click="openAddDialog('vllm')">
+        <t-button v-if="canManageTenantModels" theme="default" variant="outline" size="small" @click="openAddDialog('vllm')">
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
@@ -228,7 +209,7 @@
           <h3>{{ $t('modelSettings.asr.title') }}</h3>
           <p>{{ $t('modelSettings.asr.desc') }}</p>
         </div>
-        <t-button size="small" theme="primary" @click="openAddDialog('asr')" class="add-model-btn">
+        <t-button v-if="canManageTenantModels" size="small" theme="primary" @click="openAddDialog('asr')" class="add-model-btn">
           <template #icon>
             <t-icon name="add" class="add-icon" />
           </template>
@@ -237,17 +218,17 @@
       </div>
 
       <div v-if="asrModels.length > 0" class="model-list-container">
-        <div v-for="model in asrModels" :key="model.id" class="model-card" :class="{ 'builtin-model': model.isBuiltin }">
+        <div v-for="model in asrModels" :key="model.id" class="model-card" :class="{ 'shared-model': model.isShared }">
           <div class="model-info">
             <div class="model-name">
               {{ model.name }}
-              <t-tag v-if="model.isBuiltin" theme="primary" size="small">{{ $t('modelSettings.builtinTag') }}</t-tag>
+              <t-tag v-if="model.isShared" theme="primary" size="small">{{ $t('modelSettings.platformTag') }}</t-tag>
             </div>
             <div class="model-meta">
               <span class="source-tag">{{ model.source === 'local' ? 'Ollama' : $t('modelSettings.source.openaiCompatible') }}</span>
             </div>
           </div>
-          <div class="model-actions">
+          <div v-if="hasModelActions('asr', model)" class="model-actions">
             <t-dropdown
               :options="getModelOptions('asr', model)"
               @click="(data: any) => handleMenuAction(data, 'asr', model)"
@@ -263,7 +244,7 @@
       </div>
       <div v-else class="empty-state">
         <p class="empty-text">{{ $t('modelSettings.asr.empty') }}</p>
-        <t-button theme="default" variant="outline" size="small" @click="openAddDialog('asr')">
+        <t-button v-if="canManageTenantModels" theme="default" variant="outline" size="small" @click="openAddDialog('asr')">
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
@@ -286,8 +267,10 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import ModelEditorDialog from '@/components/ModelEditorDialog.vue'
 import { listModels, createModel, updateModel as updateModelAPI, deleteModel as deleteModelAPI, type ModelConfig } from '@/api/model'
+import { useAuthStore } from '@/stores/auth'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 const showDialog = ref(false)
 const currentModelType = ref<'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr'>('chat')
@@ -296,6 +279,14 @@ const loading = ref(true)
 
 // 模型列表数据
 const allModels = ref<ModelConfig[]>([])
+
+const isSuperAdmin = computed(() => authStore.canAccessAllTenants)
+const isTenantOwner = computed(() => {
+  const uid = authStore.currentUserId
+  const ownerId = authStore.tenant?.owner_id
+  return !!uid && !!ownerId && uid === ownerId
+})
+const canManageTenantModels = computed(() => isSuperAdmin.value || isTenantOwner.value)
 
 // 根据类型过滤模型
 const chatModels = computed(() => 
@@ -330,6 +321,7 @@ const asrModels = computed(() =>
 
 // 将后端模型格式转换为旧的前端格式
 function convertToLegacyFormat(model: ModelConfig) {
+  const isShared = !!model.is_platform
   return {
     id: model.id!,
     name: model.name,
@@ -339,7 +331,8 @@ function convertToLegacyFormat(model: ModelConfig) {
     apiKey: model.parameters.api_key || '',
     provider: model.parameters.provider || '', // 添加 provider 字段
     dimension: model.parameters.embedding_parameters?.dimension,
-    isBuiltin: model.is_builtin || false,
+    isPlatform: model.is_platform || false,
+    isShared,
     supportsVision: model.parameters.supports_vision || false
   }
 }
@@ -348,7 +341,6 @@ function convertToLegacyFormat(model: ModelConfig) {
 const loadModels = async () => {
   loading.value = true
   try {
-    // 直接获取所有模型，不分类型
     const models = await listModels()
     allModels.value = models
   } catch (error: any) {
@@ -368,9 +360,13 @@ const openAddDialog = (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr') =
 
 // 编辑模型
 const editModel = (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr', model: any) => {
-  // 内置模型不能编辑
-  if (model.isBuiltin) {
-    MessagePlugin.warning(t('modelSettings.toasts.builtinCannotEdit'))
+  if (!canManageTenantModels.value) {
+    MessagePlugin.warning(t('error.forbidden'))
+    return
+  }
+  // 共享模型仅超级管理员可编辑；租户模型由租户管理员维护。
+  if (model.isShared && !isSuperAdmin.value) {
+    MessagePlugin.warning(t('modelSettings.toasts.sharedCannotEdit'))
     return
   }
   currentModelType.value = type
@@ -460,10 +456,14 @@ const handleModelSave = async (modelData: any) => {
 
 // 删除模型
 const deleteModel = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr', modelId: string) => {
-  // 检查是否是内置模型
+  if (!canManageTenantModels.value) {
+    MessagePlugin.warning(t('error.forbidden'))
+    return
+  }
+  // 检查是否是共享模型
   const model = allModels.value.find(m => m.id === modelId)
-  if (model?.is_builtin) {
-    MessagePlugin.warning(t('modelSettings.toasts.builtinCannotDelete'))
+  if (model?.is_platform && !isSuperAdmin.value) {
+    MessagePlugin.warning(t('modelSettings.toasts.sharedCannotDelete'))
     return
   }
   
@@ -481,9 +481,11 @@ const deleteModel = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr
 // 获取模型操作菜单选项
 const getModelOptions = (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr', model: any) => {
   const options: any[] = []
-  
-  // 内置模型不能编辑和删除
-  if (model.isBuiltin) {
+  if (!canManageTenantModels.value) {
+    return options
+  }
+  // 共享模型仅超级管理员可编辑和删除。
+  if (model.isShared && !isSuperAdmin.value) {
     return options
   }
   
@@ -502,6 +504,9 @@ const getModelOptions = (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr',
   
   return options
 }
+
+const hasModelActions = (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr', model: any) =>
+  getModelOptions(type, model).length > 0
 
 // 处理菜单操作
 const handleMenuAction = (data: { value: string }, type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr', model: any) => {
@@ -637,8 +642,7 @@ onMounted(() => {
     box-shadow: 0 1px 4px rgba(7, 192, 95, 0.08);
   }
 
-  // 内置模型样式
-  &.builtin-model {
+  &.shared-model {
     background: var(--td-bg-color-secondarycontainer);
     border-color: var(--td-component-border);
 
@@ -736,76 +740,6 @@ onMounted(() => {
     font-size: 13px;
     color: var(--td-text-color-placeholder);
     margin: 0 0 16px 0;
-  }
-}
-
-.builtin-models-info {
-  margin-top: 16px;
-
-  .info-box {
-    background: var(--td-success-color-light);
-    border: 1px solid var(--td-success-color-focus);
-    border-left: 3px solid var(--td-brand-color);
-    border-radius: 6px;
-    padding: 16px;
-  }
-
-  .info-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-
-    .info-icon {
-      font-size: 16px;
-      color: var(--td-brand-color);
-      flex-shrink: 0;
-    }
-
-    .info-title {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--td-brand-color-active);
-    }
-  }
-
-  .info-content {
-    font-size: 13px;
-    line-height: 1.6;
-    color: var(--td-success-color);
-
-    p {
-      margin: 0 0 6px 0;
-
-      &:last-child {
-        margin-bottom: 0;
-      }
-
-      &.doc-link {
-        margin-top: 10px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-
-        .link-icon {
-          font-size: 13px;
-          color: var(--td-brand-color);
-          flex-shrink: 0;
-        }
-
-        a {
-          color: var(--td-brand-color);
-          text-decoration: none;
-          font-weight: 500;
-          transition: color 0.15s;
-
-          &:hover {
-            color: var(--td-brand-color-active);
-            text-decoration: underline;
-          }
-        }
-      }
-    }
   }
 }
 

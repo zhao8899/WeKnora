@@ -427,19 +427,21 @@ const oidcProviderName = ref('')
 // Language options
 const languageOptions = [
   { value: 'zh-CN', label: '简体中文', shortLabel: '中文', flag: '🇨🇳' },
-  { value: 'en-US', label: 'English', shortLabel: 'EN', flag: '🇺🇸' },
-  { value: 'ru-RU', label: 'Русский', shortLabel: 'RU', flag: '🇷🇺' },
-  { value: 'ko-KR', label: '한국어', shortLabel: '한국어', flag: '🇰🇷' }
+  { value: 'en-US', label: 'English', shortLabel: 'EN', flag: '🇺🇸' }
 ]
 
-const currentLanguage = computed(() => locale.value)
+const currentLanguage = computed(() =>
+  languageOptions.some(l => l.value === locale.value) ? locale.value : 'zh-CN'
+)
 const oidcLoginText = computed(() => {
   if (oidcProviderName.value) {
     return t('auth.oidcLoginWithProvider', { provider: oidcProviderName.value })
   }
   return t('auth.oidcLogin')
 })
-const currentLangOption = computed(() => languageOptions.find(l => l.value === currentLanguage.value))
+const currentLangOption = computed(() =>
+  languageOptions.find(l => l.value === currentLanguage.value) ?? languageOptions[0]
+)
 
 // Login form data
 const formData = reactive<{[key: string]: any}>({
@@ -519,8 +521,9 @@ const toggleLanguageMenu = () => {
 
 // Select language
 const selectLanguage = (lang: string) => {
-  locale.value = lang
-  localStorage.setItem('locale', lang)
+  const nextLocale = languageOptions.some(option => option.value === lang) ? lang : 'zh-CN'
+  locale.value = nextLocale
+  localStorage.setItem('locale', nextLocale)
   showLanguageMenu.value = false
   MessagePlugin.success(t('language.languageSaved'))
 }

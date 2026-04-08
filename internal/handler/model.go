@@ -30,10 +30,9 @@ func NewModelHandler(service interfaces.ModelService) *ModelHandler {
 	return &ModelHandler{service: service}
 }
 
-// hideSensitiveInfo hides sensitive information (APIKey, BaseURL) for builtin models
-// Returns a copy of the model with sensitive fields cleared if it's a builtin model
+// hideSensitiveInfo hides sensitive information for global/shared models.
 func hideSensitiveInfo(model *types.Model) *types.Model {
-	if !model.IsBuiltin && !model.IsPlatform {
+	if !model.IsPlatform {
 		return model
 	}
 
@@ -46,18 +45,17 @@ func hideSensitiveInfo(model *types.Model) *types.Model {
 		Source:      model.Source,
 		Description: model.Description,
 		Parameters: types.ModelParameters{
-			// Hide APIKey and BaseURL for builtin models
+			// Hide APIKey and BaseURL for shared/global models
 			BaseURL: "",
 			APIKey:  "",
 			// Keep other parameters like embedding dimensions
 			EmbeddingParameters: model.Parameters.EmbeddingParameters,
 			ParameterSize:       model.Parameters.ParameterSize,
 		},
-		IsBuiltin:  model.IsBuiltin,
 		IsPlatform: model.IsPlatform,
 		Status:     model.Status,
-		CreatedAt: model.CreatedAt,
-		UpdatedAt: model.UpdatedAt,
+		CreatedAt:  model.CreatedAt,
+		UpdatedAt:  model.UpdatedAt,
 	}
 }
 
@@ -135,7 +133,7 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 		secutils.SanitizeForLog(model.Name),
 	)
 
-	// Hide sensitive information for builtin models (though newly created models are unlikely to be builtin)
+	// Hide sensitive information for shared/global models.
 	responseModel := hideSensitiveInfo(model)
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -183,10 +181,10 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 
 	logger.Infof(ctx, "Retrieved model successfully, ID: %s, Name: %s", model.ID, model.Name)
 
-	// Hide sensitive information for builtin models
+	// Hide sensitive information for shared/global models.
 	responseModel := hideSensitiveInfo(model)
-	if model.IsBuiltin {
-		logger.Infof(ctx, "Builtin model detected, hiding sensitive information for model: %s", model.ID)
+	if model.IsPlatform {
+		logger.Infof(ctx, "Shared model detected, hiding sensitive information for model: %s", model.ID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -227,12 +225,12 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 
 	logger.Infof(ctx, "Retrieved model list successfully, Tenant ID: %d, Total: %d models", tenantID, len(models))
 
-	// Hide sensitive information for builtin models in the list
+	// Hide sensitive information for shared/global models in the list.
 	responseModels := make([]*types.Model, len(models))
 	for i, model := range models {
 		responseModels[i] = hideSensitiveInfo(model)
-		if model.IsBuiltin {
-			logger.Infof(ctx, "Builtin model detected in list, hiding sensitive information for model: %s", model.ID)
+		if model.IsPlatform {
+			logger.Infof(ctx, "Shared model detected in list, hiding sensitive information for model: %s", model.ID)
 		}
 	}
 
@@ -296,6 +294,14 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
+	// Platform-shared models can only be modified by super-admin.
+	if model.IsPlatform {
+		user, _ := ctx.Value(types.UserContextKey).(*types.User)
+		if user == nil || !user.CanAccessAllTenants {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "super-admin access required"})
+			return
+		}
+	}
 
 	// Update model fields if they are provided in the request
 	if req.Name != "" {
@@ -330,7 +336,7 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 
 	logger.Infof(ctx, "Model updated successfully, ID: %s", id)
 
-	// Hide sensitive information for builtin models (though builtin models cannot be updated)
+	// Hide sensitive information for shared/global models.
 	responseModel := hideSensitiveInfo(model)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -361,6 +367,24 @@ func (h *ModelHandler) DeleteModel(c *gin.Context) {
 		logger.Error(ctx, "Model ID is empty")
 		c.Error(errors.NewBadRequestError("Model ID cannot be empty"))
 		return
+	}
+
+	// Platform-shared models can only be deleted by super-admin.
+	model, getErr := h.service.GetModelByID(ctx, id)
+	if getErr != nil {
+		if getErr == service.ErrModelNotFound {
+			c.Error(errors.NewNotFoundError("Model not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError(getErr.Error()))
+		return
+	}
+	if model != nil && model.IsPlatform {
+		user, _ := ctx.Value(types.UserContextKey).(*types.User)
+		if user == nil || !user.CanAccessAllTenants {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "super-admin access required"})
+			return
+		}
 	}
 
 	logger.Infof(ctx, "Deleting model, ID: %s", id)

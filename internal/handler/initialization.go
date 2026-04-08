@@ -1338,10 +1338,10 @@ func (h *InitializationHandler) buildConfigResponse(ctx context.Context, models 
 		if model == nil {
 			continue
 		}
-		// Hide sensitive information for builtin models
+		// Hide sensitive information for shared/global models.
 		baseURL := model.Parameters.BaseURL
 		apiKey := model.Parameters.APIKey
-		if model.IsBuiltin {
+		if model.IsPlatform {
 			baseURL = ""
 			apiKey = ""
 		}

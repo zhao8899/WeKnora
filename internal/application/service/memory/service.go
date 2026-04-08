@@ -77,25 +77,15 @@ type keywordsResult struct {
 }
 
 func (s *MemoryService) getChatModel(ctx context.Context) (chat.Chat, error) {
-	// Find the first available KnowledgeQA model
-	models, err := s.modelService.ListModels(ctx)
+	model, err := s.modelService.ResolvePreferredModel(ctx, types.ModelTypeKnowledgeQA)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list models: %v", err)
+		return nil, fmt.Errorf("failed to resolve preferred KnowledgeQA model: %v", err)
 	}
-
-	var modelID string
-	for _, model := range models {
-		if model.Type == types.ModelTypeKnowledgeQA {
-			modelID = model.ID
-			break
-		}
-	}
-
-	if modelID == "" {
+	if model == nil {
 		return nil, fmt.Errorf("no KnowledgeQA model found")
 	}
 
-	return s.modelService.GetChatModel(ctx, modelID)
+	return s.modelService.GetChatModel(ctx, model.ID)
 }
 
 // AddEpisode adds a new episode to the memory graph

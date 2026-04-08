@@ -21,8 +21,6 @@
           >
             <t-option value="zh-CN" :label="$t('language.zhCN')">{{ $t('language.zhCN') }}</t-option>
             <t-option value="en-US" :label="$t('language.enUS')">{{ $t('language.enUS') }}</t-option>
-            <t-option value="ru-RU" :label="$t('language.ruRU')">{{ $t('language.ruRU') }}</t-option>
-            <t-option value="ko-KR" :label="$t('language.koKR')">{{ $t('language.koKR') }}</t-option>
           </t-select>
         </div>
       </div>
@@ -91,6 +89,7 @@ const { currentTheme, setTheme } = useTheme()
 
 // 本地状态
 const localLanguage = ref('zh-CN')
+const supportedLocales = ['zh-CN', 'en-US']
 const localTheme = ref<ThemeMode>(currentTheme.value)
 
 // 系统信息
@@ -110,11 +109,12 @@ const isMemoryEnabled = computed({
 onMounted(async () => {
   // 从 localStorage 加载语言设置
   const savedLocale = localStorage.getItem('locale')
-  if (savedLocale) {
+  if (savedLocale && supportedLocales.includes(savedLocale)) {
     localLanguage.value = savedLocale
     locale.value = savedLocale
   } else {
-    localLanguage.value = locale.value
+    localLanguage.value = supportedLocales.includes(locale.value) ? locale.value : 'zh-CN'
+    locale.value = localLanguage.value
   }
 
   // 加载系统信息以检查 Neo4j 可用性
@@ -131,10 +131,13 @@ onMounted(async () => {
 
 // 处理语言变化
 const handleLanguageChange = () => {
+  if (!supportedLocales.includes(localLanguage.value)) {
+    localLanguage.value = 'zh-CN'
+  }
   locale.value = localLanguage.value
   localStorage.setItem('locale', localLanguage.value)
   MessagePlugin.success(t('language.languageSaved'))
-    }
+}
 
 // 处理记忆功能变化
 const handleMemoryChange = (val: boolean) => {

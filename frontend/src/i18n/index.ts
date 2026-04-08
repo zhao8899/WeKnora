@@ -1,24 +1,21 @@
 import { createI18n } from 'vue-i18n'
 import zhCN from './locales/zh-CN.ts'
-import ruRU from './locales/ru-RU.ts'
 import enUS from './locales/en-US.ts'
-import koKR from './locales/ko-KR.ts'
 
 const messages = {
   'zh-CN': zhCN,
-  'en-US': enUS,
-  'ru-RU': ruRU,
-  'ko-KR': koKR
+  'en-US': enUS
 }
 
-// Получаем сохраненный язык из localStorage или используем китайский по умолчанию
-const savedLocale = localStorage.getItem('locale') || 'zh-CN'
-console.log('i18n инициализация с языком:', savedLocale)
+const defaultLocale = 'zh-CN'
+const supportedLocales = Object.keys(messages)
+const savedLocale = localStorage.getItem('locale')
+const locale = savedLocale && supportedLocales.includes(savedLocale) ? savedLocale : defaultLocale
 
 const i18n = createI18n({
   legacy: false,
-  locale: savedLocale,
-  fallbackLocale: 'zh-CN',
+  locale,
+  fallbackLocale: defaultLocale,
   globalInjection: true,
   messages
 })

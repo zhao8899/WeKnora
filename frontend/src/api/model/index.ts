@@ -25,11 +25,15 @@ export interface ModelConfig {
     supports_vision?: boolean; // Whether the model accepts image/multimodal input
   };
   is_default?: boolean;
-  is_builtin?: boolean;
+  is_platform?: boolean;
   status?: string;
   created_at?: string;
   updated_at?: string;
   deleted_at?: string | null;
+}
+
+export interface ListModelsOptions {
+  includeBuiltin?: boolean;
 }
 
 // 创建模型
@@ -51,16 +55,17 @@ export function createModel(data: ModelConfig): Promise<ModelConfig> {
 }
 
 // 获取模型列表
-export function listModels(type?: string): Promise<ModelConfig[]> {
+export function listModels(type?: string, options: ListModelsOptions = {}): Promise<ModelConfig[]> {
   return new Promise((resolve, reject) => {
     const url = `/api/v1/models`;
     get(url)
       .then((response: any) => {
         if (response.success && response.data) {
+          let models = response.data as ModelConfig[];
           if (type) {
-            response.data = response.data.filter((item: ModelConfig) => item.type === type);
+            models = models.filter((item: ModelConfig) => item.type === type);
           }
-          resolve(response.data);
+          resolve(models);
         } else {
           resolve([]);
         }
@@ -125,4 +130,3 @@ export function deleteModel(id: string): Promise<void> {
       });
   });
 }
-

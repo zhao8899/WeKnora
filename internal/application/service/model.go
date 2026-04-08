@@ -3,12 +3,13 @@ package service
 import (
 	"context"
 	"errors"
+	"sort"
 
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/models/asr"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/models/rerank"
-	"github.com/Tencent/WeKnora/internal/models/asr"
 	"github.com/Tencent/WeKnora/internal/models/utils/ollama"
 	"github.com/Tencent/WeKnora/internal/models/vlm"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -23,6 +24,11 @@ type modelService struct {
 	repo          interfaces.ModelRepository
 	ollamaService *ollama.OllamaService
 	pooler        embedding.EmbedderPooler
+}
+
+func canManageSharedModels(ctx context.Context) bool {
+	user, _ := ctx.Value(types.UserContextKey).(*types.User)
+	return user != nil && user.CanAccessAllTenants
 }
 
 // NewModelService creates a new model service instance
@@ -164,12 +170,66 @@ func (s *modelService) ListModels(ctx context.Context) ([]*types.Model, error) {
 	return models, nil
 }
 
+func pickPreferredModel(models []*types.Model) *types.Model {
+	if len(models) == 0 {
+		return nil
+	}
+
+	sort.SliceStable(models, func(i, j int) bool {
+		if models[i].IsDefault != models[j].IsDefault {
+			return models[i].IsDefault
+		}
+		if !models[i].CreatedAt.Equal(models[j].CreatedAt) {
+			return models[i].CreatedAt.Before(models[j].CreatedAt)
+		}
+		return models[i].ID < models[j].ID
+	})
+
+	return models[0]
+}
+
+// ResolvePreferredModel returns the preferred runtime model for a given type.
+// Priority: tenant-owned > platform-shared.
+func (s *modelService) ResolvePreferredModel(ctx context.Context, modelType types.ModelType) (*types.Model, error) {
+	tenantID := types.MustTenantIDFromContext(ctx)
+
+	models, err := s.repo.List(ctx, tenantID, modelType, "")
+	if err != nil {
+		return nil, err
+	}
+
+	tenantModels := make([]*types.Model, 0)
+	platformModels := make([]*types.Model, 0)
+
+	for _, model := range models {
+		if model == nil || model.Status != types.ModelStatusActive || model.Type != modelType {
+			continue
+		}
+
+		switch {
+		case model.TenantID == tenantID && !model.IsPlatform:
+			tenantModels = append(tenantModels, model)
+		case model.IsPlatform:
+			platformModels = append(platformModels, model)
+		}
+	}
+
+	if model := pickPreferredModel(tenantModels); model != nil {
+		return model, nil
+	}
+	if model := pickPreferredModel(platformModels); model != nil {
+		return model, nil
+	}
+
+	return nil, nil
+}
+
 // UpdateModel updates an existing model in the repository
 func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) error {
 	logger.Info(ctx, "Start updating model")
 	logger.Infof(ctx, "Updating model ID: %s, name: %s", model.ID, model.Name)
 
-	// Check if the model is builtin - builtin models cannot be updated
+	// Shared/global models require super-admin privileges when updated through service APIs.
 	tenantID := types.MustTenantIDFromContext(ctx)
 	existingModel, err := s.repo.GetByID(ctx, tenantID, model.ID)
 	if err != nil {
@@ -178,9 +238,9 @@ func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) erro
 		})
 		return err
 	}
-	if existingModel != nil && existingModel.IsBuiltin {
-		logger.Warnf(ctx, "Attempted to update builtin model: %s", model.ID)
-		return errors.New("builtin models cannot be updated")
+	if existingModel != nil && existingModel.IsPlatform && !canManageSharedModels(ctx) {
+		logger.Warnf(ctx, "Attempted to update shared model without super-admin privileges: %s", model.ID)
+		return errors.New("shared models require super-admin privileges to update")
 	}
 
 	// Update model in repository
@@ -205,7 +265,7 @@ func (s *modelService) DeleteModel(ctx context.Context, id string) error {
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
-	// Check if the model is builtin - builtin models cannot be deleted
+	// Shared/global models require super-admin privileges when deleted through service APIs.
 	existingModel, err := s.repo.GetByID(ctx, tenantID, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -213,9 +273,9 @@ func (s *modelService) DeleteModel(ctx context.Context, id string) error {
 		})
 		return err
 	}
-	if existingModel != nil && existingModel.IsBuiltin {
-		logger.Warnf(ctx, "Attempted to delete builtin model: %s", id)
-		return errors.New("builtin models cannot be deleted")
+	if existingModel != nil && existingModel.IsPlatform && !canManageSharedModels(ctx) {
+		logger.Warnf(ctx, "Attempted to delete shared model without super-admin privileges: %s", id)
+		return errors.New("shared models require super-admin privileges to delete")
 	}
 
 	// Delete model from repository

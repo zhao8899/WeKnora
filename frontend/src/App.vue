@@ -10,8 +10,6 @@ import { getCurrentUser } from '@/api/auth'
 // TDesign locale configs
 import enUSConfig from 'tdesign-vue-next/esm/locale/en_US'
 import zhCNConfig from 'tdesign-vue-next/esm/locale/zh_CN'
-import koKRConfig from 'tdesign-vue-next/esm/locale/ko_KR'
-import ruRUConfig from 'tdesign-vue-next/esm/locale/ru_RU'
 
 const { locale } = useI18n()
 const router = useRouter()
@@ -20,11 +18,9 @@ const authStore = useAuthStore()
 const tdLocaleMap: Record<string, object> = {
   'en-US': enUSConfig,
   'zh-CN': zhCNConfig,
-  'ko-KR': koKRConfig,
-  'ru-RU': ruRUConfig,
 }
 
-const tdGlobalConfig = computed(() => tdLocaleMap[locale.value] || enUSConfig)
+const tdGlobalConfig = computed(() => tdLocaleMap[locale.value] || zhCNConfig)
 
 const decodeOIDCResult = (encoded: string) => {
   const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/')
