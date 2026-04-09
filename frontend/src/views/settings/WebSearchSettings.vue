@@ -1,8 +1,8 @@
 <template>
   <div class="websearch-settings">
     <div class="section-header">
-      <h2>{{ t('webSearchSettings.title') }}</h2>
-      <p class="section-description">{{ t('webSearchSettings.description') }}</p>
+      <h2>{{ props.mode === 'platform' ? t('webSearchSettings.platformTitle') : t('webSearchSettings.title') }}</h2>
+      <p class="section-description">{{ props.mode === 'platform' ? t('webSearchSettings.platformDescription') : t('webSearchSettings.description') }}</p>
     </div>
 
     <div class="settings-group">
@@ -148,6 +148,12 @@ import {
   type WebSearchProviderEntity,
   type WebSearchProviderTypeInfo,
 } from '@/api/web-search-provider'
+
+const props = withDefaults(defineProps<{
+  mode?: 'platform' | 'tenant'
+}>(), {
+  mode: 'tenant'
+})
 
 const { t } = useI18n()
 

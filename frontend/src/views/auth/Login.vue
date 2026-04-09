@@ -306,6 +306,16 @@
             />
           </t-form-item>
 
+          <t-form-item :label="$t('auth.tenantIdOptional')" name="tenantId">
+            <t-input
+              v-model="registerData.tenantId"
+              :placeholder="$t('auth.tenantIdPlaceholder')"
+              size="large"
+              :disabled="loading"
+            />
+            <div class="field-hint">{{ $t('auth.tenantIdHint') }}</div>
+          </t-form-item>
+
           <t-form-item :label="$t('auth.password')" name="password">
             <t-input
               v-model="registerData.password"
@@ -463,6 +473,7 @@ const formData = reactive<{[key: string]: any}>({
 const registerData = reactive<{[key: string]: any}>({
   username: '',
   email: '',
+  tenantId: '',
   password: '',
   confirmPassword: '',
   tenantId: ''
@@ -473,6 +484,18 @@ const formRules = computed(() => ({
   email: [
     { required: true, message: t('auth.emailRequired'), type: 'error' },
     { email: true, message: t('auth.emailInvalid'), type: 'error' }
+  ],
+  tenantId: [
+    {
+      validator: (val: string) => {
+        if (!val || val.trim() === '') {
+          return true
+        }
+        return /^\d+$/.test(val.trim()) && Number(val.trim()) > 0
+      },
+      message: t('auth.tenantIdInvalid'),
+      type: 'error'
+    }
   ],
   password: [
     { required: true, message: t('auth.passwordRequired'), type: 'error' },
@@ -653,6 +676,7 @@ const handleRegister = async () => {
     if (valid !== true) return
 
     loading.value = true
+    const tenantIdValue = String(registerData.tenantId || '').trim()
     
     const reqData: any = {
       username: registerData.username,
@@ -730,6 +754,13 @@ onMounted(() => {
   z-index: 1;
   overflow: hidden;
   contain: strict;
+}
+
+.field-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(15, 23, 42, 0.68);
 }
 
 .knowledge-node {

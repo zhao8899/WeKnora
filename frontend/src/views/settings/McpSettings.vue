@@ -1,9 +1,9 @@
 <template>
   <div class="mcp-settings">
     <div class="section-header">
-      <h2>{{ $t('mcpSettings.title') }}</h2>
+      <h2>{{ props.mode === 'platform' ? $t('mcpSettings.platformTitle') : $t('mcpSettings.title') }}</h2>
       <p class="section-description">
-        {{ $t('mcpSettings.description') }}
+        {{ props.mode === 'platform' ? $t('mcpSettings.platformDescription') : $t('mcpSettings.description') }}
       </p>
     </div>
 
@@ -121,6 +121,12 @@ import {
 } from '@/api/mcp-service'
 import McpServiceDialog from './components/McpServiceDialog.vue'
 import McpTestResult from './components/McpTestResult.vue'
+
+const props = withDefaults(defineProps<{
+  mode?: 'platform' | 'tenant'
+}>(), {
+  mode: 'tenant'
+})
 
 const { t } = useI18n()
 
@@ -498,4 +504,3 @@ onMounted(() => {
   }
 }
 </style>
-

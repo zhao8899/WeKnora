@@ -366,22 +366,20 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler) {
 
 // RegisterTenantRoutes 注册租户相关的路由
 func RegisterTenantRoutes(r *gin.RouterGroup, handler *handler.TenantHandler) {
-	requireSuperAdmin := middleware.RequireSuperAdmin()
 	requireAdmin := middleware.RequireRole(types.OrgRoleAdmin)
+	requireSuperAdmin := middleware.RequireSuperAdmin()
 
-	// 平台级租户管理（仅超级管理员）
+	// 添加获取所有租户的路由（需要跨租户权限）
 	r.GET("/tenants/all", requireSuperAdmin, handler.ListAllTenants)
+	// 添加搜索租户的路由（需要跨租户权限，支持分页和搜索）
 	r.GET("/tenants/search", requireSuperAdmin, handler.SearchTenants)
 	// 租户路由组
 	tenantRoutes := r.Group("/tenants")
 	{
-		// 创建/删除租户是平台级操作（仅超级管理员）
 		tenantRoutes.POST("", requireSuperAdmin, handler.CreateTenant)
-		tenantRoutes.DELETE("/:id", requireSuperAdmin, handler.DeleteTenant)
-		// 查看租户信息（自己的租户）
 		tenantRoutes.GET("/:id", handler.GetTenant)
-		// 更新租户信息（租户管理员可更新自己的租户，handler 层校验所有权）
 		tenantRoutes.PUT("/:id", requireAdmin, handler.UpdateTenant)
+		tenantRoutes.DELETE("/:id", requireSuperAdmin, handler.DeleteTenant)
 		tenantRoutes.GET("", handler.ListTenants)
 
 		// Generic KV configuration management (tenant-level, 租户管理员可操作)

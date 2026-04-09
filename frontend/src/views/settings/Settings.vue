@@ -33,7 +33,7 @@
                     >
                       <!-- 网络搜索使用自定义 SVG 图标 -->
                       <svg
-                        v-if="item.key === 'websearch'"
+                        v-if="item.key === 'websearch' || item.key === 'platform-websearch'"
                         width="18"
                         height="18"
                         viewBox="0 0 18 18"
@@ -85,24 +85,54 @@
                   <GeneralSettings />
                 </div>
 
-                <!-- 模型配置 -->
+                <!-- 租户模型配置 -->
                 <div v-if="currentSection === 'models'" class="section">
-                  <ModelSettings />
+                  <ModelSettings mode="tenant" />
                 </div>
 
-                <!-- Ollama 设置 -->
-                <div v-if="currentSection === 'ollama'" class="section">
-                  <OllamaSettings />
-                </div>
-
-                <!-- 网络搜索配置 -->
+                <!-- 租户网络搜索配置 -->
                 <div v-if="currentSection === 'websearch'" class="section">
-                  <WebSearchSettings />
+                  <WebSearchSettings mode="tenant" />
                 </div>
 
                 <!-- 消息管理 -->
                 <div v-if="currentSection === 'chathistory'" class="section">
                   <ChatHistorySettings />
+                </div>
+
+                <!-- 租户信息 -->
+                <div v-if="currentSection === 'tenant'" class="section">
+                  <TenantInfo />
+                </div>
+
+                <!-- API 信息 -->
+                <div v-if="currentSection === 'api'" class="section">
+                  <ApiInfo />
+                </div>
+
+                <!-- 租户 MCP 服务 -->
+                <div v-if="currentSection === 'mcp'" class="section">
+                  <McpSettings mode="tenant" />
+                </div>
+
+                <!-- 平台模型管理 -->
+                <div v-if="currentSection === 'platform-models'" class="section">
+                  <ModelSettings mode="platform" />
+                </div>
+
+                <!-- 平台网络搜索 -->
+                <div v-if="currentSection === 'platform-websearch'" class="section">
+                  <WebSearchSettings mode="platform" />
+                </div>
+
+                <!-- 平台 MCP 服务 -->
+                <div v-if="currentSection === 'platform-mcp'" class="section">
+                  <McpSettings mode="platform" />
+                </div>
+
+                <!-- Ollama 设置 -->
+                <div v-if="currentSection === 'ollama'" class="section">
+                  <OllamaSettings />
                 </div>
 
                 <!-- 解析引擎 -->
@@ -118,21 +148,6 @@
                 <!-- 系统信息 -->
                 <div v-if="currentSection === 'system'" class="section">
                   <SystemInfo />
-                </div>
-
-                <!-- 租户信息 -->
-                <div v-if="currentSection === 'tenant'" class="section">
-                  <TenantInfo />
-                </div>
-
-                <!-- API 信息 -->
-                <div v-if="currentSection === 'api'" class="section">
-                  <ApiInfo />
-                </div>
-
-                <!-- MCP 服务 -->
-                <div v-if="currentSection === 'mcp'" class="section">
-                  <McpSettings />
                 </div>
               </div>
             </div>
@@ -232,13 +247,13 @@ const navGroups = computed<NavGroup[]>(() => {
     })
   }
 
-  // 平台管理 — 仅超级管理员可见（平台基础设施配置）
+  // 平台管理 — 仅超级管理员可见
   if (isSuperAdmin.value) {
     groups.push({
       section: 'platform',
       label: t('settings.sectionPlatform'),
       items: [
-        { key: 'ollama', icon: 'server', label: 'Ollama' },
+        { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') },
         {
           key: 'parser',
           icon: 'file-search',
@@ -263,7 +278,20 @@ const navGroups = computed<NavGroup[]>(() => {
             { key: 's3', label: 'AWS S3' },
           ]
         },
-        { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') },
+        {
+          key: 'platform-models',
+          icon: 'control-platform',
+          label: t('settings.platformModelManagement'),
+          children: [
+            { key: 'chat', label: t('model.llmModel') },
+            { key: 'embedding', label: t('model.embeddingModel') },
+            { key: 'rerank', label: t('model.rerankModel') },
+            { key: 'vllm', label: t('model.vlmModel') }
+          ]
+        },
+        { key: 'platform-websearch', icon: 'search', label: t('settings.platformWebSearch') },
+        { key: 'platform-mcp', icon: 'tools', label: t('settings.platformMcp') },
+        { key: 'ollama', icon: 'server', label: 'Ollama' },
       ]
     })
   }
@@ -669,4 +697,3 @@ onUnmounted(() => {
   background: var(--td-gray-color-6);
 }
 </style>
-

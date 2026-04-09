@@ -58,6 +58,7 @@ export interface RegisterRequest {
   username: string
   email: string
   password: string
+  tenant_id?: number
 }
 
 export interface RegisterResponse {
@@ -283,7 +284,6 @@ export async function validateToken(): Promise<{ success: boolean; valid?: boole
     }
   }
 }
-
 
 
 

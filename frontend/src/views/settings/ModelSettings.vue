@@ -1,8 +1,8 @@
 <template>
   <div class="model-settings">
     <div class="section-header">
-      <h2>{{ $t('modelSettings.title') }}</h2>
-      <p class="section-description">{{ $t('modelSettings.description') }}</p>
+      <h2>{{ props.mode === 'platform' ? $t('modelSettings.platformTitle') : $t('modelSettings.title') }}</h2>
+      <p class="section-description">{{ props.mode === 'platform' ? $t('modelSettings.platformDescription') : $t('modelSettings.description') }}</p>
     </div>
 
     <!-- 对话模型 -->
@@ -12,7 +12,7 @@
           <h3>{{ $t('modelSettings.chat.title') }}</h3>
           <p>{{ $t('modelSettings.chat.desc') }}</p>
         </div>
-        <t-button v-if="canManageTenantModels" size="small" theme="primary" @click="openAddDialog('chat')" class="add-model-btn">
+        <t-button v-if="canManageModels" size="small" theme="primary" @click="openAddDialog('chat')" class="add-model-btn">
           <template #icon>
             <t-icon name="add" class="add-icon" />
           </template>
@@ -48,7 +48,7 @@
       </div>
       <div v-else class="empty-state">
         <p class="empty-text">{{ $t('modelSettings.chat.empty') }}</p>
-        <t-button v-if="canManageTenantModels" theme="default" variant="outline" size="small" @click="openAddDialog('chat')">
+        <t-button v-if="canManageModels" theme="default" variant="outline" size="small" @click="openAddDialog('chat')">
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
@@ -61,7 +61,7 @@
           <h3>{{ $t('modelSettings.embedding.title') }}</h3>
           <p>{{ $t('modelSettings.embedding.desc') }}</p>
         </div>
-        <t-button v-if="canManageTenantModels" size="small" theme="primary" @click="openAddDialog('embedding')" class="add-model-btn">
+        <t-button v-if="canManageModels" size="small" theme="primary" @click="openAddDialog('embedding')" class="add-model-btn">
           <template #icon>
             <t-icon name="add" class="add-icon" />
           </template>
@@ -98,7 +98,7 @@
       </div>
       <div v-else class="empty-state">
         <p class="empty-text">{{ $t('modelSettings.embedding.empty') }}</p>
-        <t-button v-if="canManageTenantModels" theme="default" variant="outline" size="small" @click="openAddDialog('embedding')">
+        <t-button v-if="canManageModels" theme="default" variant="outline" size="small" @click="openAddDialog('embedding')">
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
@@ -111,7 +111,7 @@
           <h3>{{ $t('modelSettings.rerank.title') }}</h3>
           <p>{{ $t('modelSettings.rerank.desc') }}</p>
         </div>
-        <t-button v-if="canManageTenantModels" size="small" theme="primary" @click="openAddDialog('rerank')" class="add-model-btn">
+        <t-button v-if="canManageModels" size="small" theme="primary" @click="openAddDialog('rerank')" class="add-model-btn">
           <template #icon>
             <t-icon name="add" class="add-icon" />
           </template>
@@ -147,7 +147,7 @@
       </div>
       <div v-else class="empty-state">
         <p class="empty-text">{{ $t('modelSettings.rerank.empty') }}</p>
-        <t-button v-if="canManageTenantModels" theme="default" variant="outline" size="small" @click="openAddDialog('rerank')">
+        <t-button v-if="canManageModels" theme="default" variant="outline" size="small" @click="openAddDialog('rerank')">
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
@@ -160,7 +160,7 @@
           <h3>{{ $t('modelSettings.vllm.title') }}</h3>
           <p>{{ $t('modelSettings.vllm.desc') }}</p>
         </div>
-        <t-button v-if="canManageTenantModels" size="small" theme="primary" @click="openAddDialog('vllm')" class="add-model-btn">
+        <t-button v-if="canManageModels" size="small" theme="primary" @click="openAddDialog('vllm')" class="add-model-btn">
           <template #icon>
             <t-icon name="add" class="add-icon" />
           </template>
@@ -196,7 +196,7 @@
       </div>
       <div v-else class="empty-state">
         <p class="empty-text">{{ $t('modelSettings.vllm.empty') }}</p>
-        <t-button v-if="canManageTenantModels" theme="default" variant="outline" size="small" @click="openAddDialog('vllm')">
+        <t-button v-if="canManageModels" theme="default" variant="outline" size="small" @click="openAddDialog('vllm')">
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
@@ -209,7 +209,7 @@
           <h3>{{ $t('modelSettings.asr.title') }}</h3>
           <p>{{ $t('modelSettings.asr.desc') }}</p>
         </div>
-        <t-button v-if="canManageTenantModels" size="small" theme="primary" @click="openAddDialog('asr')" class="add-model-btn">
+        <t-button v-if="canManageModels" size="small" theme="primary" @click="openAddDialog('asr')" class="add-model-btn">
           <template #icon>
             <t-icon name="add" class="add-icon" />
           </template>
@@ -244,7 +244,7 @@
       </div>
       <div v-else class="empty-state">
         <p class="empty-text">{{ $t('modelSettings.asr.empty') }}</p>
-        <t-button v-if="canManageTenantModels" theme="default" variant="outline" size="small" @click="openAddDialog('asr')">
+        <t-button v-if="canManageModels" theme="default" variant="outline" size="small" @click="openAddDialog('asr')">
           {{ $t('modelSettings.actions.addModel') }}
         </t-button>
       </div>
@@ -262,12 +262,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import ModelEditorDialog from '@/components/ModelEditorDialog.vue'
-import { listModels, createModel, updateModel as updateModelAPI, deleteModel as deleteModelAPI, type ModelConfig } from '@/api/model'
+import {
+  listModels,
+  createModel,
+  updateModel as updateModelAPI,
+  deleteModel as deleteModelAPI,
+  listPlatformModels,
+  createPlatformModel,
+  updatePlatformModel,
+  deletePlatformModel,
+  type ModelConfig
+} from '@/api/model'
 import { useAuthStore } from '@/stores/auth'
+
+const props = withDefaults(defineProps<{
+  mode?: 'platform' | 'tenant'
+}>(), {
+  mode: 'tenant'
+})
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -286,35 +302,45 @@ const isTenantOwner = computed(() => {
   const ownerId = authStore.tenant?.owner_id
   return !!uid && !!ownerId && uid === ownerId
 })
-const canManageTenantModels = computed(() => isSuperAdmin.value || isTenantOwner.value)
+const canManageModels = computed(() => {
+  if (props.mode === 'platform') return isSuperAdmin.value
+  return isSuperAdmin.value || isTenantOwner.value
+})
+
+const filterByMode = (models: ModelConfig[]) => {
+  if (props.mode === 'platform') {
+    return models.filter(m => m.is_platform)
+  }
+  return models
+}
 
 // 根据类型过滤模型
 const chatModels = computed(() => 
-  allModels.value
+  filterByMode(allModels.value)
     .filter(m => m.type === 'KnowledgeQA')
     .map(convertToLegacyFormat)
 )
 
 const embeddingModels = computed(() => 
-  allModels.value
+  filterByMode(allModels.value)
     .filter(m => m.type === 'Embedding')
     .map(convertToLegacyFormat)
 )
 
 const rerankModels = computed(() => 
-  allModels.value
+  filterByMode(allModels.value)
     .filter(m => m.type === 'Rerank')
     .map(convertToLegacyFormat)
 )
 
 const vllmModels = computed(() =>
-  allModels.value
+  filterByMode(allModels.value)
     .filter(m => m.type === 'VLLM')
     .map(convertToLegacyFormat)
 )
 
 const asrModels = computed(() =>
-  allModels.value
+  filterByMode(allModels.value)
     .filter(m => m.type === 'ASR')
     .map(convertToLegacyFormat)
 )
@@ -341,7 +367,9 @@ function convertToLegacyFormat(model: ModelConfig) {
 const loadModels = async () => {
   loading.value = true
   try {
-    const models = await listModels()
+    const models = props.mode === 'platform'
+      ? await listPlatformModels()
+      : await listModels()
     allModels.value = models
   } catch (error: any) {
     console.error('加载模型列表失败:', error)
@@ -350,6 +378,10 @@ const loadModels = async () => {
     loading.value = false
   }
 }
+
+watch(() => props.mode, () => {
+  loadModels()
+})
 
 // 打开添加对话框
 const openAddDialog = (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr') => {
@@ -360,12 +392,11 @@ const openAddDialog = (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr') =
 
 // 编辑模型
 const editModel = (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr', model: any) => {
-  if (!canManageTenantModels.value) {
+  if (!canManageModels.value) {
     MessagePlugin.warning(t('error.forbidden'))
     return
   }
-  // 共享模型仅超级管理员可编辑；租户模型由租户管理员维护。
-  if (model.isShared && !isSuperAdmin.value) {
+  if (props.mode === 'tenant' && model.isShared && !isSuperAdmin.value) {
     MessagePlugin.warning(t('modelSettings.toasts.sharedCannotEdit'))
     return
   }
@@ -438,11 +469,19 @@ const handleModelSave = async (modelData: any) => {
 
     if (editingModel.value && editingModel.value.id) {
       // 更新现有模型
-      await updateModelAPI(editingModel.value.id, apiModelData)
+      if (props.mode === 'platform') {
+        await updatePlatformModel(editingModel.value.id, apiModelData)
+      } else {
+        await updateModelAPI(editingModel.value.id, apiModelData)
+      }
       MessagePlugin.success(t('modelSettings.toasts.updated'))
     } else {
       // 添加新模型
-      await createModel(apiModelData)
+      if (props.mode === 'platform') {
+        await createPlatformModel(apiModelData)
+      } else {
+        await createModel(apiModelData)
+      }
       MessagePlugin.success(t('modelSettings.toasts.added'))
     }
     
@@ -456,19 +495,24 @@ const handleModelSave = async (modelData: any) => {
 
 // 删除模型
 const deleteModel = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr', modelId: string) => {
-  if (!canManageTenantModels.value) {
+  if (!canManageModels.value) {
     MessagePlugin.warning(t('error.forbidden'))
     return
   }
-  // 检查是否是共享模型
-  const model = allModels.value.find(m => m.id === modelId)
-  if (model?.is_platform && !isSuperAdmin.value) {
-    MessagePlugin.warning(t('modelSettings.toasts.sharedCannotDelete'))
-    return
+  if (props.mode === 'tenant') {
+    const model = allModels.value.find(m => m.id === modelId)
+    if (model?.is_platform && !isSuperAdmin.value) {
+      MessagePlugin.warning(t('modelSettings.toasts.sharedCannotDelete'))
+      return
+    }
   }
   
   try {
-    await deleteModelAPI(modelId)
+    if (props.mode === 'platform') {
+      await deletePlatformModel(modelId)
+    } else {
+      await deleteModelAPI(modelId)
+    }
     MessagePlugin.success(t('modelSettings.toasts.deleted'))
     // 重新加载模型列表
     await loadModels()
@@ -481,11 +525,10 @@ const deleteModel = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr
 // 获取模型操作菜单选项
 const getModelOptions = (type: 'chat' | 'embedding' | 'rerank' | 'vllm' | 'asr', model: any) => {
   const options: any[] = []
-  if (!canManageTenantModels.value) {
+  if (!canManageModels.value) {
     return options
   }
-  // 共享模型仅超级管理员可编辑和删除。
-  if (model.isShared && !isSuperAdmin.value) {
+  if (props.mode === 'tenant' && model.isShared && !isSuperAdmin.value) {
     return options
   }
   

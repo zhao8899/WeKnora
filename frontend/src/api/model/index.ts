@@ -130,3 +130,72 @@ export function deleteModel(id: string): Promise<void> {
       });
   });
 }
+
+// 平台模型管理 API（超管专用）
+export function listPlatformModels(): Promise<ModelConfig[]> {
+  return new Promise((resolve) => {
+    get('/api/v1/models/platform')
+      .then((response: any) => {
+        if (response.success && response.data) {
+          resolve(response.data as ModelConfig[])
+        } else {
+          resolve([])
+        }
+      })
+      .catch((error: any) => {
+        console.error('Failed to list platform models:', error)
+        resolve([])
+      })
+  })
+}
+
+export function createPlatformModel(data: ModelConfig): Promise<ModelConfig> {
+  return new Promise((resolve, reject) => {
+    post('/api/v1/models/platform', data)
+      .then((response: any) => {
+        if (response.success && response.data) {
+          resolve(response.data)
+        } else {
+          reject(new Error(response.message || t('error.model.createFailed')))
+        }
+      })
+      .catch((error: any) => {
+        console.error('Failed to create platform model:', error)
+        reject(error)
+      })
+  })
+}
+
+export function updatePlatformModel(id: string, data: Partial<ModelConfig>): Promise<ModelConfig> {
+  return new Promise((resolve, reject) => {
+    put(`/api/v1/models/platform/${id}`, data)
+      .then((response: any) => {
+        if (response.success && response.data) {
+          resolve(response.data)
+        } else {
+          reject(new Error(response.message || t('error.model.updateFailed')))
+        }
+      })
+      .catch((error: any) => {
+        console.error('Failed to update platform model:', error)
+        reject(error)
+      })
+  })
+}
+
+export function deletePlatformModel(id: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    del(`/api/v1/models/platform/${id}`)
+      .then((response: any) => {
+        if (response.success) {
+          resolve()
+        } else {
+          reject(new Error(response.message || t('error.model.deleteFailed')))
+        }
+      })
+      .catch((error: any) => {
+        console.error('Failed to delete platform model:', error)
+        reject(error)
+      })
+  })
+}
