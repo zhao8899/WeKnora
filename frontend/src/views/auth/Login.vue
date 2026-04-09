@@ -475,8 +475,7 @@ const registerData = reactive<{[key: string]: any}>({
   email: '',
   tenantId: '',
   password: '',
-  confirmPassword: '',
-  tenantId: ''
+  confirmPassword: ''
 })
 
 // Login form validation rules
@@ -484,18 +483,6 @@ const formRules = computed(() => ({
   email: [
     { required: true, message: t('auth.emailRequired'), type: 'error' },
     { email: true, message: t('auth.emailInvalid'), type: 'error' }
-  ],
-  tenantId: [
-    {
-      validator: (val: string) => {
-        if (!val || val.trim() === '') {
-          return true
-        }
-        return /^\d+$/.test(val.trim()) && Number(val.trim()) > 0
-      },
-      message: t('auth.tenantIdInvalid'),
-      type: 'error'
-    }
   ],
   password: [
     { required: true, message: t('auth.passwordRequired'), type: 'error' },
@@ -521,6 +508,18 @@ const registerRules = computed(() => ({
   email: [
     { required: true, message: t('auth.emailRequired'), type: 'error' },
     { email: true, message: t('auth.emailInvalid'), type: 'error' }
+  ],
+  tenantId: [
+    {
+      validator: (val: string) => {
+        if (!val || val.trim() === '') {
+          return true
+        }
+        return /^\d+$/.test(val.trim()) && Number(val.trim()) > 0
+      },
+      message: t('auth.tenantIdInvalid'),
+      type: 'error'
+    }
   ],
   password: [
     { required: true, message: t('auth.passwordRequired'), type: 'error' },

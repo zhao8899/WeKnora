@@ -955,7 +955,6 @@ export default {
     confirmPasswordPlaceholder: "再次输入密码",
     usernamePlaceholder: "输入用户名",
     tenantId: "租户ID",
-    tenantIdPlaceholder: "输入要加入的租户ID（可选）",
     tenantIdHelp: "留空将自动创建新租户，您将成为该租户的管理员",
     emailRequired: "请输入邮箱地址",
     emailInvalid: "请输入正确的邮箱格式",

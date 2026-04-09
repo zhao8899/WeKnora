@@ -69,6 +69,10 @@ func (s *fakeTenantService) CreateTenant(ctx context.Context, tenant *types.Tena
 	cloned := *tenant
 	cloned.ID = 1001
 	s.createdTenant = &cloned
+	if s.tenantsByID == nil {
+		s.tenantsByID = map[uint64]*types.Tenant{}
+	}
+	s.tenantsByID[cloned.ID] = &cloned
 	return &cloned, nil
 }
 
@@ -152,7 +156,7 @@ func TestRegisterJoinsExistingTenantWithoutChangingOwner(t *testing.T) {
 		usersByEmail:    map[string]*types.User{},
 		usersByUsername: map[string]*types.User{},
 	}
-	existingTenant := &types.Tenant{ID: 42, Name: "Existing", OwnerID: "owner-1"}
+	existingTenant := &types.Tenant{ID: 42, Name: "Existing", OwnerID: "owner-1", Status: "active"}
 	tenantService := &fakeTenantService{
 		tenantsByID: map[uint64]*types.Tenant{
 			42: existingTenant,

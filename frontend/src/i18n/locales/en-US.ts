@@ -1108,7 +1108,6 @@ export default {
     confirmPasswordPlaceholder: 'Enter password again',
     usernamePlaceholder: 'Enter username',
     tenantId: 'Tenant ID',
-    tenantIdPlaceholder: 'Enter tenant ID to join (optional)',
     tenantIdHelp: 'Leave blank to create a new tenant and become its admin',
     emailRequired: 'Enter email address',
     emailInvalid: 'Enter correct email format',
