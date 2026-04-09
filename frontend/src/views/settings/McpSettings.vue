@@ -43,6 +43,14 @@
                 >
                   {{ $t('mcpSettings.builtin') }}
                 </t-tag>
+                <t-tag
+                  v-if="service.is_platform"
+                  theme="warning"
+                  size="small"
+                  variant="light"
+                >
+                  {{ $t('mcpSettings.platformTag') }}
+                </t-tag>
                 <t-tag 
                   :theme="getTransportTypeTheme(service.transport_type)" 
                   size="small"
@@ -56,10 +64,10 @@
                   v-model="service.enabled" 
                   @change="() => handleToggleEnabled(service)"
                   size="medium"
-                  :disabled="service.is_builtin"
+                  :disabled="service.is_builtin || (props.mode === 'tenant' && service.is_platform)"
                 />
                 <t-dropdown 
-                  v-if="!service.is_builtin"
+                  v-if="!service.is_builtin && canEditService(service)"
                   :options="getServiceOptions(service)" 
                   @click="(data: any) => handleMenuAction(data, service)"
                   placement="bottom-right"
@@ -95,6 +103,7 @@
       v-model:visible="dialogVisible"
       :service="currentService"
       :mode="dialogMode"
+      :scope="props.mode"
       @success="handleDialogSuccess"
     />
 
@@ -113,9 +122,13 @@ import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import {
   listMCPServices,
+  listPlatformMCPServices,
   updateMCPService,
+  updatePlatformMCPService,
   deleteMCPService,
+  deletePlatformMCPService,
   testMCPService,
+  createPlatformMCPService,
   type MCPService,
   type MCPTestResult
 } from '@/api/mcp-service'
@@ -144,13 +157,19 @@ const testing = ref(false)
 const loadServices = async () => {
   loading.value = true
   try {
-    services.value = await listMCPServices()
+    services.value = props.mode === 'platform'
+      ? await listPlatformMCPServices()
+      : await listMCPServices()
   } catch (error) {
     MessagePlugin.error(t('mcpSettings.toasts.loadFailed'))
     console.error('Failed to load MCP services:', error)
   } finally {
     loading.value = false
   }
+}
+
+const canEditService = (service: MCPService) => {
+  return props.mode === 'platform' || !service.is_platform
 }
 
 // Handle add button click
@@ -179,7 +198,11 @@ const handleToggleEnabled = async (service: MCPService) => {
   
   const originalState = service.enabled
   try {
-    await updateMCPService(service.id, { enabled: service.enabled })
+    if (props.mode === 'platform') {
+      await updatePlatformMCPService(service.id, { enabled: service.enabled })
+    } else {
+      await updateMCPService(service.id, { enabled: service.enabled })
+    }
     MessagePlugin.success(service.enabled ? t('mcpSettings.toasts.enabled') : t('mcpSettings.toasts.disabled'))
   } catch (error) {
     // Revert on error
@@ -260,7 +283,11 @@ const handleDelete = async (service: MCPService) => {
     theme: 'warning',
     onConfirm: async () => {
       try {
-        await deleteMCPService(service.id)
+        if (props.mode === 'platform') {
+          await deletePlatformMCPService(service.id)
+        } else {
+          await deleteMCPService(service.id)
+        }
         MessagePlugin.success(t('mcpSettings.toasts.deleted'))
         confirmDialog.hide()
         loadServices()

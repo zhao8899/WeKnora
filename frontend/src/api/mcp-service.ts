@@ -3,6 +3,7 @@ import { get, post, put, del } from '@/utils/request'
 export interface MCPService {
   id: string
   tenant_id?: number
+  is_platform?: boolean
   name: string
   description: string
   enabled: boolean
@@ -102,3 +103,21 @@ export async function getMCPServiceResources(id: string): Promise<MCPResource[]>
   return response.data || []
 }
 
+export async function listPlatformMCPServices(): Promise<MCPService[]> {
+  const response: any = await get('/api/v1/mcp-services/platform')
+  return response.data || []
+}
+
+export async function createPlatformMCPService(data: Partial<MCPService>): Promise<MCPService> {
+  const response: any = await post('/api/v1/mcp-services/platform', data)
+  return response.data
+}
+
+export async function updatePlatformMCPService(id: string, data: Partial<MCPService>): Promise<MCPService> {
+  const response: any = await put(`/api/v1/mcp-services/platform/${id}`, data)
+  return response.data
+}
+
+export async function deletePlatformMCPService(id: string): Promise<void> {
+  await del(`/api/v1/mcp-services/platform/${id}`)
+}

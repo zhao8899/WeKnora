@@ -30,7 +30,7 @@ func (r *mcpServiceRepository) GetByID(ctx context.Context, tenantID uint64, id 
 	var service types.MCPService
 	err := r.db.WithContext(ctx).
 		Where("id = ?", id).
-		Where("tenant_id = ? OR is_builtin = true", tenantID).
+		Where("tenant_id = ? OR is_builtin = true OR is_platform = true", tenantID).
 		First(&service).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -47,7 +47,7 @@ func (r *mcpServiceRepository) GetByID(ctx context.Context, tenantID uint64, id 
 func (r *mcpServiceRepository) List(ctx context.Context, tenantID uint64) ([]*types.MCPService, error) {
 	var services []*types.MCPService
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? OR is_builtin = true", tenantID).
+		Where("tenant_id = ? OR is_builtin = true OR is_platform = true", tenantID).
 		Order("created_at DESC").
 		Find(&services).Error
 	if err != nil {
@@ -62,7 +62,7 @@ func (r *mcpServiceRepository) List(ctx context.Context, tenantID uint64) ([]*ty
 func (r *mcpServiceRepository) ListEnabled(ctx context.Context, tenantID uint64) ([]*types.MCPService, error) {
 	var services []*types.MCPService
 	err := r.db.WithContext(ctx).
-		Where("(tenant_id = ? OR is_builtin = true) AND enabled = ?", tenantID, true).
+		Where("(tenant_id = ? OR is_builtin = true OR is_platform = true) AND enabled = ?", tenantID, true).
 		Order("created_at DESC").
 		Find(&services).Error
 	if err != nil {
@@ -85,12 +85,25 @@ func (r *mcpServiceRepository) ListByIDs(
 
 	var services []*types.MCPService
 	err := r.db.WithContext(ctx).
-		Where("(tenant_id = ? OR is_builtin = true) AND id IN ?", tenantID, ids).
+		Where("(tenant_id = ? OR is_builtin = true OR is_platform = true) AND id IN ?", tenantID, ids).
 		Find(&services).Error
 	if err != nil {
 		return nil, err
 	}
 
+	return services, nil
+}
+
+// ListPlatform retrieves all platform-shared MCP services
+func (r *mcpServiceRepository) ListPlatform(ctx context.Context) ([]*types.MCPService, error) {
+	var services []*types.MCPService
+	err := r.db.WithContext(ctx).
+		Where("is_platform = ?", true).
+		Order("created_at DESC").
+		Find(&services).Error
+	if err != nil {
+		return nil, err
+	}
 	return services, nil
 }
 

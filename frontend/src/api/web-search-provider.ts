@@ -4,6 +4,7 @@ import { get, post, put, del } from '@/utils/request'
 export interface WebSearchProviderEntity {
   id?: string
   tenant_id?: number
+  is_platform?: boolean
   name: string
   provider: 'bing' | 'google' | 'duckduckgo' | 'tavily' | 'serpapi' | 'brave'
   description?: string
@@ -71,4 +72,20 @@ export function testWebSearchProvider(id?: string, data?: { provider: string; pa
     return post(`/api/v1/web-search-providers/${id}/test`, {})
   }
   return post('/api/v1/web-search-providers/test', data || {})
+}
+
+export function listPlatformWebSearchProviders() {
+  return get('/api/v1/web-search-providers/platform')
+}
+
+export function createPlatformWebSearchProvider(data: Partial<WebSearchProviderEntity>) {
+  return post('/api/v1/web-search-providers/platform', data)
+}
+
+export function updatePlatformWebSearchProvider(id: string, data: Partial<WebSearchProviderEntity>) {
+  return put(`/api/v1/web-search-providers/platform/${id}`, data)
+}
+
+export function deletePlatformWebSearchProvider(id: string) {
+  return del(`/api/v1/web-search-providers/platform/${id}`)
 }

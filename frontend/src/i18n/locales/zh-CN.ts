@@ -584,6 +584,7 @@ export default {
     testConnection: "测试连接",
     testing: "测试中...",
     free: "免费",
+    platformTag: "平台",
     viewDocs: "查看文档获取密钥",
     apiKeyUnchanged: "留空保持当前密钥不变",
     noDescription: "暂无描述",
@@ -2574,6 +2575,7 @@ export default {
     deleteConfirmBody: '确定要删除 MCP 服务"{name}"吗？此操作无法撤销。',
     unnamed: "未命名",
     builtin: "内置",
+    platformTag: "平台",
   },
 
   // 新增：模型设置

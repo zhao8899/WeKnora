@@ -105,7 +105,9 @@ import type { FormInstanceFunctions, FormRule } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import {
   createMCPService,
+  createPlatformMCPService,
   updateMCPService,
+  updatePlatformMCPService,
   type MCPService
 } from '@/api/mcp-service'
 
@@ -113,6 +115,7 @@ interface Props {
   visible: boolean
   service: MCPService | null
   mode: 'add' | 'edit'
+  scope?: 'platform' | 'tenant'
 }
 
 interface Emits {
@@ -242,10 +245,18 @@ const handleSubmit = async () => {
     }
 
     if (props.mode === 'add') {
-      await createMCPService(data)
+      if (props.scope === 'platform') {
+        await createPlatformMCPService(data)
+      } else {
+        await createMCPService(data)
+      }
       MessagePlugin.success(t('mcpServiceDialog.toasts.created'))
     } else {
-      await updateMCPService(props.service!.id, data)
+      if (props.scope === 'platform') {
+        await updatePlatformMCPService(props.service!.id, data)
+      } else {
+        await updateMCPService(props.service!.id, data)
+      }
       MessagePlugin.success(t('mcpServiceDialog.toasts.updated'))
     }
 
@@ -269,4 +280,3 @@ const handleClose = () => {
 <style scoped lang="less">
 /* Stdio-related styles removed as stdio transport is disabled for security reasons */
 </style>
-

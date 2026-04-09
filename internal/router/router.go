@@ -510,6 +510,15 @@ func RegisterMCPServiceRoutes(r *gin.RouterGroup, handler *handler.MCPServiceHan
 		// Get MCP service resources
 		mcpServices.GET("/:id/resources", handler.GetMCPServiceResources)
 	}
+
+	platform := mcpServices.Group("/platform")
+	platform.Use(middleware.RequireSuperAdmin())
+	{
+		platform.POST("", handler.CreatePlatformMCPService)
+		platform.GET("", handler.ListPlatformMCPServices)
+		platform.PUT("/:id", handler.UpdatePlatformMCPService)
+		platform.DELETE("/:id", handler.DeletePlatformMCPService)
+	}
 }
 
 // RegisterWebSearchRoutes registers web search routes
@@ -540,6 +549,15 @@ func RegisterWebSearchProviderRoutes(r *gin.RouterGroup, h *handler.WebSearchPro
 		providers.DELETE("/:id", requireAdmin, h.DeleteProvider)
 		// Test existing saved provider（需要管理员权限）
 		providers.POST("/:id/test", requireAdmin, h.TestProviderByID)
+	}
+
+	platform := providers.Group("/platform")
+	platform.Use(middleware.RequireSuperAdmin())
+	{
+		platform.POST("", h.CreatePlatformProvider)
+		platform.GET("", h.ListPlatformProviders)
+		platform.PUT("/:id", h.UpdatePlatformProvider)
+		platform.DELETE("/:id", h.DeletePlatformProvider)
 	}
 }
 

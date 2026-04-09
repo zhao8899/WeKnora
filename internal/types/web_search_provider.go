@@ -41,10 +41,22 @@ type WebSearchProviderEntity struct {
 	Parameters WebSearchProviderParameters `yaml:"parameters" json:"parameters" gorm:"type:json"`
 	// Whether this is the default provider for the tenant
 	IsDefault bool `yaml:"is_default" json:"is_default" gorm:"default:false"`
+	// Whether this is a platform-shared provider configured by super-admin
+	IsPlatform bool `yaml:"is_platform" json:"is_platform" gorm:"default:false"`
 	// Timestamps
 	CreatedAt time.Time      `yaml:"created_at" json:"created_at"`
 	UpdatedAt time.Time      `yaml:"updated_at" json:"updated_at"`
 	DeletedAt gorm.DeletedAt `yaml:"deleted_at" json:"deleted_at" gorm:"index"`
+}
+
+// HideSensitiveInfo returns a copy with sensitive credentials stripped for platform-shared providers.
+func (e *WebSearchProviderEntity) HideSensitiveInfo() *WebSearchProviderEntity {
+	if !e.IsPlatform {
+		return e
+	}
+	copy := *e
+	copy.Parameters.APIKey = ""
+	return &copy
 }
 
 // TableName returns the table name for WebSearchProviderEntity

@@ -15,13 +15,99 @@ import (
 // MCPServiceHandler handles MCP service related HTTP requests
 type MCPServiceHandler struct {
 	mcpServiceService interfaces.MCPServiceService
+	mcpServiceRepo    interfaces.MCPServiceRepository
 }
 
 // NewMCPServiceHandler creates a new MCP service handler
-func NewMCPServiceHandler(mcpServiceService interfaces.MCPServiceService) *MCPServiceHandler {
+func NewMCPServiceHandler(
+	mcpServiceService interfaces.MCPServiceService,
+	mcpServiceRepo interfaces.MCPServiceRepository,
+) *MCPServiceHandler {
 	return &MCPServiceHandler{
 		mcpServiceService: mcpServiceService,
+		mcpServiceRepo:    mcpServiceRepo,
 	}
+}
+
+func (h *MCPServiceHandler) isSuperAdmin(c *gin.Context) bool {
+	user, _ := c.Request.Context().Value(types.UserContextKey).(*types.User)
+	return user != nil && user.CanAccessAllTenants
+}
+
+func buildMCPServicePatch(updateData map[string]interface{}, serviceID string, tenantID uint64) types.MCPService {
+	var service types.MCPService
+	service.ID = serviceID
+	service.TenantID = tenantID
+	if name, ok := updateData["name"].(string); ok {
+		service.Name = name
+	}
+	if desc, ok := updateData["description"].(string); ok {
+		service.Description = desc
+	}
+	if enabled, ok := updateData["enabled"].(bool); ok {
+		service.Enabled = enabled
+	}
+	if transportType, ok := updateData["transport_type"].(string); ok {
+		service.TransportType = types.MCPTransportType(transportType)
+	}
+	if url, ok := updateData["url"].(string); ok && url != "" {
+		service.URL = &url
+	} else if _, exists := updateData["url"]; exists {
+		service.URL = nil
+	}
+	if stdioConfig, ok := updateData["stdio_config"].(map[string]interface{}); ok {
+		config := &types.MCPStdioConfig{}
+		if command, ok := stdioConfig["command"].(string); ok {
+			config.Command = command
+		}
+		if args, ok := stdioConfig["args"].([]interface{}); ok {
+			config.Args = make([]string, len(args))
+			for i, arg := range args {
+				if str, ok := arg.(string); ok {
+					config.Args[i] = str
+				}
+			}
+		}
+		service.StdioConfig = config
+	}
+	if envVars, ok := updateData["env_vars"].(map[string]interface{}); ok {
+		service.EnvVars = make(types.MCPEnvVars)
+		for k, v := range envVars {
+			if str, ok := v.(string); ok {
+				service.EnvVars[k] = str
+			}
+		}
+	}
+	if headers, ok := updateData["headers"].(map[string]interface{}); ok {
+		service.Headers = make(types.MCPHeaders)
+		for k, v := range headers {
+			if str, ok := v.(string); ok {
+				service.Headers[k] = str
+			}
+		}
+	}
+	if authConfig, ok := updateData["auth_config"].(map[string]interface{}); ok {
+		service.AuthConfig = &types.MCPAuthConfig{}
+		if apiKey, ok := authConfig["api_key"].(string); ok {
+			service.AuthConfig.APIKey = apiKey
+		}
+		if token, ok := authConfig["token"].(string); ok {
+			service.AuthConfig.Token = token
+		}
+	}
+	if advancedConfig, ok := updateData["advanced_config"].(map[string]interface{}); ok {
+		service.AdvancedConfig = &types.MCPAdvancedConfig{}
+		if timeout, ok := advancedConfig["timeout"].(float64); ok {
+			service.AdvancedConfig.Timeout = int(timeout)
+		}
+		if retryCount, ok := advancedConfig["retry_count"].(float64); ok {
+			service.AdvancedConfig.RetryCount = int(retryCount)
+		}
+		if retryDelay, ok := advancedConfig["retry_delay"].(float64); ok {
+			service.AdvancedConfig.RetryDelay = int(retryDelay)
+		}
+	}
+	return service
 }
 
 // CreateMCPService godoc
@@ -141,7 +227,7 @@ func (h *MCPServiceHandler) GetMCPService(c *gin.Context) {
 
 	// Hide sensitive information for builtin MCP services
 	responseService := service
-	if service.IsBuiltin {
+	if service.IsBuiltin || (service.IsPlatform && !h.isSuperAdmin(c)) {
 		responseService = service.HideSensitiveInfo()
 	}
 
@@ -183,40 +269,7 @@ func (h *MCPServiceHandler) UpdateMCPService(c *gin.Context) {
 		return
 	}
 
-	// Convert map to MCPService struct for validation and processing
-	var service types.MCPService
-	service.ID = serviceID
-	service.TenantID = tenantID
-
-	// Track which fields are being updated
-	updateFields := make(map[string]bool)
-
-	// Map the update data to service struct
-	if name, ok := updateData["name"].(string); ok {
-		service.Name = name
-		updateFields["name"] = true
-	}
-	if desc, ok := updateData["description"].(string); ok {
-		service.Description = desc
-		updateFields["description"] = true
-	}
-	if enabled, ok := updateData["enabled"].(bool); ok {
-		if enabled {
-			service.Enabled = true
-		} else {
-			service.Enabled = false
-		}
-		updateFields["enabled"] = true
-	}
-	if transportType, ok := updateData["transport_type"].(string); ok {
-		service.TransportType = types.MCPTransportType(transportType)
-	}
-	if url, ok := updateData["url"].(string); ok && url != "" {
-		service.URL = &url
-	} else if _, exists := updateData["url"]; exists {
-		// Explicitly set to nil if provided as null/empty
-		service.URL = nil
-	}
+	service := buildMCPServicePatch(updateData, serviceID, tenantID)
 
 	// SSRF validation for updated MCP service URL
 	if service.URL != nil && *service.URL != "" {
@@ -224,59 +277,6 @@ func (h *MCPServiceHandler) UpdateMCPService(c *gin.Context) {
 			logger.Warnf(ctx, "SSRF validation failed for MCP service URL: %v", err)
 			c.Error(errors.NewBadRequestError(fmt.Sprintf("MCP service URL 未通过安全校验: %v", err)))
 			return
-		}
-	}
-
-	if stdioConfig, ok := updateData["stdio_config"].(map[string]interface{}); ok {
-		config := &types.MCPStdioConfig{}
-		if command, ok := stdioConfig["command"].(string); ok {
-			config.Command = command
-		}
-		if args, ok := stdioConfig["args"].([]interface{}); ok {
-			config.Args = make([]string, len(args))
-			for i, arg := range args {
-				if str, ok := arg.(string); ok {
-					config.Args[i] = str
-				}
-			}
-		}
-		service.StdioConfig = config
-	}
-	if envVars, ok := updateData["env_vars"].(map[string]interface{}); ok {
-		service.EnvVars = make(types.MCPEnvVars)
-		for k, v := range envVars {
-			if str, ok := v.(string); ok {
-				service.EnvVars[k] = str
-			}
-		}
-	}
-	if headers, ok := updateData["headers"].(map[string]interface{}); ok {
-		service.Headers = make(types.MCPHeaders)
-		for k, v := range headers {
-			if str, ok := v.(string); ok {
-				service.Headers[k] = str
-			}
-		}
-	}
-	if authConfig, ok := updateData["auth_config"].(map[string]interface{}); ok {
-		service.AuthConfig = &types.MCPAuthConfig{}
-		if apiKey, ok := authConfig["api_key"].(string); ok {
-			service.AuthConfig.APIKey = apiKey
-		}
-		if token, ok := authConfig["token"].(string); ok {
-			service.AuthConfig.Token = token
-		}
-	}
-	if advancedConfig, ok := updateData["advanced_config"].(map[string]interface{}); ok {
-		service.AdvancedConfig = &types.MCPAdvancedConfig{}
-		if timeout, ok := advancedConfig["timeout"].(float64); ok {
-			service.AdvancedConfig.Timeout = int(timeout)
-		}
-		if retryCount, ok := advancedConfig["retry_count"].(float64); ok {
-			service.AdvancedConfig.RetryCount = int(retryCount)
-		}
-		if retryDelay, ok := advancedConfig["retry_delay"].(float64); ok {
-			service.AdvancedConfig.RetryDelay = int(retryDelay)
 		}
 	}
 
@@ -327,6 +327,100 @@ func (h *MCPServiceHandler) DeleteMCPService(c *gin.Context) {
 		"success": true,
 		"message": "MCP service deleted successfully",
 	})
+}
+
+// CreatePlatformMCPService creates a platform-shared MCP service (super-admin only)
+func (h *MCPServiceHandler) CreatePlatformMCPService(c *gin.Context) {
+	ctx := c.Request.Context()
+	var service types.MCPService
+	if err := c.ShouldBindJSON(&service); err != nil {
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	if tenantID == 0 {
+		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
+		return
+	}
+	service.TenantID = tenantID
+	service.IsPlatform = true
+	if service.URL != nil && *service.URL != "" {
+		if err := secutils.ValidateURLForSSRF(*service.URL); err != nil {
+			c.Error(errors.NewBadRequestError(fmt.Sprintf("MCP service URL 未通过安全校验: %v", err)))
+			return
+		}
+	}
+	if err := h.mcpServiceService.CreateMCPService(ctx, &service); err != nil {
+		c.Error(errors.NewInternalServerError("Failed to create MCP service: " + err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": service})
+}
+
+// ListPlatformMCPServices lists platform-shared MCP services
+func (h *MCPServiceHandler) ListPlatformMCPServices(c *gin.Context) {
+	ctx := c.Request.Context()
+	services, err := h.mcpServiceRepo.ListPlatform(ctx)
+	if err != nil {
+		c.Error(errors.NewInternalServerError("Failed to list MCP services: " + err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": services})
+}
+
+// UpdatePlatformMCPService updates a platform-shared MCP service
+func (h *MCPServiceHandler) UpdatePlatformMCPService(c *gin.Context) {
+	ctx := c.Request.Context()
+	serviceID := secutils.SanitizeForLog(c.Param("id"))
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	service, err := h.mcpServiceService.GetMCPServiceByID(ctx, tenantID, serviceID)
+	if err != nil || service == nil {
+		c.Error(errors.NewNotFoundError("MCP service not found"))
+		return
+	}
+	if !service.IsPlatform {
+		c.Error(errors.NewBadRequestError("MCP service is not platform-scoped"))
+		return
+	}
+	var updateData map[string]interface{}
+	if err := c.ShouldBindJSON(&updateData); err != nil {
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+	patch := buildMCPServicePatch(updateData, serviceID, service.TenantID)
+	patch.IsPlatform = true
+	if patch.URL != nil && *patch.URL != "" {
+		if err := secutils.ValidateURLForSSRF(*patch.URL); err != nil {
+			c.Error(errors.NewBadRequestError(fmt.Sprintf("MCP service URL 未通过安全校验: %v", err)))
+			return
+		}
+	}
+	if err := h.mcpServiceService.UpdateMCPService(ctx, &patch); err != nil {
+		c.Error(errors.NewInternalServerError("Failed to update MCP service: " + err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": patch})
+}
+
+// DeletePlatformMCPService deletes a platform-shared MCP service
+func (h *MCPServiceHandler) DeletePlatformMCPService(c *gin.Context) {
+	ctx := c.Request.Context()
+	serviceID := secutils.SanitizeForLog(c.Param("id"))
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	service, err := h.mcpServiceService.GetMCPServiceByID(ctx, tenantID, serviceID)
+	if err != nil || service == nil {
+		c.Error(errors.NewNotFoundError("MCP service not found"))
+		return
+	}
+	if !service.IsPlatform {
+		c.Error(errors.NewBadRequestError("MCP service is not platform-scoped"))
+		return
+	}
+	if err := h.mcpServiceService.DeleteMCPService(ctx, service.TenantID, serviceID); err != nil {
+		c.Error(errors.NewInternalServerError("Failed to delete MCP service: " + err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
 // TestMCPService godoc

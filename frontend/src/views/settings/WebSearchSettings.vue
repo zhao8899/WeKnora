@@ -23,6 +23,9 @@
               <t-tag v-if="entity.is_default" theme="primary" size="small" variant="light">
                 {{ t('webSearchSettings.default') }}
               </t-tag>
+              <t-tag v-if="entity.is_platform" theme="warning" size="small" variant="light">
+                {{ t('webSearchSettings.platformTag') }}
+              </t-tag>
               <t-tag size="small" variant="outline">{{ entity.provider }}</t-tag>
             </div>
             <div class="item-desc">{{ entity.description || t('webSearchSettings.noDescription') }}</div>
@@ -31,10 +34,10 @@
             <t-button theme="default" variant="text" size="small" @click="testExistingConnection(entity)" :loading="testingId === entity.id">
               {{ t('webSearchSettings.testConnection') }}
             </t-button>
-            <t-button theme="primary" variant="text" size="small" @click="editProvider(entity)">
+            <t-button v-if="canEditProvider(entity)" theme="primary" variant="text" size="small" @click="editProvider(entity)">
               {{ t('common.edit') }}
             </t-button>
-            <t-popconfirm :content="t('webSearchSettings.deleteConfirm')" @confirm="deleteProvider(entity.id!)">
+            <t-popconfirm v-if="canEditProvider(entity)" :content="t('webSearchSettings.deleteConfirm')" @confirm="deleteProvider(entity.id!)">
               <t-button theme="danger" variant="text" size="small">
                 {{ t('common.delete') }}
               </t-button>
@@ -140,10 +143,14 @@ import { useI18n } from 'vue-i18n'
 import { AddIcon } from 'tdesign-icons-vue-next'
 import {
   listWebSearchProviders,
+  listPlatformWebSearchProviders,
   listWebSearchProviderTypes,
   createWebSearchProvider,
+  createPlatformWebSearchProvider,
   updateWebSearchProvider,
+  updatePlatformWebSearchProvider,
   deleteWebSearchProvider as deleteWebSearchProviderAPI,
+  deletePlatformWebSearchProvider,
   testWebSearchProvider,
   type WebSearchProviderEntity,
   type WebSearchProviderTypeInfo,
@@ -192,13 +199,19 @@ const onProviderTypeChange = () => {
 
 const loadProviderEntities = async () => {
   try {
-    const response = await listWebSearchProviders()
+    const response = props.mode === 'platform'
+      ? await listPlatformWebSearchProviders()
+      : await listWebSearchProviders()
     if (response.data && Array.isArray(response.data)) {
       providerEntities.value = response.data
     }
   } catch (error) {
     console.error('Failed to load provider entities:', error)
   }
+}
+
+const canEditProvider = (entity: WebSearchProviderEntity) => {
+  return props.mode === 'platform' || !entity.is_platform
 }
 
 const loadProviderTypes = async () => {
@@ -257,10 +270,18 @@ const saveProvider = async ({ validateResult, firstError }: any) => {
     }
 
     if (editingProvider.value) {
-      await updateWebSearchProvider(editingProvider.value.id!, data)
+      if (props.mode === 'platform') {
+        await updatePlatformWebSearchProvider(editingProvider.value.id!, data)
+      } else {
+        await updateWebSearchProvider(editingProvider.value.id!, data)
+      }
       MessagePlugin.success(t('webSearchSettings.toasts.providerUpdated'))
     } else {
-      await createWebSearchProvider(data)
+      if (props.mode === 'platform') {
+        await createPlatformWebSearchProvider(data)
+      } else {
+        await createWebSearchProvider(data)
+      }
       MessagePlugin.success(t('webSearchSettings.toasts.providerCreated'))
     }
     showAddProviderDialog.value = false
@@ -274,7 +295,11 @@ const saveProvider = async ({ validateResult, firstError }: any) => {
 
 const deleteProvider = async (id: string) => {
   try {
-    await deleteWebSearchProviderAPI(id)
+    if (props.mode === 'platform') {
+      await deletePlatformWebSearchProvider(id)
+    } else {
+      await deleteWebSearchProviderAPI(id)
+    }
     MessagePlugin.success(t('webSearchSettings.toasts.providerDeleted'))
     await loadProviderEntities()
   } catch (error: any) {

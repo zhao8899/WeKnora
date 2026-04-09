@@ -21,6 +21,16 @@ type WebSearchProviderHandler struct {
 	registry *infra_web_search.Registry
 }
 
+func sanitizePlatformProviderForTenant(provider *types.WebSearchProviderEntity, isSuperAdmin bool) *types.WebSearchProviderEntity {
+	if provider == nil {
+		return nil
+	}
+	if provider.IsPlatform && !isSuperAdmin {
+		return provider.HideSensitiveInfo()
+	}
+	return provider
+}
+
 // NewWebSearchProviderHandler creates a new handler
 func NewWebSearchProviderHandler(
 	repo interfaces.WebSearchProviderRepository,
@@ -69,6 +79,11 @@ func (h *WebSearchProviderHandler) getOwnedProvider(
 		return nil, http.StatusNotFound, "web search provider not found"
 	}
 	return provider, http.StatusOK, ""
+}
+
+func (h *WebSearchProviderHandler) isSuperAdmin(c *gin.Context) bool {
+	user, _ := c.Request.Context().Value(types.UserContextKey).(*types.User)
+	return user != nil && user.CanAccessAllTenants
 }
 
 // --- endpoints ---
@@ -131,9 +146,15 @@ func (h *WebSearchProviderHandler) ListProviders(c *gin.Context) {
 		return
 	}
 
+	isSuperAdmin := h.isSuperAdmin(c)
+	response := make([]*types.WebSearchProviderEntity, 0, len(providers))
+	for _, provider := range providers {
+		response = append(response, sanitizePlatformProviderForTenant(provider, isSuperAdmin))
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    providers,
+		"data":    response,
 	})
 }
 
@@ -156,7 +177,7 @@ func (h *WebSearchProviderHandler) GetProvider(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    provider,
+		"data":    sanitizePlatformProviderForTenant(provider, h.isSuperAdmin(c)),
 	})
 }
 
@@ -176,6 +197,10 @@ func (h *WebSearchProviderHandler) UpdateProvider(c *gin.Context) {
 	existing, status, msg := h.getOwnedProvider(ctx, tenantID, id)
 	if status != http.StatusOK {
 		c.JSON(status, gin.H{"success": false, "error": msg})
+		return
+	}
+	if existing.IsPlatform {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "platform web search providers are read-only in tenant scope"})
 		return
 	}
 
@@ -224,8 +249,13 @@ func (h *WebSearchProviderHandler) DeleteProvider(c *gin.Context) {
 	id := c.Param("id")
 
 	// Ownership check
-	if _, status, msg := h.getOwnedProvider(ctx, tenantID, id); status != http.StatusOK {
+	existing, status, msg := h.getOwnedProvider(ctx, tenantID, id)
+	if status != http.StatusOK {
 		c.JSON(status, gin.H{"success": false, "error": msg})
+		return
+	}
+	if existing.IsPlatform {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "platform web search providers are read-only in tenant scope"})
 		return
 	}
 
@@ -269,6 +299,104 @@ func (h *WebSearchProviderHandler) TestProviderByID(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// CreatePlatformProvider creates a platform-shared web search provider (super-admin only)
+func (h *WebSearchProviderHandler) CreatePlatformProvider(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenantID := h.getTenantID(c)
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "unauthorized: tenant context missing"})
+		return
+	}
+	var req CreateProviderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+	provider := &types.WebSearchProviderEntity{
+		TenantID:    tenantID,
+		Name:        secutils.SanitizeForLog(req.Name),
+		Provider:    req.Provider,
+		Description: secutils.SanitizeForLog(req.Description),
+		Parameters:  req.Parameters,
+		IsDefault:   req.IsDefault,
+		IsPlatform:  true,
+	}
+	if err := h.service.CreateProvider(ctx, provider); err != nil {
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"success": true, "data": provider})
+}
+
+// ListPlatformProviders lists all platform-shared web search providers
+func (h *WebSearchProviderHandler) ListPlatformProviders(c *gin.Context) {
+	ctx := c.Request.Context()
+	providers, err := h.repo.ListPlatform(ctx)
+	if err != nil {
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": providers})
+}
+
+// UpdatePlatformProvider updates a platform-shared web search provider
+func (h *WebSearchProviderHandler) UpdatePlatformProvider(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	tenantID := h.getTenantID(c)
+	existing, status, msg := h.getOwnedProvider(ctx, tenantID, id)
+	if status != http.StatusOK {
+		c.JSON(status, gin.H{"success": false, "error": msg})
+		return
+	}
+	if !existing.IsPlatform {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "not a platform web search provider"})
+		return
+	}
+	var req UpdateProviderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+	provider := &types.WebSearchProviderEntity{
+		ID:          id,
+		TenantID:    existing.TenantID,
+		Name:        secutils.SanitizeForLog(req.Name),
+		Provider:    existing.Provider,
+		Description: secutils.SanitizeForLog(req.Description),
+		Parameters:  req.Parameters,
+		IsDefault:   req.IsDefault,
+		IsPlatform:  true,
+	}
+	if err := h.service.UpdateProvider(ctx, provider); err != nil {
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+	updated, _ := h.repo.GetByID(ctx, existing.TenantID, id)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": updated})
+}
+
+// DeletePlatformProvider deletes a platform-shared web search provider
+func (h *WebSearchProviderHandler) DeletePlatformProvider(c *gin.Context) {
+	ctx := c.Request.Context()
+	id := c.Param("id")
+	tenantID := h.getTenantID(c)
+	existing, status, msg := h.getOwnedProvider(ctx, tenantID, id)
+	if status != http.StatusOK {
+		c.JSON(status, gin.H{"success": false, "error": msg})
+		return
+	}
+	if !existing.IsPlatform {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "not a platform web search provider"})
+		return
+	}
+	if err := h.service.DeleteProvider(ctx, existing.TenantID, id); err != nil {
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 

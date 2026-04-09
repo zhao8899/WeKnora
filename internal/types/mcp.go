@@ -33,6 +33,7 @@ type MCPService struct {
 	StdioConfig    *MCPStdioConfig    `json:"stdio_config,omitempty" gorm:"type:json"` // Required for stdio transport
 	EnvVars        MCPEnvVars         `json:"env_vars,omitempty"     gorm:"type:json"` // Environment variables for stdio
 	IsBuiltin      bool               `json:"is_builtin"             gorm:"default:false"`         // Whether this is a builtin MCP service (visible to all tenants)
+	IsPlatform     bool               `json:"is_platform"            gorm:"default:false"`         // Whether this is a platform-shared service configured by super-admin
 	CreatedAt      time.Time          `json:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at"`
 	DeletedAt      gorm.DeletedAt     `json:"deleted_at"             gorm:"index"`
@@ -220,7 +221,7 @@ func (m *MCPService) MaskSensitiveData() {
 
 // HideSensitiveInfo returns a copy of the MCP service with sensitive fields cleared for builtin services
 func (m *MCPService) HideSensitiveInfo() *MCPService {
-	if !m.IsBuiltin {
+	if !m.IsBuiltin && !m.IsPlatform {
 		return m
 	}
 

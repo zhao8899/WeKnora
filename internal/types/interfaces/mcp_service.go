@@ -16,6 +16,8 @@ type MCPServiceRepository interface {
 
 	// List retrieves all MCP services for a tenant
 	List(ctx context.Context, tenantID uint64) ([]*types.MCPService, error)
+	// ListPlatform retrieves all platform-shared MCP services
+	ListPlatform(ctx context.Context) ([]*types.MCPService, error)
 
 	// ListEnabled retrieves all enabled MCP services for a tenant
 	ListEnabled(ctx context.Context, tenantID uint64) ([]*types.MCPService, error)

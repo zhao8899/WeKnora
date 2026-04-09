@@ -34,7 +34,7 @@ func (s *webSearchProviderService) CreateProvider(ctx context.Context, provider 
 	}
 
 	if provider.IsDefault {
-		if err := s.repo.ClearDefault(ctx, provider.TenantID, ""); err != nil {
+		if err := s.repo.ClearDefault(ctx, provider.TenantID, "", provider.IsPlatform); err != nil {
 			logger.Warnf(ctx, "Failed to clear default providers: %v", err)
 		}
 	}
@@ -55,7 +55,7 @@ func (s *webSearchProviderService) UpdateProvider(ctx context.Context, provider 
 	}
 
 	if provider.IsDefault {
-		if err := s.repo.ClearDefault(ctx, provider.TenantID, provider.ID); err != nil {
+		if err := s.repo.ClearDefault(ctx, provider.TenantID, provider.ID, provider.IsPlatform); err != nil {
 			logger.Warnf(ctx, "Failed to clear default providers: %v", err)
 		}
 	}

@@ -729,6 +729,7 @@ export default {
     testConnection: 'Test Connection',
     testing: 'Testing...',
     free: 'Free',
+    platformTag: 'Platform',
     viewDocs: 'View docs for API key',
     apiKeyUnchanged: 'Leave empty to keep current key',
     noDescription: "No description provided",
@@ -2576,7 +2577,8 @@ export default {
     },
     deleteConfirmBody: 'Delete MCP service "{name}"? This action cannot be undone.',
     unnamed: 'Unnamed',
-    builtin: 'Built-in'
+    builtin: 'Built-in',
+    platformTag: 'Platform'
   },
   // New: Model Settings
   modelSettings: {

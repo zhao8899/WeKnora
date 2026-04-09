@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -28,7 +29,7 @@ func (r *webSearchProviderRepository) Create(ctx context.Context, provider *type
 func (r *webSearchProviderRepository) GetByID(ctx context.Context, tenantID uint64, id string) (*types.WebSearchProviderEntity, error) {
 	var provider types.WebSearchProviderEntity
 	if err := r.db.WithContext(ctx).Where(
-		"id = ? AND tenant_id = ?", id, tenantID,
+		"id = ? AND (tenant_id = ? OR is_platform = ?)", id, tenantID, true,
 	).First(&provider).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -41,9 +42,16 @@ func (r *webSearchProviderRepository) GetByID(ctx context.Context, tenantID uint
 // GetDefault retrieves the default provider (is_default=true) for a tenant, or nil if none.
 func (r *webSearchProviderRepository) GetDefault(ctx context.Context, tenantID uint64) (*types.WebSearchProviderEntity, error) {
 	var provider types.WebSearchProviderEntity
-	if err := r.db.WithContext(ctx).Where(
-		"tenant_id = ? AND is_default = ?", tenantID, true,
-	).First(&provider).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where("(tenant_id = ? OR is_platform = ?) AND is_default = ?", tenantID, true, true).
+		Order(fmt.Sprintf(`
+			CASE
+				WHEN tenant_id = %d AND is_platform = false THEN 0
+				WHEN is_platform = true THEN 1
+				ELSE 2
+			END, created_at ASC
+		`, tenantID)).
+		First(&provider).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -55,9 +63,28 @@ func (r *webSearchProviderRepository) GetDefault(ctx context.Context, tenantID u
 // List lists all web search providers for a tenant
 func (r *webSearchProviderRepository) List(ctx context.Context, tenantID uint64) ([]*types.WebSearchProviderEntity, error) {
 	var providers []*types.WebSearchProviderEntity
-	if err := r.db.WithContext(ctx).Where(
-		"tenant_id = ?", tenantID,
-	).Order("created_at ASC").Find(&providers).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ? OR is_platform = ?", tenantID, true).
+		Order(fmt.Sprintf(`
+			CASE
+				WHEN tenant_id = %d AND is_platform = false THEN 0
+				WHEN is_platform = true THEN 1
+				ELSE 2
+			END, is_default DESC, created_at ASC
+		`, tenantID)).
+		Find(&providers).Error; err != nil {
+		return nil, err
+	}
+	return providers, nil
+}
+
+// ListPlatform lists all platform-shared web search providers
+func (r *webSearchProviderRepository) ListPlatform(ctx context.Context) ([]*types.WebSearchProviderEntity, error) {
+	var providers []*types.WebSearchProviderEntity
+	if err := r.db.WithContext(ctx).
+		Where("is_platform = ?", true).
+		Order("is_default DESC, created_at ASC").
+		Find(&providers).Error; err != nil {
 		return nil, err
 	}
 	return providers, nil
@@ -78,10 +105,13 @@ func (r *webSearchProviderRepository) Delete(ctx context.Context, tenantID uint6
 }
 
 // ClearDefault clears the default flag for all providers of a tenant, optionally excluding one
-func (r *webSearchProviderRepository) ClearDefault(ctx context.Context, tenantID uint64, excludeID string) error {
-	query := r.db.WithContext(ctx).Model(&types.WebSearchProviderEntity{}).Where(
-		"tenant_id = ? AND is_default = ?", tenantID, true,
-	)
+func (r *webSearchProviderRepository) ClearDefault(ctx context.Context, tenantID uint64, excludeID string, isPlatform bool) error {
+	query := r.db.WithContext(ctx).Model(&types.WebSearchProviderEntity{}).Where("is_default = ?", true)
+	if isPlatform {
+		query = query.Where("is_platform = ?", true)
+	} else {
+		query = query.Where("tenant_id = ? AND is_platform = ?", tenantID, false)
+	}
 	if excludeID != "" {
 		query = query.Where("id != ?", excludeID)
 	}

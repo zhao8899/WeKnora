@@ -82,7 +82,7 @@ func (s *mcpServiceService) ListMCPServices(ctx context.Context, tenantID uint64
 
 	// Mask sensitive data for list view
 	for i, service := range services {
-		if service.IsBuiltin {
+		if service.IsBuiltin || service.IsPlatform {
 			services[i] = service.HideSensitiveInfo()
 		} else {
 			service.MaskSensitiveData()
@@ -125,6 +125,9 @@ func (s *mcpServiceService) UpdateMCPService(ctx context.Context, service *types
 	// Builtin MCP services cannot be updated
 	if existing.IsBuiltin {
 		return fmt.Errorf("builtin MCP services cannot be updated")
+	}
+	if existing.IsPlatform && !canManageSharedModels(ctx) {
+		return fmt.Errorf("platform MCP services can only be updated by super-admins")
 	}
 
 	// Determine the final transport type after merge
@@ -244,6 +247,9 @@ func (s *mcpServiceService) DeleteMCPService(ctx context.Context, tenantID uint6
 	// Builtin MCP services cannot be deleted
 	if existing.IsBuiltin {
 		return fmt.Errorf("builtin MCP services cannot be deleted")
+	}
+	if existing.IsPlatform && !canManageSharedModels(ctx) {
+		return fmt.Errorf("platform MCP services can only be deleted by super-admins")
 	}
 
 	// Close client connection

@@ -935,6 +935,7 @@
                           >
                             <span>{{ p.name }}</span>
                             <t-tag v-if="p.is_default" theme="primary" size="small" style="margin-left: 6px;">{{ $t('common.default') }}</t-tag>
+                            <t-tag v-if="p.is_platform" theme="warning" size="small" style="margin-left: 6px;">{{ $t('modelSettings.platformTag') }}</t-tag>
                           </t-option>
                         </t-select>
                       </div>
@@ -1944,7 +1945,7 @@ const loadDependencies = async () => {
       if (mcpList && mcpList.length > 0) {
         mcpOptions.value = mcpList
           .filter((mcp: MCPService) => mcp.enabled)
-          .map((mcp: MCPService) => ({ label: mcp.name, value: mcp.id }));
+          .map((mcp: MCPService) => ({ label: mcp.is_platform ? `${mcp.name} (${t('modelSettings.platformTag')})` : mcp.name, value: mcp.id }));
       }
     } catch (e) {
       console.warn('Failed to load MCP services', e);

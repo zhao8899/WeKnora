@@ -16,12 +16,14 @@ type WebSearchProviderRepository interface {
 	GetDefault(ctx context.Context, tenantID uint64) (*types.WebSearchProviderEntity, error)
 	// List lists all web search providers for a tenant
 	List(ctx context.Context, tenantID uint64) ([]*types.WebSearchProviderEntity, error)
+	// ListPlatform lists all platform-shared web search providers
+	ListPlatform(ctx context.Context) ([]*types.WebSearchProviderEntity, error)
 	// Update updates a web search provider
 	Update(ctx context.Context, provider *types.WebSearchProviderEntity) error
 	// Delete deletes a web search provider (soft delete)
 	Delete(ctx context.Context, tenantID uint64, id string) error
 	// ClearDefault clears the default flag for all providers of a tenant, optionally excluding one
-	ClearDefault(ctx context.Context, tenantID uint64, excludeID string) error
+	ClearDefault(ctx context.Context, tenantID uint64, excludeID string, isPlatform bool) error
 }
 
 // WebSearchProviderService defines the service interface for web search provider management.

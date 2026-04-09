@@ -18,13 +18,13 @@
     <!-- 下拉菜单 -->
     <Transition name="dropdown">
       <div v-if="menuVisible" class="user-dropdown" @click.stop>
-        <!-- 租户管理快捷入口 — 仅租户管理员/超管可见 -->
-        <template v-if="isAdminUser">
-          <div class="menu-item" @click="handleQuickNav('models')">
+        <!-- 平台管理快捷入口 — 仅超级管理员可见 -->
+        <template v-if="isSuperAdminUser">
+          <div class="menu-item" @click="handleQuickNav('platform-models')">
             <t-icon name="control-platform" class="menu-icon" />
-            <span>{{ $t('settings.modelManagement') }}</span>
+            <span>{{ $t('settings.platformModelManagement') }}</span>
           </div>
-          <div class="menu-item" @click="handleQuickNav('websearch')">
+          <div class="menu-item" @click="handleQuickNav('platform-websearch')">
             <svg
               width="16"
               height="16"
@@ -39,11 +39,11 @@
               <line x1="2.94" y1="5.5" x2="15.06" y2="5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
               <line x1="2.94" y1="12.5" x2="15.06" y2="12.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
             </svg>
-            <span>{{ $t('settings.webSearchConfig') }}</span>
+            <span>{{ $t('settings.platformWebSearch') }}</span>
           </div>
-          <div class="menu-item" @click="handleQuickNav('mcp')">
+          <div class="menu-item" @click="handleQuickNav('platform-mcp')">
             <t-icon name="tools" class="menu-icon" />
-            <span>{{ $t('settings.mcpService') }}</span>
+            <span>{{ $t('settings.platformMcp') }}</span>
           </div>
           <div class="menu-divider"></div>
         </template>
@@ -116,14 +116,7 @@ const authStore = useAuthStore()
 const menuRef = ref<HTMLElement>()
 const menuVisible = ref(false)
 
-// 角色判断：超管或租户 Owner 为管理员
-const isAdminUser = computed(() => {
-  const isSuperAdmin = authStore.canAccessAllTenants
-  const tenantOwnerId = authStore.tenant?.owner_id
-  const userId = authStore.user?.id
-  const isTenantOwner = !!tenantOwnerId && !!userId && tenantOwnerId === userId
-  return isSuperAdmin || isTenantOwner
-})
+const isSuperAdminUser = computed(() => authStore.canAccessAllTenants)
 
 // 用户信息
 const userInfo = ref({
@@ -471,4 +464,3 @@ onUnmounted(() => {
   transform: translateY(0);
 }
 </style>
-
