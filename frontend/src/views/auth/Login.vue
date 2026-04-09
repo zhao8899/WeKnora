@@ -306,16 +306,6 @@
             />
           </t-form-item>
 
-          <t-form-item :label="$t('auth.tenantIdOptional')" name="tenantId">
-            <t-input
-              v-model="registerData.tenantId"
-              :placeholder="$t('auth.tenantIdPlaceholder')"
-              size="large"
-              :disabled="loading"
-            />
-            <div class="field-hint">{{ $t('auth.tenantIdHint') }}</div>
-          </t-form-item>
-
           <t-form-item :label="$t('auth.password')" name="password">
             <t-input
               v-model="registerData.password"
