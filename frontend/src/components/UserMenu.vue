@@ -18,53 +18,16 @@
     <!-- 下拉菜单 -->
     <Transition name="dropdown">
       <div v-if="menuVisible" class="user-dropdown" @click.stop>
-        <div v-if="authStore.canAccessAllTenants" class="menu-item" @click="handleQuickNav('models')">
-          <t-icon name="control-platform" class="menu-icon" />
-          <span>{{ $t('settings.modelManagement') }}</span>
-        </div>
-        <div v-if="authStore.canAccessAllTenants" class="menu-divider"></div>
-        <div v-if="authStore.canAccessAllTenants" class="menu-item" @click="handleSettings">
-          <t-icon name="setting" class="menu-icon" />
-          <span>{{ $t('general.allSettings') }}</span>
-        </div>
-        <div v-if="authStore.canAccessAllTenants" class="menu-divider"></div>
-        <div class="menu-item" @click="openApiDoc">
-          <t-icon name="book" class="menu-icon" />
-          <span class="menu-text-with-icon">
-            <span>{{ $t('tenant.apiDocument') }}</span>
-            <svg class="menu-external-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M12.667 8a.667.667 0 0 1 .666.667v4a2.667 2.667 0 0 1-2.666 2.666H4.667a2.667 2.667 0 0 1-2.667-2.666V5.333a2.667 2.667 0 0 1 2.667-2.666h4a.667.667 0 1 1 0 1.333h-4a1.333 1.333 0 0 0-1.333 1.333v7.334A1.333 1.333 0 0 0 4.667 13.333h6a1.333 1.333 0 0 0 1.333-1.333v-4A.667.667 0 0 1 12.667 8Zm2.666-6.667v4a.667.667 0 0 1-1.333 0V3.276l-5.195 5.195a.667.667 0 0 1-.943-.943l5.195-5.195h-2.057a.667.667 0 0 1 0-1.333h4a.667.667 0 0 1 .666.666Z"
-              />
-            </svg>
-          </span>
-        </div>
-        <div class="menu-item" @click="openWebsite">
-          <t-icon name="home" class="menu-icon" />
-          <span class="menu-text-with-icon">
-            <span>{{ $t('common.website') }}</span>
-            <svg class="menu-external-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M12.667 8a.667.667 0 0 1 .666.667v4a2.667 2.667 0 0 1-2.666 2.666H4.667a2.667 2.667 0 0 1-2.667-2.666V5.333a2.667 2.667 0 0 1 2.667-2.666h4a.667.667 0 1 1 0 1.333h-4a1.333 1.333 0 0 0-1.333 1.333v7.334A1.333 1.333 0 0 0 4.667 13.333h6a1.333 1.333 0 0 0 1.333-1.333v-4A.667.667 0 0 1 12.667 8Zm2.666-6.667v4a.667.667 0 0 1-1.333 0V3.276l-5.195 5.195a.667.667 0 0 1-.943-.943l5.195-5.195h-2.057a.667.667 0 0 1 0-1.333h4a.667.667 0 0 1 .666.666Z"
-              />
-            </svg>
-          </span>
-        </div>
-        <div class="menu-item" @click="openGithub">
-          <t-icon name="logo-github" class="menu-icon" />
-          <span class="menu-text-with-icon">
-            <span>GitHub</span>
-            <svg class="menu-external-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M12.667 8a.667.667 0 0 1 .666.667v4a2.667 2.667 0 0 1-2.666 2.666H4.667a2.667 2.667 0 0 1-2.667-2.666V5.333a2.667 2.667 0 0 1 2.667-2.666h4a.667.667 0 1 1 0 1.333h-4a1.333 1.333 0 0 0-1.333 1.333v7.334A1.333 1.333 0 0 0 4.667 13.333h6a1.333 1.333 0 0 0 1.333-1.333v-4A.667.667 0 0 1 12.667 8Zm2.666-6.667v4a.667.667 0 0 1-1.333 0V3.276l-5.195 5.195a.667.667 0 0 1-.943-.943l5.195-5.195h-2.057a.667.667 0 0 1 0-1.333h4a.667.667 0 0 1 .666.666Z"
-              />
-            </svg>
-          </span>
-        </div>
-        <div class="menu-divider"></div>
+        <template v-if="authStore.canAccessAllTenants">
+          <div
+            class="menu-item"
+            @click="handleOpenAllSettings"
+          >
+            <t-icon name="setting" class="menu-icon" />
+            <span>{{ t('general.allSettings') }}</span>
+          </div>
+          <div class="menu-divider"></div>
+        </template>
         <div class="menu-item danger" @click="handleLogout">
           <t-icon name="logout" class="menu-icon" />
           <span>{{ $t('auth.logout') }}</span>
@@ -76,7 +39,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { MessagePlugin } from 'tdesign-vue-next'
@@ -85,6 +48,7 @@ import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 
+const route = useRoute()
 const router = useRouter()
 const uiStore = useUIStore()
 const authStore = useAuthStore()
@@ -113,43 +77,16 @@ const toggleMenu = () => {
   menuVisible.value = !menuVisible.value
 }
 
-// 快捷导航到设置的特定部分
-const handleQuickNav = (section: string) => {
+const handleOpenAllSettings = () => {
   menuVisible.value = false
-  uiStore.openSettings()
-  router.push('/platform/settings')
-  
-  // 延迟一下，确保设置页面已经渲染
-  setTimeout(() => {
-    // 触发设置页面切换到对应section
-    const event = new CustomEvent('settings-nav', { detail: { section } })
-    window.dispatchEvent(event)
-  }, 100)
-}
+  uiStore.setSettingsTarget(
+    uiStore.settingsInitialSection || 'general',
+    uiStore.settingsInitialSubSection || undefined
+  )
 
-// 打开设置
-const handleSettings = () => {
-  menuVisible.value = false
-  uiStore.openSettings()
-  router.push('/platform/settings')
-}
-
-// 打开 API 文档
-const openApiDoc = () => {
-  menuVisible.value = false
-  window.open('https://github.com/Tencent/WeKnora/blob/main/docs/api/README.md', '_blank')
-}
-
-// 打开官网
-const openWebsite = () => {
-  menuVisible.value = false
-  window.open('https://weknora.weixin.qq.com/', '_blank')
-}
-
-// 打开 GitHub
-const openGithub = () => {
-  menuVisible.value = false
-  window.open('https://github.com/Tencent/WeKnora', '_blank')
+  if (route.path !== '/platform/settings') {
+    router.push('/platform/settings')
+  }
 }
 
 // 注销
@@ -344,6 +281,8 @@ onUnmounted(() => {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
   border: 1px solid var(--td-component-stroke);
   overflow: hidden;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
   z-index: 1000;
 }
 
@@ -382,34 +321,6 @@ onUnmounted(() => {
       height: 16px;
       flex-shrink: 0;
     }
-  }
-
-  .menu-text-with-icon {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: inherit;
-    min-width: 0;
-
-    span {
-      display: inline-flex;
-      align-items: center;
-      min-width: 0;
-    }
-  }
-
-  .menu-external-icon {
-    width: 14px;
-    height: 14px;
-    color: var(--td-text-color-disabled);
-    flex-shrink: 0;
-    transition: color 0.2s ease;
-    pointer-events: none;
-  }
-
-  &:hover .menu-external-icon {
-    color: var(--td-brand-color);
   }
 }
 

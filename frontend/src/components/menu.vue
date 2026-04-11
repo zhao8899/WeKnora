@@ -657,7 +657,7 @@ const handleMenuClick = async (path: string) => {
         if (!authStore.canAccessAllTenants) {
             return
         }
-        uiStore.openSettings()
+        uiStore.setSettingsTarget(uiStore.settingsInitialSection || 'general', uiStore.settingsInitialSubSection || undefined)
         router.push('/platform/settings')
     } else {
         gotopage(path)

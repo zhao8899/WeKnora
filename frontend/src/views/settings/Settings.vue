@@ -1,9 +1,9 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="visible" class="settings-overlay">
-        <div class="settings-modal">
-          <button class="close-btn" @click="handleClose" :aria-label="$t('general.close')">
+  <Teleport to="body" :disabled="!isModalMode">
+    <Transition :name="isModalMode ? 'modal' : ''">
+      <div v-if="visible" :class="isModalMode ? 'settings-overlay' : 'settings-page'">
+        <div :class="isModalMode ? 'settings-modal' : 'settings-page-shell'">
+          <button v-if="isModalMode" class="close-btn" @click="handleClose" :aria-label="$t('general.close')">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
               <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
             </svg>
@@ -97,18 +97,7 @@ import ParserEngineSettings from './ParserEngineSettings.vue'
 import StorageEngineSettings from './StorageEngineSettings.vue'
 import SystemInfo from './SystemInfo.vue'
 import TenantInfo from './TenantInfo.vue'
-
-interface NavChild {
-  key: string
-  label: string
-}
-
-interface NavItem {
-  key: string
-  icon: string
-  label: string
-  children?: NavChild[]
-}
+import { getSettingsNavItems, type SettingsNavItem } from './nav'
 
 const route = useRoute()
 const router = useRouter()
@@ -119,48 +108,11 @@ const currentSection = ref<string>('general')
 const currentSubSection = ref<string>('')
 const expandedMenus = ref<string[]>([])
 
-const navItems = computed<NavItem[]>(() => [
-  { key: 'general', icon: 'setting', label: t('general.title') },
-  {
-    key: 'models',
-    icon: 'control-platform',
-    label: t('settings.modelManagement'),
-    children: [
-      { key: 'chat', label: t('model.llmModel') },
-      { key: 'embedding', label: t('model.embeddingModel') },
-      { key: 'rerank', label: t('model.rerankModel') },
-      { key: 'vllm', label: t('model.vlmModel') }
-    ]
-  },
-  {
-    key: 'parser',
-    icon: 'file-search',
-    label: t('settings.parserEngine'),
-    children: [
-      { key: 'builtin', label: 'Builtin (DocReader)' },
-      { key: 'simple', label: 'Simple' },
-      { key: 'markitdown', label: 'Markitdown' },
-      { key: 'mineru', label: 'MinerU' },
-      { key: 'mineru_cloud', label: 'MinerU Cloud' }
-    ]
-  },
-  {
-    key: 'storage',
-    icon: 'cloud',
-    label: t('settings.storageEngine'),
-    children: [
-      { key: 'local', label: 'Local' },
-      { key: 'minio', label: 'MinIO' },
-      { key: 'cos', label: t('settings.storage.cos') },
-      { key: 'tos', label: t('settings.storage.tos') },
-      { key: 's3', label: 'AWS S3' }
-    ]
-  },
-  { key: 'system', icon: 'info-circle', label: t('settings.systemSettings') },
-  { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') }
-])
+const navItems = computed<SettingsNavItem[]>(() => getSettingsNavItems(t))
 
-const visible = computed(() => route.path === '/platform/settings' || uiStore.showSettingsModal)
+const isRouteMode = computed(() => route.path === '/platform/settings')
+const isModalMode = computed(() => !isRouteMode.value && uiStore.showSettingsModal)
+const visible = computed(() => isRouteMode.value || isModalMode.value)
 
 const scrollToSubSection = (subSection: string) => {
   setTimeout(() => {
@@ -194,7 +146,7 @@ const applySection = (section: string, subSection?: string) => {
   currentSubSection.value = ''
 }
 
-const handleNavClick = (item: NavItem) => {
+const handleNavClick = (item: SettingsNavItem) => {
   if (item.children && item.children.length > 0) {
     const index = expandedMenus.value.indexOf(item.key)
     if (index > -1) {
@@ -215,7 +167,7 @@ const handleSubMenuClick = (parentKey: string, childKey: string) => {
 
 const handleClose = () => {
   uiStore.closeSettings()
-  if (route.path === '/platform/settings') {
+  if (isRouteMode.value) {
     router.back()
   }
 }
@@ -230,8 +182,18 @@ watch(
   { immediate: true }
 )
 
+watch(
+  [currentSection, currentSubSection],
+  ([section, subSection]) => {
+    if (!visible.value) {
+      return
+    }
+    uiStore.setSettingsTarget(section, subSection || undefined)
+  }
+)
+
 const handleEscape = (event: KeyboardEvent) => {
-  if (event.key === 'Escape' && visible.value) {
+  if (event.key === 'Escape' && isModalMode.value) {
     handleClose()
   }
 }
@@ -256,6 +218,14 @@ onUnmounted(() => {
 </script>
 
 <style lang="less" scoped>
+.settings-page {
+  min-height: 100%;
+  padding: 24px 32px;
+  background:
+    radial-gradient(circle at top right, rgba(7, 192, 95, 0.08), transparent 24%),
+    linear-gradient(180deg, #f7fbf7 0%, #ffffff 260px);
+}
+
 .settings-overlay {
   position: fixed;
   inset: 0;
@@ -266,6 +236,18 @@ onUnmounted(() => {
   justify-content: center;
   padding: 20px;
   backdrop-filter: blur(4px);
+}
+
+.settings-page-shell {
+  width: 100%;
+  min-height: calc(100vh - 120px);
+  background: var(--td-bg-color-container);
+  border-radius: 12px;
+  border: 1px solid var(--td-component-stroke);
+  box-shadow: 0 6px 28px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .settings-modal {

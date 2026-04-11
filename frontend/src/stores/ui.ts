@@ -24,9 +24,13 @@ export const useUIStore = defineStore('ui', {
   }),
 
   actions: {
-    openSettings(section?: string, subSection?: string) {
+    setSettingsTarget(section?: string, subSection?: string) {
       this.settingsInitialSection = section || null
       this.settingsInitialSubSection = subSection || null
+    },
+
+    openSettings(section?: string, subSection?: string) {
+      this.setSettingsTarget(section, subSection)
       this.showSettingsModal = true
     },
 
