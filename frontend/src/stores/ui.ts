@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import router from '@/router'
 
 export const useUIStore = defineStore('ui', {
   state: () => ({
@@ -27,17 +28,26 @@ export const useUIStore = defineStore('ui', {
     openSettings(section?: string, subSection?: string) {
       this.settingsInitialSection = section || null
       this.settingsInitialSubSection = subSection || null
-      this.showSettingsModal = true
+      // 设置页已改为独立路由；如果当前不在设置页就跳转过去
+      if (router.currentRoute.value.path !== '/platform/settings') {
+        router.push('/platform/settings').catch(() => {})
+      }
     },
 
     closeSettings() {
-      this.showSettingsModal = false
       this.settingsInitialSection = null
       this.settingsInitialSubSection = null
+      if (router.currentRoute.value.path === '/platform/settings') {
+        router.back()
+      }
     },
 
     toggleSettings() {
-      this.showSettingsModal = !this.showSettingsModal
+      if (router.currentRoute.value.path === '/platform/settings') {
+        this.closeSettings()
+      } else {
+        this.openSettings()
+      }
     },
 
     openKBSettings(kbId: string, initialSection?: string) {

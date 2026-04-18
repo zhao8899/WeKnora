@@ -1,17 +1,7 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="visible" class="settings-overlay">
-        <div class="settings-modal">
-          <!-- 关闭按钮 -->
-          <button class="close-btn" @click="handleClose" :aria-label="$t('general.close')">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-          </button>
-
-          <div class="settings-container">
-            <!-- 左侧导航 -->
+  <div class="settings-page">
+    <div class="settings-container">
+      <!-- 左侧导航 -->
             <div class="settings-sidebar">
               <div class="sidebar-header">
                 <h2 class="sidebar-title">{{ $t('general.settings') }}</h2>
@@ -151,16 +141,12 @@
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
@@ -176,8 +162,6 @@ import ChatHistorySettings from './ChatHistorySettings.vue'
 import ParserEngineSettings from './ParserEngineSettings.vue'
 import StorageEngineSettings from './StorageEngineSettings.vue'
 
-const route = useRoute()
-const router = useRouter()
 const uiStore = useUIStore()
 const authStore = useAuthStore()
 const { t } = useI18n()
@@ -337,129 +321,61 @@ const handleSubMenuClick = (parentKey: string, childKey: string) => {
   }, 100)
 }
 
-// 控制弹窗显示
-const visible = computed(() => {
-  return route.path === '/platform/settings' || uiStore.showSettingsModal
-})
-
-// 关闭弹窗
-const handleClose = () => {
-  uiStore.closeSettings()
-  // 如果当前路由是设置页，返回上一页
-  if (route.path === '/platform/settings') {
-    router.back()
+// 应用 uiStore 中预设的 section / subsection（由 openSettings 触发）
+const applyInitialSection = (section: string | null, sub: string | null) => {
+  if (!section) return
+  currentSection.value = section
+  const navItem = (navItems.value as any[]).find((item) => item.key === section)
+  if (navItem && navItem.children && navItem.children.length > 0) {
+    if (!expandedMenus.value.includes(section)) {
+      expandedMenus.value.push(section)
+    }
+    currentSubSection.value = sub || navItem.children[0].key
+    if (sub) {
+      setTimeout(() => {
+        const element = document.querySelector(`[data-model-type="${sub}"]`)
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 300)
+    }
+  } else {
+    currentSubSection.value = ''
   }
 }
 
-// 监听初始导航设置
 watch(() => uiStore.settingsInitialSection, (section) => {
-  if (section && visible.value) {
-    currentSection.value = section
-    const navItem = (navItems.value as any[]).find((item) => item.key === section)
-    if (navItem && navItem.children && navItem.children.length > 0) {
-      if (!expandedMenus.value.includes(section)) {
-        expandedMenus.value.push(section)
-      }
-      currentSubSection.value = uiStore.settingsInitialSubSection || navItem.children[0].key
-      if (uiStore.settingsInitialSubSection) {
-        setTimeout(() => {
-          const element = document.querySelector(`[data-model-type="${uiStore.settingsInitialSubSection}"]`)
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          }
-        }, 300)
-      }
-    } else {
-      currentSubSection.value = ''
-    }
-  }
+  applyInitialSection(section, uiStore.settingsInitialSubSection)
 }, { immediate: true })
 
-// ESC 键关闭
-const handleEscape = (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && visible.value) {
-    handleClose()
-  }
-}
-
-// 处理快捷导航事件
+// 旧版跨组件跳转事件（settings-nav CustomEvent），保留兼容
 const handleSettingsNav = (e: CustomEvent) => {
-  const { section, subsection } = e.detail
-  if (section) {
-    currentSection.value = section
-    // 如果有子菜单，自动展开
-    const navItem = (navItems.value as any[]).find((item: any) => item.key === section)
-    if (navItem && navItem.children && navItem.children.length > 0) {
-      if (!expandedMenus.value.includes(section)) {
-        expandedMenus.value.push(section)
-      }
-      // 如果有 subsection，选中对应的子菜单项
-      currentSubSection.value = subsection || navItem.children[0].key
-    }
-  }
+  const { section, subsection } = e.detail || {}
+  applyInitialSection(section ?? null, subsection ?? null)
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', handleEscape)
+  // 保持旧 watchers 语义：进入设置页 = 打开
+  uiStore.showSettingsModal = true
   window.addEventListener('settings-nav', handleSettingsNav as EventListener)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleEscape)
+  uiStore.showSettingsModal = false
   window.removeEventListener('settings-nav', handleSettingsNav as EventListener)
 })
 </script>
 
 <style lang="less" scoped>
-/* 遮罩层 */
-.settings-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  backdrop-filter: blur(4px);
-}
-
-/* 弹窗容器 */
-.settings-modal {
-  position: relative;
-  width: 100%;
-  max-width: 900px;
-  height: 700px;
+/* 路由页容器 */
+.settings-page {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
   background: var(--td-bg-color-container);
-  border-radius: 12px;
-  box-shadow: 0 6px 28px rgba(15, 23, 42, 0.08);
-  overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-
-/* 关闭按钮 */
-.close-btn {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--td-text-color-secondary);
-  cursor: pointer;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  z-index: 10;
-
-  &:hover {
-    background: var(--td-bg-color-container-hover);
-    color: var(--td-text-color-primary);
-  }
+  overflow: hidden;
 }
 
 .settings-container {
@@ -641,28 +557,6 @@ onUnmounted(() => {
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-/* 弹窗动画 */
-.modal-enter-active,
-.modal-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.modal-enter-active .settings-modal,
-.modal-leave-active .settings-modal {
-  transition: transform 0.2s ease, opacity 0.2s ease;
-}
-
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
-
-.modal-enter-from .settings-modal,
-.modal-leave-to .settings-modal {
-  transform: scale(0.95);
-  opacity: 0;
 }
 
 /* 滚动条样式 */
