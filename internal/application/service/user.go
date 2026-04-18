@@ -105,65 +105,39 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		return nil, errors.New("failed to process password")
 	}
 
-	var targetTenantID uint64
-	isNewTenant := false
-
-	if req.TenantID > 0 {
-		// Join existing tenant — verify it exists and is active
-		existingTenant, err := s.tenantService.GetTenantByID(ctx, req.TenantID)
-		if err != nil || existingTenant == nil {
-			return nil, errors.New("specified tenant does not exist")
-		}
-		if existingTenant.Status != "active" {
-			return nil, errors.New("specified tenant is not active")
-		}
-		targetTenantID = existingTenant.ID
-		logger.Infof(ctx, "User will join existing tenant %d", targetTenantID)
-	} else {
-		// Create new tenant — user becomes owner
-		isNewTenant = true
-		tenant := &types.Tenant{
-			Name:        fmt.Sprintf("%s's Workspace", secutils.SanitizeForLog(req.Username)),
-			Description: "Default workspace",
-			Status:      "active",
-		}
-
-		createdTenant, err := s.tenantService.CreateTenant(ctx, tenant)
-		if err != nil {
-			logger.Errorf(ctx, "Failed to create tenant")
-			return nil, errors.New("failed to create workspace")
-		}
-		targetTenantID = createdTenant.ID
+	// Every registration creates a new tenant; the user becomes its owner/admin.
+	tenant := &types.Tenant{
+		Name:        fmt.Sprintf("%s's Workspace", secutils.SanitizeForLog(req.Username)),
+		Description: "Default workspace",
+		Status:      "active",
 	}
 
-	// Create user
+	createdTenant, err := s.tenantService.CreateTenant(ctx, tenant)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to create tenant")
+		return nil, errors.New("failed to create workspace")
+	}
+
 	user := &types.User{
 		ID:           uuid.New().String(),
 		Username:     req.Username,
 		Email:        req.Email,
 		PasswordHash: string(hashedPassword),
-		TenantID:     targetTenantID,
+		TenantID:     createdTenant.ID,
 		IsActive:     true,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
 
-	err = s.userRepo.CreateUser(ctx, user)
-	if err != nil {
+	if err := s.userRepo.CreateUser(ctx, user); err != nil {
 		logger.Errorf(ctx, "Failed to create user: %v", err)
 		return nil, errors.New("failed to create user")
 	}
 
-	// Set the tenant owner only for newly created tenants
-	if isNewTenant {
-		tenant, _ := s.tenantService.GetTenantByID(ctx, targetTenantID)
-		if tenant != nil {
-			tenant.OwnerID = user.ID
-			if _, err := s.tenantService.UpdateTenant(ctx, tenant); err != nil {
-				logger.Errorf(ctx, "Failed to set tenant owner: %v", err)
-				// Non-fatal: user is created, ownership can be fixed later
-			}
-		}
+	createdTenant.OwnerID = user.ID
+	if _, err := s.tenantService.UpdateTenant(ctx, createdTenant); err != nil {
+		logger.Errorf(ctx, "Failed to set tenant owner: %v", err)
+		// Non-fatal: user is created, ownership can be fixed later
 	}
 
 	logger.Info(ctx, "User registered successfully")

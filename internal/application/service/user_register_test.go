@@ -151,38 +151,3 @@ func TestRegisterCreatesTenantAndAssignsOwnerWhenTenantIDMissing(t *testing.T) {
 	}
 }
 
-func TestRegisterJoinsExistingTenantWithoutChangingOwner(t *testing.T) {
-	userRepo := &fakeUserRepo{
-		usersByEmail:    map[string]*types.User{},
-		usersByUsername: map[string]*types.User{},
-	}
-	existingTenant := &types.Tenant{ID: 42, Name: "Existing", OwnerID: "owner-1", Status: "active"}
-	tenantService := &fakeTenantService{
-		tenantsByID: map[uint64]*types.Tenant{
-			42: existingTenant,
-		},
-	}
-	svc := &userService{
-		userRepo:      userRepo,
-		tenantService: tenantService,
-	}
-
-	user, err := svc.Register(context.Background(), &types.RegisterRequest{
-		Username: "bob",
-		Email:    "bob@example.com",
-		Password: "Password123",
-		TenantID: 42,
-	})
-	if err != nil {
-		t.Fatalf("Register() error = %v", err)
-	}
-	if tenantService.createdTenant != nil {
-		t.Fatal("Register() should not create a tenant when tenant_id is provided")
-	}
-	if tenantService.updatedTenant != nil {
-		t.Fatal("Register() should not overwrite owner for existing tenant")
-	}
-	if user.TenantID != 42 {
-		t.Fatalf("Register() tenant_id = %d, want 42", user.TenantID)
-	}
-}

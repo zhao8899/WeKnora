@@ -58,7 +58,6 @@ export interface RegisterRequest {
   username: string
   email: string
   password: string
-  tenant_id?: number
 }
 
 export interface RegisterResponse {
