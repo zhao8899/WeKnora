@@ -225,6 +225,8 @@ const isMenuItemActive = (itemPath: string): boolean => {
             return currentRoute === 'faqList';
         case 'knowledge-search':
             return currentRoute === 'knowledgeSearch';
+        case 'agents':
+            return currentRoute === 'agentList';
         case 'organizations':
             return currentRoute === 'organizationList';
         case 'creatChat':
@@ -254,7 +256,7 @@ const getIconActiveState = (itemPath: string) => {
 // 分离上下两部分菜单
 const topMenuItems = computed<MenuItem[]>(() => {
     return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) =>
-        item.path === 'home' || item.path === 'knowledge-bases' || item.path === 'faq' || item.path === 'knowledge-search' || item.path === 'organizations' || item.path === 'creatChat'
+        item.path === 'home' || item.path === 'knowledge-bases' || item.path === 'faq' || item.path === 'knowledge-search' || item.path === 'agents' || item.path === 'organizations' || item.path === 'creatChat'
     );
 });
 
@@ -613,6 +615,7 @@ let homeIcon = ref('ziliao.svg');
 let knowledgeIcon = ref('zhishiku-green.svg');
 let faqIcon = ref('zhishiku-thin.svg');
 let searchIcon = ref('search.svg');
+let agentIcon = ref('agent.svg');
 let prefixIcon = ref('prefixIcon.svg');
 let logoutIcon = ref('logout.svg');
 let organizationIcon = ref('organization.svg');
@@ -625,9 +628,11 @@ const getIcon = (path: string) => {
       const organizationsActiveState = route.name === 'organizationList';
       const knowledgeSearchActiveState = route.name === 'knowledgeSearch';
 
+      const agentActiveState = route.name === 'agentList';
       knowledgeIcon.value = kbActiveState.isKbActive ? 'zhishiku-green.svg' : 'zhishiku.svg';
       faqIcon.value = faqActiveState.isFaqActive ? 'zhishiku-thin.svg' : 'zhishiku-thin.svg';
       searchIcon.value = knowledgeSearchActiveState ? 'search-green.svg' : 'search.svg';
+      agentIcon.value = agentActiveState ? 'agent-green.svg' : 'agent.svg';
       organizationIcon.value = organizationsActiveState ? 'organization-green.svg' : 'organization.svg';
       prefixIcon.value = creatChatActiveState.isCreatChatActive ? 'prefixIcon-green.svg' : 'prefixIcon.svg';
       logoutIcon.value = 'logout.svg';

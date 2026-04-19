@@ -1554,6 +1554,8 @@ export default {
       remoteDimensionDetected: "检测到向量维度：{value}",
       supportsVisionLabel: "支持视觉/多模态",
       supportsVisionDesc: "模型是否支持图片等多模态输入",
+      isBuiltinLabel: "平台公共模型",
+      isBuiltinDesc: "开启后，此模型对所有租户可见，作为平台默认模型",
       dimensionHint: '模型已选择，点击"检测维度"按钮自动获取向量维度',
       loadModelListFailed: "加载模型列表失败",
       listRefreshed: "列表已刷新",

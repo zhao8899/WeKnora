@@ -140,10 +140,7 @@ router.beforeEach(async (to, from, next) => {
       return
     }
 
-    if (to.path === '/platform/settings' && !authStore.canAccessAllTenants) {
-      next('/platform/home')
-      return
-    }
+    // Settings page is accessible to all authenticated users
 
     // 验证Token有效性
     // try {

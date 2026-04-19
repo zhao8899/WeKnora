@@ -1,6 +1,6 @@
 <template>
   <div class="storage-engine-settings">
-    <div class="section-header">
+    <div v-if="!activeSubSection" class="section-header">
       <h2>{{ $t('settings.storage.title') }}</h2>
       <p class="section-description">
         {{ $t('settings.storage.description') }}
@@ -21,7 +21,7 @@
     </div>
 
     <template v-else>
-      <div class="settings-group">
+      <div v-if="!activeSubSection" class="settings-group">
         <div class="setting-row">
           <div class="setting-info">
             <label>{{ $t('settings.storage.defaultEngine') }}</label>
@@ -40,7 +40,7 @@
       </div>
 
       <!-- Local -->
-      <div class="engine-section" data-model-type="local">
+      <div v-if="shouldShowEngine('local')" class="engine-section" data-model-type="local">
         <div class="engine-header">
           <div class="engine-header-info">
             <div class="engine-title-row">
@@ -63,7 +63,7 @@
       </div>
 
       <!-- MinIO -->
-      <div class="engine-section" data-model-type="minio">
+      <div v-if="shouldShowEngine('minio')" class="engine-section" data-model-type="minio">
         <div class="engine-header">
           <div class="engine-header-info">
             <div class="engine-title-row">
@@ -201,7 +201,7 @@
       </div>
 
       <!-- COS -->
-      <div class="engine-section" data-model-type="cos">
+      <div v-if="shouldShowEngine('cos')" class="engine-section" data-model-type="cos">
         <div class="engine-header">
           <div class="engine-header-info">
             <div class="engine-title-row">
@@ -275,7 +275,7 @@
       </div>
 
       <!-- TOS -->
-      <div class="engine-section" data-model-type="tos">
+      <div v-if="shouldShowEngine('tos')" class="engine-section" data-model-type="tos">
         <div class="engine-header">
           <div class="engine-header-info">
             <div class="engine-title-row">
@@ -349,7 +349,7 @@
       </div>
 
       <!-- S3 -->
-      <div class="engine-section" data-model-type="s3">
+      <div v-if="shouldShowEngine('s3')" class="engine-section" data-model-type="s3">
         <div class="engine-header">
           <div class="engine-header-info">
             <div class="engine-title-row">
@@ -447,6 +447,9 @@ import {
 } from '@/api/system'
 
 const { t } = useI18n()
+const props = defineProps<{
+  activeSubSection?: string
+}>()
 
 const defaultConfig = (): StorageEngineConfig => ({
   default_provider: 'local',
@@ -508,6 +511,12 @@ const minioAvailable = computed(() => {
   }
   return minioEnvAvailable.value
 })
+
+const activeSubSection = computed(() => props.activeSubSection || '')
+
+function shouldShowEngine(engineName: string): boolean {
+  return !activeSubSection.value || activeSubSection.value === engineName
+}
 
 async function loadConfig() {
   try {

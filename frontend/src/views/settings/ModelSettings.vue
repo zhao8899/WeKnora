@@ -1,9 +1,9 @@
 <template>
   <div class="model-settings">
-    <div class="section-header">
+    <div v-if="!activeSubSection" class="section-header">
       <h2>{{ $t('modelSettings.title') }}</h2>
       <p class="section-description">{{ $t('modelSettings.description') }}</p>
-      
+
       <!-- 内置模型说明 -->
       <div class="builtin-models-info">
         <div class="info-box">
@@ -25,7 +25,7 @@
     </div>
 
     <!-- 对话模型 -->
-    <div class="model-category-section" data-model-type="chat">
+    <div v-if="shouldShowSection('chat')" class="model-category-section" data-model-type="chat">
       <div class="category-header">
         <div class="header-info">
           <h3>{{ $t('modelSettings.chat.title') }}</h3>
@@ -74,7 +74,7 @@
     </div>
 
     <!-- Embedding 模型 -->
-    <div class="model-category-section" data-model-type="embedding">
+    <div v-if="shouldShowSection('embedding')" class="model-category-section" data-model-type="embedding">
       <div class="category-header">
         <div class="header-info">
           <h3>{{ $t('modelSettings.embedding.title') }}</h3>
@@ -124,7 +124,7 @@
     </div>
 
     <!-- ReRank 模型 -->
-    <div class="model-category-section" data-model-type="rerank">
+    <div v-if="shouldShowSection('rerank')" class="model-category-section" data-model-type="rerank">
       <div class="category-header">
         <div class="header-info">
           <h3>{{ $t('modelSettings.rerank.title') }}</h3>
@@ -173,7 +173,7 @@
     </div>
 
     <!-- VLLM 视觉模型 -->
-    <div class="model-category-section" data-model-type="vllm">
+    <div v-if="shouldShowSection('vllm')" class="model-category-section" data-model-type="vllm">
       <div class="category-header">
         <div class="header-info">
           <h3>{{ $t('modelSettings.vllm.title') }}</h3>
@@ -240,6 +240,9 @@ import ModelEditorDialog from '@/components/ModelEditorDialog.vue'
 import { listModels, createModel, updateModel as updateModelAPI, deleteModel as deleteModelAPI, type ModelConfig } from '@/api/model'
 
 const { t } = useI18n()
+const props = defineProps<{
+  activeSubSection?: 'chat' | 'embedding' | 'rerank' | 'vllm'
+}>()
 
 const showDialog = ref(false)
 const currentModelType = ref<'chat' | 'embedding' | 'rerank' | 'vllm'>('chat')
@@ -273,6 +276,10 @@ const vllmModels = computed(() =>
     .filter(m => m.type === 'VLLM')
     .map(convertToLegacyFormat)
 )
+
+function shouldShowSection(section: 'chat' | 'embedding' | 'rerank' | 'vllm') {
+  return !props.activeSubSection || props.activeSubSection === section
+}
 
 // 将后端模型格式转换为旧的前端格式
 function convertToLegacyFormat(model: ModelConfig) {
@@ -368,6 +375,7 @@ const handleModelSave = async (modelData: any) => {
       type: getModelType(currentModelType.value),
       source: modelData.source,
       description: '',
+      is_builtin: modelData.isBuiltin ?? false,
       parameters: {
         base_url: modelData.baseUrl?.trim() || '',
         api_key: modelData.apiKey?.trim() || '',
@@ -508,7 +516,8 @@ onMounted(() => {
   padding-bottom: 32px;
   border-bottom: 1px solid var(--td-component-stroke);
 
-  &:last-child {
+  &:last-child,
+  &:only-child {
     margin-bottom: 0;
     padding-bottom: 0;
     border-bottom: none;

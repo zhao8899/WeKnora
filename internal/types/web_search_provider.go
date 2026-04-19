@@ -18,6 +18,7 @@ const (
 	WebSearchProviderTypeGoogle     WebSearchProviderType = "google"
 	WebSearchProviderTypeDuckDuckGo WebSearchProviderType = "duckduckgo"
 	WebSearchProviderTypeTavily     WebSearchProviderType = "tavily"
+	WebSearchProviderTypeSerpAPI    WebSearchProviderType = "serpapi"
 )
 
 // WebSearchProviderEntity represents a configured web search provider instance for a tenant.
@@ -152,6 +153,13 @@ func GetWebSearchProviderTypes() []WebSearchProviderTypeInfo {
 			RequiresAPIKey: true,
 			Description:    "Tavily Search API (requires API key)",
 			DocsURL:        "https://tavily.com/",
+		},
+		{
+			ID:             "serpapi",
+			Name:           "SerpAPI",
+			RequiresAPIKey: true,
+			Description:    "SerpAPI Google Search (requires API key)",
+			DocsURL:        "https://serpapi.com/",
 		},
 	}
 }

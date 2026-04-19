@@ -18,16 +18,14 @@
     <!-- 下拉菜单 -->
     <Transition name="dropdown">
       <div v-if="menuVisible" class="user-dropdown" @click.stop>
-        <template v-if="authStore.canAccessAllTenants">
-          <div
-            class="menu-item"
-            @click="handleOpenAllSettings"
-          >
-            <t-icon name="setting" class="menu-icon" />
-            <span>{{ t('general.allSettings') }}</span>
-          </div>
-          <div class="menu-divider"></div>
-        </template>
+        <div
+          class="menu-item"
+          @click="handleOpenAllSettings"
+        >
+          <t-icon name="setting" class="menu-icon" />
+          <span>{{ t('general.settings') }}</span>
+        </div>
+        <div class="menu-divider"></div>
         <div class="menu-item danger" @click="handleLogout">
           <t-icon name="logout" class="menu-icon" />
           <span>{{ $t('auth.logout') }}</span>

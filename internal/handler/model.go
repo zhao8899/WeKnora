@@ -68,6 +68,7 @@ type CreateModelRequest struct {
 	Source      types.ModelSource     `json:"source"      binding:"required"`
 	Description string                `json:"description"`
 	Parameters  types.ModelParameters `json:"parameters"  binding:"required"`
+	IsBuiltin   bool                  `json:"is_builtin"`
 }
 
 // CreateModel godoc
@@ -112,6 +113,16 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 		}
 	}
 
+	// Only platform admins (CanAccessAllTenants) may set a model as builtin
+	isBuiltin := false
+	if req.IsBuiltin {
+		if user, ok := c.Get(types.UserContextKey.String()); ok {
+			if u, ok := user.(*types.User); ok && u.CanAccessAllTenants {
+				isBuiltin = true
+			}
+		}
+	}
+
 	model := &types.Model{
 		TenantID:    tenantID,
 		Name:        secutils.SanitizeForLog(req.Name),
@@ -119,6 +130,7 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 		Source:      req.Source,
 		Description: secutils.SanitizeForLog(req.Description),
 		Parameters:  req.Parameters,
+		IsBuiltin:   isBuiltin,
 	}
 
 	if err := h.service.CreateModel(ctx, model); err != nil {
@@ -249,6 +261,7 @@ type UpdateModelRequest struct {
 	Parameters  types.ModelParameters `json:"parameters"`
 	Source      types.ModelSource     `json:"source"`
 	Type        types.ModelType       `json:"type"`
+	IsBuiltin   *bool                 `json:"is_builtin"`
 }
 
 // UpdateModel godoc
@@ -319,6 +332,15 @@ func (h *ModelHandler) UpdateModel(c *gin.Context) {
 
 	model.Source = req.Source
 	model.Type = req.Type
+
+	// Only platform admins may change the is_builtin flag
+	if req.IsBuiltin != nil {
+		if user, ok := c.Get(types.UserContextKey.String()); ok {
+			if u, ok := user.(*types.User); ok && u.CanAccessAllTenants {
+				model.IsBuiltin = *req.IsBuiltin
+			}
+		}
+	}
 
 	logger.Infof(ctx, "Updating model, ID: %s, Name: %s", id, model.Name)
 	if err := h.service.UpdateModel(ctx, model); err != nil {

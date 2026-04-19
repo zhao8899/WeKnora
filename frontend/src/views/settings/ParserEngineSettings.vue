@@ -1,6 +1,6 @@
 <template>
   <div class="parser-engine-settings">
-    <div class="section-header">
+    <div v-if="!activeSubSection" class="section-header">
       <h2>{{ $t('settings.parser.title') }}</h2>
       <p class="section-description">
         {{ $t('settings.parser.description') }}
@@ -27,7 +27,7 @@
 
       <template v-else>
         <!-- 当后端未返回 builtin 引擎项时，仍展示 DocReader 状态卡片 -->
-        <div v-if="!hasBuiltinEngine" class="engine-item first" data-model-type="builtin">
+        <div v-if="!hasBuiltinEngine && shouldShowEngine('builtin')" class="engine-item first" data-model-type="builtin">
           <div class="engine-item-header">
             <div class="engine-title-row">
               <h3>builtin</h3>
@@ -58,8 +58,9 @@
         <div
           v-for="(engine, idx) in sortedEngines"
           :key="engine.Name"
-          :class="['engine-item', { first: idx === 0 && hasBuiltinEngine }]"
+          :class="['engine-item', { first: idx === firstVisibleEngineIndex && hasBuiltinEngine }]"
           :data-model-type="engine.Name"
+          v-if="shouldShowEngine(engine.Name)"
         >
           <div class="engine-item-header">
             <div class="engine-title-row">
@@ -202,6 +203,9 @@ import {
 } from '@/api/system'
 
 const { t } = useI18n()
+const props = defineProps<{
+  activeSubSection?: string
+}>()
 
 const CONFIGURABLE_ENGINES = new Set(['mineru', 'mineru_cloud'])
 
@@ -263,6 +267,18 @@ const sortedEngines = computed(() => {
     return a.Name.localeCompare(b.Name)
   })
 })
+
+const visibleEngines = computed(() => sortedEngines.value.filter(engine => shouldShowEngine(engine.Name)))
+
+const firstVisibleEngineIndex = computed(() => {
+  const firstVisible = visibleEngines.value[0]
+  if (!firstVisible) return 0
+  return sortedEngines.value.findIndex(engine => engine.Name === firstVisible.Name)
+})
+
+function shouldShowEngine(engineName: string): boolean {
+  return !props.activeSubSection || props.activeSubSection === engineName
+}
 
 function hasConfigFields(engineName: string): boolean {
   return CONFIGURABLE_ENGINES.has(engineName)

@@ -59,15 +59,23 @@
                 </div>
 
                 <div v-if="currentSection === 'models'" class="section">
-                  <ModelSettings />
+                  <ModelSettings :active-sub-section="currentSubSection || undefined" />
+                </div>
+
+                <div v-if="currentSection === 'ollama'" class="section">
+                  <OllamaSettings />
+                </div>
+
+                <div v-if="currentSection === 'websearch'" class="section">
+                  <WebSearchSettings />
                 </div>
 
                 <div v-if="currentSection === 'parser'" class="section">
-                  <ParserEngineSettings />
+                  <ParserEngineSettings :active-sub-section="currentSubSection || undefined" />
                 </div>
 
                 <div v-if="currentSection === 'storage'" class="section">
-                  <StorageEngineSettings />
+                  <StorageEngineSettings :active-sub-section="currentSubSection || undefined" />
                 </div>
 
                 <div v-if="currentSection === 'system'" class="section">
@@ -76,6 +84,10 @@
 
                 <div v-if="currentSection === 'tenant'" class="section">
                   <TenantInfo />
+                </div>
+
+                <div v-if="currentSection === 'api'" class="section">
+                  <ApiInfo />
                 </div>
               </div>
             </div>
@@ -91,28 +103,46 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useUIStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import GeneralSettings from './GeneralSettings.vue'
 import ModelSettings from './ModelSettings.vue'
+import OllamaSettings from './OllamaSettings.vue'
 import ParserEngineSettings from './ParserEngineSettings.vue'
 import StorageEngineSettings from './StorageEngineSettings.vue'
 import SystemInfo from './SystemInfo.vue'
 import TenantInfo from './TenantInfo.vue'
+import ApiInfo from './ApiInfo.vue'
+import WebSearchSettings from './WebSearchSettings.vue'
 import { getSettingsNavItems, type SettingsNavItem } from './nav'
 
 const route = useRoute()
 const router = useRouter()
 const uiStore = useUIStore()
+const authStore = useAuthStore()
 const { t } = useI18n()
 
 const currentSection = ref<string>('general')
 const currentSubSection = ref<string>('')
 const expandedMenus = ref<string[]>([])
 
-const navItems = computed<SettingsNavItem[]>(() => getSettingsNavItems(t))
+const isAdmin = computed(() => authStore.canAccessAllTenants)
+const navItems = computed<SettingsNavItem[]>(() => getSettingsNavItems(t, isAdmin.value))
 
 const isRouteMode = computed(() => route.path === '/platform/settings')
 const isModalMode = computed(() => !isRouteMode.value && uiStore.showSettingsModal)
 const visible = computed(() => isRouteMode.value || isModalMode.value)
+
+const normalizeSectionTarget = (section?: string, subSection?: string) => {
+  switch (section) {
+    case 'web-search':
+    case 'websearch':
+      return { section: 'websearch', subSection }
+    case 'ollama':
+      return { section: 'ollama', subSection }
+    default:
+      return { section: section || 'general', subSection }
+  }
+}
 
 const scrollToSubSection = (subSection: string) => {
   setTimeout(() => {
@@ -124,7 +154,8 @@ const scrollToSubSection = (subSection: string) => {
 }
 
 const applySection = (section: string, subSection?: string) => {
-  const navItem = navItems.value.find(item => item.key === section)
+  const normalized = normalizeSectionTarget(section, subSection)
+  const navItem = navItems.value.find(item => item.key === normalized.section)
   if (!navItem) {
     currentSection.value = 'general'
     currentSubSection.value = ''
@@ -136,10 +167,7 @@ const applySection = (section: string, subSection?: string) => {
     if (!expandedMenus.value.includes(navItem.key)) {
       expandedMenus.value.push(navItem.key)
     }
-    currentSubSection.value = subSection || navItem.children[0].key
-    if (currentSubSection.value) {
-      scrollToSubSection(currentSubSection.value)
-    }
+    currentSubSection.value = normalized.subSection || ''
     return
   }
 
@@ -162,7 +190,6 @@ const handleNavClick = (item: SettingsNavItem) => {
 const handleSubMenuClick = (parentKey: string, childKey: string) => {
   currentSection.value = parentKey
   currentSubSection.value = childKey
-  scrollToSubSection(childKey)
 }
 
 const handleClose = () => {
@@ -189,6 +216,8 @@ watch(
       return
     }
     uiStore.setSettingsTarget(section, subSection || undefined)
+    const contentEl = document.querySelector('.settings-content')
+    if (contentEl) contentEl.scrollTop = 0
   }
 )
 
@@ -219,6 +248,8 @@ onUnmounted(() => {
 
 <style lang="less" scoped>
 .settings-page {
+  flex: 1;
+  min-width: 0;
   min-height: 100%;
   padding: 24px 32px;
   background:
@@ -240,7 +271,7 @@ onUnmounted(() => {
 
 .settings-page-shell {
   width: 100%;
-  min-height: calc(100vh - 120px);
+  height: calc(100vh - 120px);
   background: var(--td-bg-color-container);
   border-radius: 12px;
   border: 1px solid var(--td-component-stroke);
@@ -425,11 +456,14 @@ onUnmounted(() => {
   flex: 1;
   overflow-y: auto;
   background-color: var(--td-bg-color-container);
+  min-width: 0;
 }
 
 .content-wrapper {
-  max-width: 600px;
-  padding: 40px 48px;
+  width: 100%;
+  max-width: 1280px;
+  min-width: 0;
+  padding: 24px 32px;
 }
 
 .section {

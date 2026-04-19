@@ -239,6 +239,15 @@
           </div>
         </div>
 
+        <!-- Platform admin only: set model as builtin (shared across all tenants) -->
+        <div v-if="canAccessAllTenants" class="form-item">
+          <label class="form-label">{{ $t('model.editor.isBuiltinLabel') }}</label>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <t-switch v-model="formData.isBuiltin" />
+            <span class="form-desc">{{ $t('model.editor.isBuiltinDesc') }}</span>
+          </div>
+        </div>
+
       </t-form>
           </div>
 
@@ -263,6 +272,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { checkOllamaModels, checkRemoteModel, testEmbeddingModel, checkRerankModel, listOllamaModels, downloadOllamaModel, getDownloadProgress, checkOllamaStatus, listModelProviders, type OllamaModelInfo, type ModelProviderOption } from '@/api/initialization'
 import { useI18n } from 'vue-i18n'
 import { useUIStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 
 interface ModelFormData {
   id: string
@@ -276,6 +286,7 @@ interface ModelFormData {
   interfaceType?: 'ollama' | 'openai'
   isDefault: boolean
   supportsVision?: boolean
+  isBuiltin?: boolean
 }
 
 interface Props {
@@ -286,6 +297,8 @@ interface Props {
 
 const { t, te } = useI18n()
 const uiStore = useUIStore()
+const authStore = useAuthStore()
+const canAccessAllTenants = computed(() => authStore.canAccessAllTenants)
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
