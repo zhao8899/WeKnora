@@ -107,6 +107,9 @@ export interface UpdateAgentRequest {
 // 内置智能体 ID（常用的保留常量，便于代码引用）
 export const BUILTIN_QUICK_ANSWER_ID = 'builtin-quick-answer';
 export const BUILTIN_SMART_REASONING_ID = 'builtin-smart-reasoning';
+export const BUILTIN_DEEP_RESEARCHER_ID = 'builtin-deep-researcher';
+export const BUILTIN_KNOWLEDGE_GRAPH_EXPERT_ID = 'builtin-knowledge-graph-expert';
+export const BUILTIN_DOCUMENT_ASSISTANT_ID = 'builtin-document-assistant';
 
 // AgentMode 常量
 export const AGENT_MODE_QUICK_ANSWER = 'quick-answer';

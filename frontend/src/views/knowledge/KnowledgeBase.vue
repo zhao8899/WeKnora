@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, reactive, computed, nextTick, h, type ComponentPublicInstance } from "vue";
-import { MessagePlugin, Icon as TIcon } from "tdesign-vue-next";
+import { MessagePlugin, DialogPlugin, Icon as TIcon } from "tdesign-vue-next";
 import DocContent from "@/components/doc-content.vue";
 import useKnowledgeBase from '@/hooks/useKnowledgeBase';
 import { useRoute, useRouter } from 'vue-router';
@@ -28,6 +28,7 @@ import {
   createKnowledgeFromURL,
   listKnowledgeBases,
   reparseKnowledge,
+  delKnowledgeDetails,
 } from "@/api/knowledge-base/index";
 import FAQEntryManager from './components/FAQEntryManager.vue';
 import { listMoveTargets, moveKnowledge, getKnowledgeMoveProgress } from '@/api/knowledge-base';
@@ -765,7 +766,7 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
         (result.data as KnowledgeCard[]).forEach((item: KnowledgeCard) => {
           const index = cardList.value.findIndex(card => card.id == item.id);
           if (index == -1) return;
-          
+
           // Always update the card data
           cardList.value[index].parse_status = item.parse_status;
           cardList.value[index].summary_status = item.summary_status;
@@ -776,6 +777,32 @@ const updateStatus = (analyzeList: KnowledgeCard[]) => {
       // 错误处理
     });
   }, 1500);
+};
+
+// ---- Processing progress visualization ----
+const nowTs = ref(Date.now());
+let nowTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => { nowTimer = setInterval(() => { nowTs.value = Date.now(); }, 1000); });
+onUnmounted(() => { if (nowTimer) clearInterval(nowTimer); });
+
+const getElapsedSeconds = (updatedAt?: string): number => {
+  if (!updatedAt) return 0;
+  return Math.max(0, Math.floor((nowTs.value - new Date(updatedAt).getTime()) / 1000));
+};
+
+const formatElapsed = (seconds: number): string => {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
+};
+
+// Indeterminate progress: animates 5→90% over ~3 minutes, stays there until done
+const getIndeterminateProgress = (seconds: number): number => {
+  if (seconds <= 0) return 5;
+  // Logarithmic growth: reaches ~85% at 3 min, ~90% at 10 min
+  const p = 5 + 80 * (1 - Math.exp(-seconds / 120));
+  return Math.min(90, Math.round(p));
 };
 
 
@@ -833,6 +860,48 @@ const delCard = (index: number, item: KnowledgeCard) => {
   knowledge.value = item;
   delDialog.value = true;
 };
+
+// Batch selection
+const selectedIds = ref(new Set<string>())
+const hasSelection = computed(() => selectedIds.value.size > 0)
+const batchDeleting = ref(false)
+
+const toggleSelect = (id: string, e: Event) => {
+  e.stopPropagation()
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
+
+const clearSelection = () => { selectedIds.value = new Set() }
+
+const batchDeleteSelected = async () => {
+  if (batchDeleting.value || !hasSelection.value) return
+  const ids = [...selectedIds.value]
+  const dialog = DialogPlugin.confirm({
+    header: t('knowledgeBase.batchDeleteConfirmTitle'),
+    body: t('knowledgeBase.batchDeleteConfirmBody', { count: ids.length }),
+    confirmBtn: { content: t('common.confirm'), theme: 'danger' },
+    onConfirm: async () => {
+      dialog.hide()
+      batchDeleting.value = true
+      try {
+        await Promise.all(ids.map(id => delKnowledgeDetails(id)))
+        MessagePlugin.success(t('knowledgeBase.batchDeleteSuccess', { count: ids.length }))
+        clearSelection()
+        page = 1
+        loadKnowledgeFiles(kbId.value)
+        loadTags(kbId.value)
+      } catch {
+        MessagePlugin.error(t('knowledgeBase.batchDeleteFailed'))
+      } finally {
+        batchDeleting.value = false
+      }
+    },
+    onClose: () => dialog.hide(),
+  })
+}
 
 const handleMoveKnowledge = async (item: KnowledgeCard) => {
   moveKnowledgeId.value = item.id;
@@ -1364,6 +1433,34 @@ const rebuildConfirm = async () => {
   }
 };
 
+// Failed document banner
+const failedBannerDismissed = ref(false);
+const failedDocCount = computed(() =>
+  (cardList.value as KnowledgeCard[]).filter(c => c.parse_status === 'failed').length
+);
+const failedDocIds = computed(() =>
+  (cardList.value as KnowledgeCard[]).filter(c => c.parse_status === 'failed').map(c => c.id)
+);
+const retryingAll = ref(false);
+const handleRetryAllFailed = async () => {
+  if (retryingAll.value || failedDocIds.value.length === 0) return;
+  retryingAll.value = true;
+  let successCount = 0;
+  for (const id of failedDocIds.value) {
+    try {
+      await reparseKnowledge(id);
+      successCount++;
+    } catch (_) { /* continue */ }
+  }
+  retryingAll.value = false;
+  if (successCount > 0) {
+    MessagePlugin.success(t('knowledgeBase.retryAllSubmitted', { count: successCount }));
+    failedBannerDismissed.value = true;
+    page = 1;
+    loadKnowledgeFiles(kbId.value);
+  }
+};
+
 const handleScroll = () => {
   if (isFAQ.value) return;
   const element = knowledgeScroll.value;
@@ -1536,6 +1633,23 @@ async function createNewSession(value: string): Promise<void> {
         webkitdirectory
         @change="handleFolderUpload"
       />
+      <!-- 解析失败文档汇总 Banner -->
+      <div
+        v-if="!isFAQ && failedDocCount > 0 && !failedBannerDismissed && canEdit"
+        class="failed-docs-banner"
+      >
+        <t-icon name="error-circle" class="failed-banner-icon" />
+        <span class="failed-banner-text">{{ $t('knowledgeBase.failedDocsBannerText', { count: failedDocCount }) }}</span>
+        <t-button
+          size="small"
+          theme="danger"
+          variant="outline"
+          :loading="retryingAll"
+          @click="handleRetryAllFailed"
+        >{{ $t('knowledgeBase.retryAllFailed') }}</t-button>
+        <t-icon name="close" class="failed-banner-close" @click="failedBannerDismissed = true" />
+      </div>
+
       <div class="knowledge-main">
         <aside class="tag-sidebar">
           <div class="sidebar-header">
@@ -1722,6 +1836,14 @@ async function createNewSession(value: string): Promise<void> {
                 class="doc-type-select"
                 clearable
               />
+              <div v-if="canEdit && hasSelection" class="doc-batch-actions">
+                <span class="batch-selection-count">{{ $t('knowledgeBase.selectedCount', { count: selectedIds.size }) }}</span>
+                <t-button size="small" theme="danger" variant="outline" :loading="batchDeleting" @click="batchDeleteSelected">
+                  <template #icon><t-icon name="delete" /></template>
+                  {{ $t('knowledgeBase.batchDelete') }}
+                </t-button>
+                <t-button size="small" variant="text" @click="clearSelection">{{ $t('common.cancel') }}</t-button>
+              </div>
               <div v-if="canEdit" class="doc-filter-actions">
                 <t-tooltip :content="$t('knowledgeBase.addDocument')" placement="top">
                   <t-dropdown
@@ -1748,6 +1870,7 @@ async function createNewSession(value: string): Promise<void> {
                   <!-- 现有文档卡片 -->
                   <div
                     class="knowledge-card"
+                    :class="{ 'is-selected': selectedIds.has(item.id) }"
                     v-for="(item, index) in cardList"
                     :key="index"
                     @click="openCardDetails(item)"
@@ -1755,6 +1878,13 @@ async function createNewSession(value: string): Promise<void> {
                     @mousemove="onCardMouseMove($event)"
                     @mouseleave="onCardMouseLeave"
                   >
+                    <div
+                      v-if="canEdit && (hasSelection || hoveredCardItem?.id === item.id || selectedIds.has(item.id))"
+                      class="card-select-box"
+                      @click.stop="toggleSelect(item.id, $event)"
+                    >
+                      <t-checkbox :checked="selectedIds.has(item.id)" @click.stop />
+                    </div>
                     <div class="card-content">
                       <div class="card-content-nav">
                         <span class="card-content-title" :title="item.file_name">{{ item.file_name }}</span>
@@ -1870,10 +2000,22 @@ async function createNewSession(value: string): Promise<void> {
                       </div>
                       <div
                         v-if="item.parse_status === 'processing' || item.parse_status === 'pending'"
-                        class="card-analyze"
+                        class="card-analyze card-analyze-progress"
                       >
-                        <t-icon name="loading" class="card-analyze-loading"></t-icon>
-                        <span class="card-analyze-txt">{{ t('knowledgeBase.parsingInProgress') }}</span>
+                        <div class="card-analyze-header">
+                          <t-icon name="loading" class="card-analyze-loading"></t-icon>
+                          <span class="card-analyze-txt">
+                            {{ item.parse_status === 'pending' ? t('knowledgeBase.parsingQueued') : t('knowledgeBase.parsingInProgress') }}
+                          </span>
+                          <span class="card-analyze-elapsed">{{ formatElapsed(getElapsedSeconds(item.updated_at)) }}</span>
+                        </div>
+                        <t-progress
+                          :percentage="item.parse_status === 'pending' ? 0 : getIndeterminateProgress(getElapsedSeconds(item.updated_at))"
+                          :status="item.parse_status === 'pending' ? 'warning' : 'active'"
+                          size="small"
+                          :show-label="false"
+                          class="card-analyze-bar"
+                        />
                       </div>
                       <div v-else-if="item.parse_status === 'failed'" class="card-analyze failure">
                         <t-icon name="close-circle" class="card-analyze-loading failure"></t-icon>
@@ -1883,12 +2025,21 @@ async function createNewSession(value: string): Promise<void> {
                         <t-tag size="small" theme="warning" variant="light-outline">{{ t('knowledgeBase.draft') }}</t-tag>
                         <span class="card-draft-tip">{{ t('knowledgeBase.draftTip') }}</span>
                       </div>
-                      <div 
-                        v-else-if="item.parse_status === 'completed' && (item.summary_status === 'pending' || item.summary_status === 'processing')" 
-                        class="card-analyze"
+                      <div
+                        v-else-if="item.parse_status === 'completed' && (item.summary_status === 'pending' || item.summary_status === 'processing')"
+                        class="card-analyze card-analyze-progress"
                       >
-                        <t-icon name="loading" class="card-analyze-loading"></t-icon>
-                        <span class="card-analyze-txt">{{ t('knowledgeBase.generatingSummary') }}</span>
+                        <div class="card-analyze-header">
+                          <t-icon name="loading" class="card-analyze-loading"></t-icon>
+                          <span class="card-analyze-txt">{{ t('knowledgeBase.generatingSummary') }}</span>
+                        </div>
+                        <t-progress
+                          :percentage="getIndeterminateProgress(getElapsedSeconds(item.updated_at))"
+                          status="active"
+                          size="small"
+                          :show-label="false"
+                          class="card-analyze-bar"
+                        />
                       </div>
                       <div v-else-if="item.parse_status === 'completed'" class="card-content-txt">
                         {{ item.description }}
@@ -2082,6 +2233,40 @@ async function createNewSession(value: string): Promise<void> {
   min-width: 0;
   padding: 24px 32px 32px;
   box-sizing: border-box;
+}
+
+.failed-docs-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: rgba(229, 75, 75, 0.06);
+  border: 1px solid rgba(229, 75, 75, 0.25);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--td-text-color-primary);
+
+  .failed-banner-icon {
+    color: var(--td-error-color);
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .failed-banner-text {
+    flex: 1;
+  }
+
+  .failed-banner-close {
+    color: var(--td-text-color-placeholder);
+    cursor: pointer;
+    font-size: 16px;
+    flex-shrink: 0;
+
+    &:hover {
+      color: var(--td-text-color-secondary);
+    }
+  }
 }
 
 // 与列表页一致：浅灰底圆角区，左侧筛选为白底卡片
@@ -3191,20 +3376,48 @@ async function createNewSession(value: string): Promise<void> {
   .card-analyze {
     height: 52px;
     display: flex;
+    align-items: center;
+
+    &.card-analyze-progress {
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 6px;
+      height: 52px;
+    }
+  }
+
+  .card-analyze-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .card-analyze-elapsed {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--td-text-color-placeholder);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .card-analyze-bar {
+    width: 100%;
+    :deep(.t-progress--thin .t-progress__bar) {
+      height: 3px;
+    }
   }
 
   .card-analyze-loading {
     display: block;
     color: var(--td-brand-color);
     font-size: 14px;
-    margin-top: 2px;
   }
 
   .card-analyze-txt {
     color: var(--td-brand-color);
     font-family: "PingFang SC";
     font-size: 11px;
-    margin-left: 8px;
   }
 
   .failure {
@@ -3307,6 +3520,36 @@ async function createNewSession(value: string): Promise<void> {
 .knowledge-card:hover {
   border-color: var(--td-brand-color);
   box-shadow: 0 2px 8px rgba(7, 192, 95, 0.12);
+}
+
+.knowledge-card.is-selected {
+  border-color: var(--td-brand-color);
+  background: rgba(7, 192, 95, 0.04);
+}
+
+.card-select-box {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  background: var(--td-bg-color-container);
+  border-radius: 4px;
+  padding: 2px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.doc-batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.batch-selection-count {
+  font-size: 13px;
+  color: var(--td-text-color-secondary);
+  white-space: nowrap;
 }
 
 /* 悬停知识卡片时跟随鼠标的详情气泡 */

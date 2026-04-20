@@ -27,7 +27,7 @@
                     </div>
                     <div v-if="session.role == 'assistant'">
                         <botmsg :content="session.content" :session="session" :user-query="getUserQuery(id)" @scroll-bottom="scrollToBottom"
-                            :isFirstEnter="isFirstEnter"></botmsg>
+                            :isFirstEnter="isFirstEnter" :sessionId="session_id"></botmsg>
                     </div>
                 </div>
                 <div v-if="loading"

@@ -112,6 +112,12 @@ const router = createRouter({
           component: () => import("../views/organization/OrganizationList.vue"),
           meta: { requiresInit: true, requiresAuth: true }
         },
+        {
+          path: "usage-audit",
+          name: "usageAudit",
+          component: () => import("../views/usage/UsageAudit.vue"),
+          meta: { requiresInit: true, requiresAuth: true }
+        },
       ],
     },
   ],

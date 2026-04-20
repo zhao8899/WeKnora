@@ -216,6 +216,25 @@
             <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge(event)" :title="$t('agent.addToKnowledgeBase')">
               <t-icon name="add" />
             </t-button>
+            <!-- 点赞/踩反馈 -->
+            <t-tooltip :content="$t('chat.feedbackLike')" placement="top">
+              <t-button
+                size="small" variant="outline" shape="round"
+                :class="['feedback-btn', { 'feedback-active-like': agentLocalFeedback === 'like' }]"
+                @click.stop="handleAgentFeedback('like')"
+              >
+                <t-icon name="thumb-up" />
+              </t-button>
+            </t-tooltip>
+            <t-tooltip :content="$t('chat.feedbackDislike')" placement="top">
+              <t-button
+                size="small" variant="outline" shape="round"
+                :class="['feedback-btn', { 'feedback-active-dislike': agentLocalFeedback === 'dislike' }]"
+                @click.stop="handleAgentFeedback('dislike')"
+              >
+                <t-icon name="thumb-down" />
+              </t-button>
+            </t-tooltip>
             <t-tooltip v-if="event.is_fallback" :content="$t('chat.fallbackHint')" placement="top">
               <t-button size="small" variant="outline" shape="round" class="fallback-icon-btn">
                 <t-icon name="info-circle" />
@@ -350,6 +369,7 @@ import { useUIStore } from '@/stores/ui';
 import { useI18n } from 'vue-i18n';
 import i18n from '@/i18n';
 import { hydrateProtectedFileImages } from '@/utils/security';
+import { submitMessageFeedback } from '@/api/chat/index';
 import {
   buildManualMarkdown,
   copyTextToClipboard,
@@ -582,7 +602,27 @@ interface SessionData {
 const props = defineProps<{
   session: SessionData;
   userQuery?: string;
+  sessionId?: string | { value?: string };
 }>();
+
+const agentLocalFeedback = ref((props.session as any)?.feedback || '');
+
+const handleAgentFeedback = async (value: string) => {
+  if (agentLocalFeedback.value === value) return;
+  const msgId = (props.session as any)?.id;
+  const rawId = props.sessionId;
+  const sessId = rawId && typeof rawId === 'object' ? (rawId as any).value : rawId;
+  if (!msgId || !sessId) return;
+  const prev = agentLocalFeedback.value;
+  agentLocalFeedback.value = value;
+  try {
+    await submitMessageFeedback(sessId, msgId, value as 'like' | 'dislike');
+    MessagePlugin.success(t('chat.feedbackSuccess'));
+  } catch (e) {
+    agentLocalFeedback.value = prev;
+    console.error('反馈提交失败', e);
+  }
+};
 
 // Configure marked for security
 marked.use({});
@@ -2090,6 +2130,22 @@ const handleAddToKnowledge = (answerEvent: any) => {
       color: var(--td-text-color-placeholder) !important;
       border-color: var(--td-component-border) !important;
     }
+  }
+
+  .feedback-btn {
+    transition: all 0.15s ease;
+  }
+
+  .feedback-active-like {
+    color: var(--td-success-color) !important;
+    border-color: var(--td-success-color) !important;
+    background: rgba(0, 168, 112, 0.06) !important;
+  }
+
+  .feedback-active-dislike {
+    color: var(--td-error-color) !important;
+    border-color: var(--td-error-color) !important;
+    background: rgba(229, 75, 75, 0.06) !important;
   }
 
   .answer-content {

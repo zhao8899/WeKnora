@@ -267,3 +267,13 @@ func (r *messageRepository) UpdateMessageKnowledgeID(
 		Where("id = ?", messageID).
 		Update("knowledge_id", knowledgeID).Error
 }
+
+// UpdateMessageFeedback updates only the feedback column for a message
+func (r *messageRepository) UpdateMessageFeedback(
+	ctx context.Context, sessionID, messageID, feedback string,
+) error {
+	return r.db.WithContext(ctx).
+		Model(&types.Message{}).
+		Where("id = ? AND session_id = ?", messageID, sessionID).
+		Update("feedback", feedback).Error
+}

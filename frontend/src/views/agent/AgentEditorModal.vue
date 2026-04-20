@@ -1235,6 +1235,7 @@ const props = defineProps<{
   mode: 'create' | 'edit';
   agent?: CustomAgent | null;
   initialSection?: string;
+  templateConfig?: Partial<CustomAgent> | null;
 }>();
 
 const emit = defineEmits<{
@@ -1650,10 +1651,21 @@ watch(() => props.visible, async (val) => {
           newFormData.config.fallback_response = defaultFallbackResponse.value;
         }
       }
+      // Apply template config if provided
+      if (props.templateConfig) {
+        if (props.templateConfig.name) newFormData.name = props.templateConfig.name;
+        if (props.templateConfig.description) newFormData.description = props.templateConfig.description;
+        if (props.templateConfig.avatar) newFormData.avatar = props.templateConfig.avatar;
+        if (props.templateConfig.config) {
+          newFormData.config = { ...newFormData.config, ...props.templateConfig.config };
+        }
+      }
+      isInitializing.value = true;
       formData.value = newFormData;
-      kbSelectionMode.value = 'none';
-      mcpSelectionMode.value = 'none';
-      skillsSelectionMode.value = 'none';
+      initKbSelectionMode();
+      initMcpSelectionMode();
+      initSkillsSelectionMode();
+      nextTick(() => { isInitializing.value = false; });
     }
   }
 });

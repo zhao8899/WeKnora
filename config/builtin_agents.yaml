@@ -13,15 +13,6 @@ builtin_agents:
       zh-CN:
         name: "快速问答"
         description: "基于知识库的 RAG 问答，快速准确地回答问题"
-      zh-TW:
-        name: "快速問答"
-        description: "基於知識庫的 RAG 問答，快速準確地回答問題"
-      ja-JP:
-        name: "クイック回答"
-        description: "ナレッジベース RAG Q&A による迅速で正確な回答"
-      ko-KR:
-        name: "빠른 답변"
-        description: "지식 베이스 RAG Q&A를 통한 빠르고 정확한 답변"
     config:
       agent_mode: "quick-answer"
       system_prompt_id: "default_kb"
@@ -56,15 +47,6 @@ builtin_agents:
       zh-CN:
         name: "智能推理"
         description: "ReAct 推理框架，支持多步思考与工具调用"
-      zh-TW:
-        name: "智能推理"
-        description: "ReAct 推理框架，支援多步思考與工具呼叫"
-      ja-JP:
-        name: "スマート推論"
-        description: "ReAct 推論フレームワーク、マルチステップ思考とツール呼び出し対応"
-      ko-KR:
-        name: "스마트 추론"
-        description: "ReAct 추론 프레임워크, 다단계 사고 및 도구 호출 지원"
     config:
       agent_mode: "smart-reasoning"
       system_prompt: ""
@@ -105,15 +87,6 @@ builtin_agents:
       zh-CN:
         name: "数据分析师"
         description: "专业的数据分析智能体，支持对 CSV/Excel 文件进行 SQL 查询和统计分析"
-      zh-TW:
-        name: "數據分析師"
-        description: "專業的數據分析智能體，支援對 CSV/Excel 檔案進行 SQL 查詢和統計分析"
-      ja-JP:
-        name: "データアナリスト"
-        description: "CSV/Excel ファイルの SQL クエリと統計分析に対応するプロフェッショナルなデータ分析エージェント"
-      ko-KR:
-        name: "데이터 분석가"
-        description: "CSV/Excel 파일에 대한 SQL 쿼리 및 통계 분석을 지원하는 전문 데이터 분석 에이전트"
     config:
       agent_mode: "smart-reasoning"
       system_prompt_id: "data_analyst"
@@ -139,4 +112,114 @@ builtin_agents:
       keyword_threshold: 0.3
       vector_threshold: 0.5
       rerank_top_k: 5
+      rerank_threshold: 0.3
+
+  - id: "builtin-deep-researcher"
+    avatar: "🔬"
+    is_builtin: true
+    i18n:
+      default:
+        name: "Deep Researcher"
+        description: "Exhaustive multi-source research agent combining KB and web search for comprehensive reports"
+      zh-CN:
+        name: "深度研究员"
+        description: "多源深度研究智能体，结合知识库与网络搜索生成全面的研究报告"
+    config:
+      agent_mode: "smart-reasoning"
+      system_prompt_id: "deep_researcher"
+      temperature: 0.5
+      max_completion_tokens: 4096
+      max_iterations: 50
+      kb_selection_mode: "all"
+      retrieve_kb_only_when_mentioned: false
+      allowed_tools:
+        - "thinking"
+        - "todo_write"
+        - "knowledge_search"
+        - "grep_chunks"
+        - "list_knowledge_chunks"
+        - "get_document_info"
+        - "web_search"
+        - "web_fetch"
+      web_search_enabled: true
+      web_search_max_results: 10
+      reflection_enabled: true
+      multi_turn_enabled: true
+      history_turns: 5
+      embedding_top_k: 15
+      keyword_threshold: 0.3
+      vector_threshold: 0.4
+      rerank_top_k: 10
+      rerank_threshold: 0.3
+
+  - id: "builtin-knowledge-graph-expert"
+    avatar: "🕸️"
+    is_builtin: true
+    i18n:
+      default:
+        name: "Knowledge Graph Expert"
+        description: "Explores entity relationships and semantic networks in the knowledge graph"
+      zh-CN:
+        name: "知识图谱专家"
+        description: "专注于知识图谱中的实体关系探索与语义网络分析"
+    config:
+      agent_mode: "smart-reasoning"
+      system_prompt_id: "knowledge_graph_expert"
+      temperature: 0.4
+      max_completion_tokens: 3000
+      max_iterations: 30
+      kb_selection_mode: "all"
+      retrieve_kb_only_when_mentioned: false
+      allowed_tools:
+        - "thinking"
+        - "todo_write"
+        - "query_knowledge_graph"
+        - "knowledge_search"
+        - "grep_chunks"
+        - "list_knowledge_chunks"
+      web_search_enabled: false
+      web_search_max_results: 0
+      reflection_enabled: false
+      multi_turn_enabled: true
+      history_turns: 5
+      embedding_top_k: 10
+      keyword_threshold: 0.3
+      vector_threshold: 0.5
+      rerank_top_k: 5
+      rerank_threshold: 0.3
+
+  - id: "builtin-document-assistant"
+    avatar: "📄"
+    is_builtin: true
+    i18n:
+      default:
+        name: "Document Assistant"
+        description: "Reads, summarizes, and answers questions about documents in the knowledge base"
+      zh-CN:
+        name: "文档助手"
+        description: "专注于知识库中文档的阅读、摘要与问答"
+    config:
+      agent_mode: "smart-reasoning"
+      system_prompt_id: "document_assistant"
+      temperature: 0.3
+      max_completion_tokens: 3000
+      max_iterations: 20
+      kb_selection_mode: "all"
+      retrieve_kb_only_when_mentioned: false
+      allowed_tools:
+        - "thinking"
+        - "todo_write"
+        - "knowledge_search"
+        - "grep_chunks"
+        - "list_knowledge_chunks"
+        - "get_document_info"
+      web_search_enabled: false
+      web_search_max_results: 0
+      reflection_enabled: false
+      multi_turn_enabled: true
+      history_turns: 10
+      embedding_top_k: 15
+      keyword_threshold: 0.3
+      vector_threshold: 0.5
+      rerank_top_k: 10
       rerank_threshold: 0.3

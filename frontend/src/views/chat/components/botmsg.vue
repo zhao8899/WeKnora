@@ -19,7 +19,7 @@
                 </span>
             </div>
             <docInfo :session="session"></docInfo>
-            <AgentStreamDisplay :session="session" :user-query="userQuery" v-if="session.isAgentMode"></AgentStreamDisplay>
+            <AgentStreamDisplay :session="session" :user-query="userQuery" :session-id="sessionId" v-if="session.isAgentMode"></AgentStreamDisplay>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
         </div>
         <!-- 非 Agent 模式下才显示传统的 markdown 渲染 -->
@@ -47,6 +47,25 @@
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge" :title="$t('agent.addToKnowledgeBase')">
                     <t-icon name="add" />
                 </t-button>
+                <!-- 点赞/踩反馈 -->
+                <t-tooltip :content="$t('chat.feedbackLike')" placement="top">
+                    <t-button
+                        size="small" variant="outline" shape="round"
+                        :class="['feedback-btn', { 'feedback-active-like': localFeedback === 'like' }]"
+                        @click.stop="handleFeedback('like')"
+                    >
+                        <t-icon name="thumb-up" />
+                    </t-button>
+                </t-tooltip>
+                <t-tooltip :content="$t('chat.feedbackDislike')" placement="top">
+                    <t-button
+                        size="small" variant="outline" shape="round"
+                        :class="['feedback-btn', { 'feedback-active-dislike': localFeedback === 'dislike' }]"
+                        @click.stop="handleFeedback('dislike')"
+                    >
+                        <t-icon name="thumb-down" />
+                    </t-button>
+                </t-tooltip>
                 <!-- Fallback 提示图标 -->
                 <t-tooltip v-if="session.is_fallback" :content="$t('chat.fallbackHint')" placement="top">
                     <t-button size="small" variant="outline" shape="round" class="fallback-icon-btn">
@@ -70,6 +89,7 @@ import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL, hyd
 import { useI18n } from 'vue-i18n';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useUIStore } from '@/stores/ui';
+import { submitMessageFeedback } from '@/api/chat/index';
 import {
     buildManualMarkdown,
     copyTextToClipboard,
@@ -114,8 +134,33 @@ const props = defineProps({
     isFirstEnter: {
         type: Boolean,
         required: false
+    },
+    sessionId: {
+        type: [String, Object],
+        required: false,
+        default: ''
     }
 });
+
+// 本地反馈状态：初始化时从 session.feedback 读取
+const localFeedback = ref(props.session?.feedback || '');
+
+const handleFeedback = async (value) => {
+    if (localFeedback.value === value) return; // 已反馈，忽略重复点击
+    const msgId = props.session?.id;
+    const sessId = typeof props.sessionId === 'object' ? props.sessionId?.value : props.sessionId;
+    if (!msgId || !sessId) return;
+
+    const prevFeedback = localFeedback.value;
+    localFeedback.value = value;
+    try {
+        await submitMessageFeedback(sessId, msgId, value);
+        MessagePlugin.success(t('chat.feedbackSuccess'));
+    } catch (e) {
+        localFeedback.value = prevFeedback;
+        console.error('反馈提交失败', e);
+    }
+};
 
 const preview = (url) => {
     nextTick(() => {
@@ -360,6 +405,22 @@ onBeforeUnmount(() => {
         color: var(--td-text-color-placeholder) !important;
         border-color: var(--td-component-border) !important;
     }
+}
+
+.feedback-btn {
+    transition: all 0.15s ease;
+}
+
+.feedback-active-like {
+    color: var(--td-success-color) !important;
+    border-color: var(--td-success-color) !important;
+    background: rgba(0, 168, 112, 0.06) !important;
+}
+
+.feedback-active-dislike {
+    color: var(--td-error-color) !important;
+    border-color: var(--td-error-color) !important;
+    background: rgba(229, 75, 75, 0.06) !important;
 }
 
 @keyframes fadeInUp {

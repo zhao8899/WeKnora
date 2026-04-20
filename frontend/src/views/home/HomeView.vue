@@ -33,6 +33,11 @@
           <strong class="stat-value">{{ stats.document }}</strong>
           <span class="stat-desc">适合制度、手册和资料</span>
         </div>
+        <div class="stat-card">
+          <span class="stat-label">本月问答</span>
+          <strong class="stat-value">{{ monthSessions.toLocaleString() }}</strong>
+          <span class="stat-desc">本月累计问答会话次数</span>
+        </div>
       </div>
     </section>
 
@@ -177,6 +182,7 @@ import { useRouter } from 'vue-router'
 import { listKnowledgeBases } from '@/api/knowledge-base'
 import { useAuthStore } from '@/stores/auth'
 import { useOrganizationStore } from '@/stores/organization'
+import { getUsageStats } from '@/api/usage/index'
 
 interface KnowledgeBaseItem {
   id: string
@@ -195,6 +201,7 @@ const organizationStore = useOrganizationStore()
 const loading = ref(false)
 const spaceLoading = ref(false)
 const knowledgeBases = ref<KnowledgeBaseItem[]>([])
+const monthSessions = ref(0)
 const canCreateKnowledgeBase = computed(() => authStore.hasValidTenant)
 
 const shortcuts = computed(() => [
@@ -261,6 +268,13 @@ const loadKnowledgeBases = async () => {
   }
 }
 
+const loadUsageStats = async () => {
+  try {
+    const res = await getUsageStats()
+    monthSessions.value = res.data?.month_sessions ?? 0
+  } catch (_) { }
+}
+
 const loadOrganizations = async () => {
   spaceLoading.value = true
   try {
@@ -290,6 +304,7 @@ const roleLabel = (role?: string) => {
 onMounted(() => {
   loadKnowledgeBases()
   loadOrganizations()
+  loadUsageStats()
 })
 </script>
 
@@ -298,9 +313,7 @@ onMounted(() => {
   flex: 1;
   padding: 32px;
   overflow-y: auto;
-  background:
-    radial-gradient(circle at top right, rgba(7, 192, 95, 0.12), transparent 28%),
-    linear-gradient(180deg, #f7fbf7 0%, #ffffff 220px);
+  background: var(--td-bg-color-page);
 }
 
 .hero-section {
@@ -345,7 +358,9 @@ onMounted(() => {
 
 .hero-stats {
   display: grid;
-  gap: 14px;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-content: start;
 }
 
 .stat-card {
@@ -391,9 +406,9 @@ onMounted(() => {
   align-items: flex-start;
   gap: 14px;
   padding: 20px;
-  border: 1px solid rgba(21, 93, 56, 0.08);
+  border: 1px solid var(--td-component-stroke);
   border-radius: 18px;
-  background: #fff;
+  background: var(--td-bg-color-container);
   text-align: left;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
@@ -401,7 +416,7 @@ onMounted(() => {
 
 .shortcut-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(21, 93, 56, 0.18);
+  border-color: var(--td-brand-color-light);
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
 
@@ -420,30 +435,30 @@ onMounted(() => {
 .shortcut-content h3 {
   margin: 0;
   font-size: 16px;
-  color: #13231a;
+  color: var(--td-text-color-primary);
 }
 
 .shortcut-content p {
   margin: 6px 0 0;
   font-size: 13px;
   line-height: 1.6;
-  color: #66727c;
+  color: var(--td-text-color-secondary);
 }
 
 .knowledge-panel {
   margin-top: 28px;
   padding: 24px;
   border-radius: 24px;
-  background: #fff;
-  border: 1px solid rgba(21, 93, 56, 0.08);
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
 }
 
 .space-panel {
   margin-top: 20px;
   padding: 24px;
   border-radius: 24px;
-  background: #fff;
-  border: 1px solid rgba(21, 93, 56, 0.08);
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
 }
 
 .panel-header {
@@ -457,12 +472,12 @@ onMounted(() => {
 .panel-header h2 {
   margin: 0;
   font-size: 22px;
-  color: #13231a;
+  color: var(--td-text-color-primary);
 }
 
 .panel-header p {
   margin: 6px 0 0;
-  color: #66727c;
+  color: var(--td-text-color-secondary);
 }
 
 .kb-grid {
@@ -480,8 +495,8 @@ onMounted(() => {
 .kb-card {
   padding: 18px;
   border-radius: 18px;
-  border: 1px solid rgba(21, 93, 56, 0.08);
-  background: linear-gradient(180deg, #ffffff 0%, #f7fbf7 100%);
+  border: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-secondarycontainer);
   text-align: left;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -520,34 +535,34 @@ onMounted(() => {
 }
 
 .kb-date {
-  color: #82909b;
+  color: var(--td-text-color-placeholder);
   font-size: 12px;
 }
 
 .kb-title {
   margin: 16px 0 8px;
   font-size: 18px;
-  color: #13231a;
+  color: var(--td-text-color-primary);
 }
 
 .kb-desc {
   min-height: 44px;
   margin: 0 0 16px;
-  color: #66727c;
+  color: var(--td-text-color-secondary);
   font-size: 13px;
   line-height: 1.7;
 }
 
 .kb-meta {
-  color: #40505d;
+  color: var(--td-text-color-secondary);
   font-size: 13px;
 }
 
 .space-card {
   padding: 18px;
   border-radius: 18px;
-  border: 1px solid rgba(21, 93, 56, 0.08);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-secondarycontainer);
   text-align: left;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -569,7 +584,7 @@ onMounted(() => {
 .space-name {
   font-size: 17px;
   font-weight: 600;
-  color: #13231a;
+  color: var(--td-text-color-primary);
 }
 
 .space-role {
@@ -584,13 +599,13 @@ onMounted(() => {
 .space-desc {
   min-height: 44px;
   margin: 14px 0 16px;
-  color: #66727c;
+  color: var(--td-text-color-secondary);
   font-size: 13px;
   line-height: 1.7;
 }
 
 .space-meta {
-  color: #4d5e6b;
+  color: var(--td-text-color-secondary);
   font-size: 13px;
 }
 
@@ -610,6 +625,7 @@ onMounted(() => {
 .empty-panel h3,
 .empty-panel p {
   margin: 0;
+  color: var(--td-text-color-secondary);
 }
 
 @media (max-width: 1200px) {

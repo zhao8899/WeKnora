@@ -31,6 +31,7 @@
                         <t-icon name="file" size="14px" class="doc-group-icon" />
                         <span class="doc-group-title" :title="group.title">{{ group.title }}</span>
                         <span class="doc-group-count">{{ $t('chat.referenceChunkCount', { count: group.chunks.length }) }}</span>
+                        <span v-if="group.bestScore > 0" class="doc-group-score" :class="scoreClass(group.bestScore)">{{ Math.round(group.bestScore * 100) }}%</span>
                     </div>
                     <div class="doc-group-actions" v-if="group.knowledgeBaseId" @click.stop>
                         <t-tooltip :content="$t('chat.navigateToDocument')">
@@ -49,6 +50,7 @@
                             <span class="doc-chunk-text">
                                 <span class="doc-chunk-index">{{ $t('chat.chunkLabel', { index: cIdx + 1 }) }}</span>
                                 {{ truncateContent(chunk.content, 80) }}
+                                <span v-if="chunk.score > 0" class="chunk-score" :class="scoreClass(chunk.score)">{{ Math.round(chunk.score * 100) }}%</span>
                             </span>
                         </t-popup>
                     </div>
@@ -113,9 +115,14 @@ const groupedKnowledgeRefs = computed(() => {
                 knowledgeId: item.knowledge_id,
                 knowledgeBaseId: item.knowledge_base_id,
                 chunks: [],
+                bestScore: 0,
             });
         }
-        groupMap.get(key).chunks.push(item);
+        const group = groupMap.get(key);
+        group.chunks.push(item);
+        if ((item.score ?? 0) > group.bestScore) {
+            group.bestScore = item.score ?? 0;
+        }
     }
     return Array.from(groupMap.values());
 });
@@ -137,6 +144,12 @@ const safeProcessContent = (content) => {
     if (!content) return '';
     const sanitized = sanitizeHTML(content);
     return sanitized.replace(/\n/g, '<br/>');
+};
+
+const scoreClass = (score) => {
+    if (score >= 0.8) return 'score-high';
+    if (score >= 0.5) return 'score-mid';
+    return 'score-low';
 };
 
 const truncateContent = (content, maxLen) => {
@@ -378,6 +391,31 @@ const getWebSearchDisplayText = (item) => {
             font-size: 11px;
             margin-right: 4px;
         }
+    }
+}
+
+.doc-group-score,
+.chunk-score {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 5px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: 6px;
+    flex-shrink: 0;
+
+    &.score-high {
+        background: rgba(0, 168, 112, 0.1);
+        color: var(--td-success-color);
+    }
+    &.score-mid {
+        background: rgba(255, 155, 24, 0.1);
+        color: var(--td-warning-color);
+    }
+    &.score-low {
+        background: var(--td-bg-color-secondarycontainer);
+        color: var(--td-text-color-placeholder);
     }
 }
 </style>

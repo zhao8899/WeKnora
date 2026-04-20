@@ -23,6 +23,7 @@ export const useMenuStore = defineStore('menuStore', () => {
     { title: '', titleKey: 'menu.knowledgeSearch', icon: 'search', path: 'knowledge-search' },
     { title: '', titleKey: 'menu.agents', icon: 'agent', path: 'agents' },
     { title: '', titleKey: 'menu.organizations', icon: 'organization', path: 'organizations' },
+    { title: '', titleKey: 'menu.usageAudit', icon: 'chart-bar', path: 'usage-audit' },
     {
       title: '',
       titleKey: 'menu.chat',

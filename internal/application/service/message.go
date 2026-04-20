@@ -864,3 +864,8 @@ func groupByRequestID(items []*types.MessageSearchResultItem) []*types.MessageSe
 
 	return result
 }
+
+// UpdateMessageFeedback sets user quality feedback on an assistant message.
+func (s *messageService) UpdateMessageFeedback(ctx context.Context, sessionID, messageID, feedback string) error {
+	return s.messageRepo.UpdateMessageFeedback(ctx, sessionID, messageID, feedback)
+}

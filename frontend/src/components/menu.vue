@@ -48,7 +48,8 @@
                      :class="['menu_item', item.childrenPath && item.childrenPath == currentpath ? 'menu_item_c_active' : isMenuItemActive(item.path) ? 'menu_item_active' : '']">
                     <div class="menu_item-box">
                         <div class="menu_icon">
-                            <img class="icon" :src="getImgSrc(item.icon == 'home' ? homeIcon : item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'faq' ? faqIcon : item.icon == 'search' ? searchIcon : item.icon == 'agent' ? agentIcon : item.icon == 'organization' ? organizationIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)" alt="">
+                            <t-icon v-if="item.icon === 'chart-bar'" name="chart-bar" class="icon icon-td" />
+                            <img v-else class="icon" :src="getImgSrc(item.icon == 'home' ? homeIcon : item.icon == 'zhishiku' ? knowledgeIcon : item.icon == 'faq' ? faqIcon : item.icon == 'search' ? searchIcon : item.icon == 'agent' ? agentIcon : item.icon == 'organization' ? organizationIcon : item.icon == 'logout' ? logoutIcon : item.icon == 'setting' ? settingIcon : prefixIcon)" alt="">
                         </div>
                         <template v-if="!uiStore.sidebarCollapsed">
                             <span class="menu_title" :title="item.title">{{ item.title }}</span>
@@ -229,6 +230,8 @@ const isMenuItemActive = (itemPath: string): boolean => {
             return currentRoute === 'agentList';
         case 'organizations':
             return currentRoute === 'organizationList';
+        case 'usage-audit':
+            return currentRoute === 'usageAudit';
         case 'creatChat':
             return currentRoute === 'kbCreatChat' || currentRoute === 'globalCreatChat';
         default:
@@ -256,13 +259,13 @@ const getIconActiveState = (itemPath: string) => {
 // 分离上下两部分菜单
 const topMenuItems = computed<MenuItem[]>(() => {
     return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) =>
-        item.path === 'home' || item.path === 'knowledge-bases' || item.path === 'faq' || item.path === 'knowledge-search' || item.path === 'agents' || item.path === 'organizations' || item.path === 'creatChat'
+        item.path === 'home' || item.path === 'knowledge-bases' || item.path === 'faq' || item.path === 'knowledge-search' || item.path === 'agents' || item.path === 'organizations' || item.path === 'usage-audit' || item.path === 'creatChat'
     );
 });
 
 const bottomMenuItems = computed<MenuItem[]>(() => {
     return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => {
-        if (item.path === 'home' || item.path === 'knowledge-bases' || item.path === 'faq' || item.path === 'knowledge-search' || item.path === 'organizations' || item.path === 'creatChat') {
+        if (item.path === 'home' || item.path === 'knowledge-bases' || item.path === 'faq' || item.path === 'knowledge-search' || item.path === 'organizations' || item.path === 'usage-audit' || item.path === 'creatChat') {
             return false;
         }
         if (item.path === 'settings' && !authStore.canAccessAllTenants) {
@@ -658,6 +661,8 @@ const handleMenuClick = async (path: string) => {
     } else if (path === 'organizations') {
         // 组织菜单项：跳转到组织列表
         router.push('/platform/organizations')
+    } else if (path === 'usage-audit') {
+        router.push('/platform/usage-audit')
     } else if (path === 'settings') {
         if (!authStore.canAccessAllTenants) {
             return
@@ -970,6 +975,11 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
             width: 20px;
             height: 20px;
             overflow: hidden;
+        }
+
+        .icon-td {
+            font-size: 20px;
+            color: var(--td-text-color-secondary);
         }
     }
 

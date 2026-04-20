@@ -62,7 +62,8 @@
         </div>
         <div class="card-header">
           <div class="card-header-left">
-            <div v-if="agent.is_builtin" class="builtin-avatar" :class="agent.config?.agent_mode === 'smart-reasoning' ? 'agent' : 'normal'">
+            <div v-if="agent.is_builtin && agent.avatar" class="builtin-avatar agent-emoji">{{ agent.avatar }}</div>
+            <div v-else-if="agent.is_builtin" class="builtin-avatar" :class="agent.config?.agent_mode === 'smart-reasoning' ? 'agent' : 'normal'">
               <t-icon :name="agent.config?.agent_mode === 'smart-reasoning' ? 'control-platform' : 'chat'" size="18px" />
             </div>
             <div v-else-if="agent.avatar" class="builtin-avatar agent-emoji">{{ agent.avatar }}</div>
@@ -174,17 +175,26 @@
 
     <!-- 我的智能体 -->
     <div v-if="spaceSelection === 'mine' && agents.length > 0" class="agent-card-wrap">
-      <div 
-        v-for="agent in agents" 
-        :key="agent.id" 
-        class="agent-card"
-        :class="{ 
-          'is-builtin': agent.is_builtin,
-          'agent-mode-normal': agent.config?.agent_mode === 'quick-answer',
-          'agent-mode-agent': agent.config?.agent_mode === 'smart-reasoning'
-        }"
-        @click="handleCardClick(agent)"
-      >
+      <template v-for="(agent, idx) in mineAgentsSorted" :key="agent.id">
+        <!-- 全宽分组标题：平台内置 -->
+        <div v-if="agent.is_builtin && (idx === 0 || !mineAgentsSorted[idx-1].is_builtin)" class="agent-section-divider">
+          <t-icon name="lock-on" size="12px" />
+          <span>{{ $t('agent.sectionBuiltin') }}</span>
+        </div>
+        <!-- 全宽分组标题：我的（仅当前面有内置 agent 时显示） -->
+        <div v-if="!agent.is_builtin && idx > 0 && mineAgentsSorted[idx-1].is_builtin" class="agent-section-divider">
+          <t-icon name="user" size="12px" />
+          <span>{{ $t('agent.sectionMine') }}</span>
+        </div>
+        <div
+          class="agent-card"
+          :class="{
+            'is-builtin': agent.is_builtin,
+            'agent-mode-normal': agent.config?.agent_mode === 'quick-answer',
+            'agent-mode-agent': agent.config?.agent_mode === 'smart-reasoning'
+          }"
+          @click="handleCardClick(agent)"
+        >
         <!-- 装饰星星 -->
         <div class="card-decoration">
           <svg class="star-icon" width="24" height="24" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -198,8 +208,9 @@
         <!-- 卡片头部 -->
         <div class="card-header">
           <div class="card-header-left">
-            <!-- 内置智能体使用简洁图标 -->
-            <div v-if="agent.is_builtin" class="builtin-avatar" :class="agent.config?.agent_mode === 'smart-reasoning' ? 'agent' : 'normal'">
+            <!-- 内置智能体：有 emoji avatar 优先用 emoji，否则用图标 -->
+            <div v-if="agent.is_builtin && agent.avatar" class="builtin-avatar agent-emoji">{{ agent.avatar }}</div>
+            <div v-else-if="agent.is_builtin" class="builtin-avatar" :class="agent.config?.agent_mode === 'smart-reasoning' ? 'agent' : 'normal'">
               <t-icon :name="agent.config?.agent_mode === 'smart-reasoning' ? 'control-platform' : 'chat'" size="18px" />
             </div>
             <div v-else-if="agent.avatar" class="builtin-avatar agent-emoji">{{ agent.avatar }}</div>
@@ -298,8 +309,9 @@
             <span>{{ $t('agent.type.custom') }}</span>
           </div>
         </div>
-      </div>
-    </div>
+        </div><!-- /.agent-card -->
+      </template>
+    </div><!-- /.agent-card-wrap -->
 
     <!-- 按空间筛选：该空间内全部智能体（含我共享的） -->
     <div v-if="spaceSelectionOrgId && spaceAgentsLoading" class="agent-list-main-loading">
@@ -516,12 +528,20 @@
       </div>
     </Transition>
 
+    <!-- 模板选择器 -->
+    <AgentTemplateSelector
+      :visible="templateSelectorVisible"
+      @cancel="templateSelectorVisible = false"
+      @select="handleTemplateSelect"
+    />
+
     <!-- 智能体编辑器弹窗 -->
-    <AgentEditorModal 
+    <AgentEditorModal
       :visible="editorVisible"
       :mode="editorMode"
       :agent="editingAgent"
       :initialSection="editorInitialSection"
+      :templateConfig="editorTemplateConfig"
       @update:visible="editorVisible = $event"
       @success="handleEditorSuccess"
     />
@@ -542,6 +562,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useMenuStore } from '@/stores/menu'
 import type { SharedAgentInfo, OrganizationSharedAgentItem } from '@/api/organization'
 import AgentEditorModal from './AgentEditorModal.vue'
+import AgentTemplateSelector from './AgentTemplateSelector.vue'
 import AgentAvatar from '@/components/AgentAvatar.vue'
 import ListSpaceSidebar from '@/components/ListSpaceSidebar.vue'
 
@@ -562,6 +583,10 @@ type DisplayAgent = (AgentWithUI & { isMine: true }) | (CustomAgent & { isMine: 
 // 左侧空间选择：我的 / 空间 ID（已去掉「全部」）
 const spaceSelection = ref<'all' | 'mine' | string>('mine')
 const agents = ref<AgentWithUI[]>([])
+const builtinAgentsList = computed(() => agents.value.filter(a => a.is_builtin))
+const customAgentsList = computed(() => agents.value.filter(a => !a.is_builtin))
+// 我的视图：内置 agent 排前，自定义排后
+const mineAgentsSorted = computed(() => [...builtinAgentsList.value, ...customAgentsList.value])
 const sharedAgents = computed<SharedAgentInfo[]>(() => orgStore.sharedAgents || [])
 const allAgentsCount = computed(() => agents.value.length + sharedAgents.value.length)
 
@@ -652,6 +677,8 @@ const editorVisible = ref(false)
 const editorMode = ref<'create' | 'edit'>('create')
 const editingAgent = ref<CustomAgent | null>(null)
 const editorInitialSection = ref<string>('basic')
+const editorTemplateConfig = ref<Partial<CustomAgent> | null>(null)
+const templateSelectorVisible = ref(false)
 /** 当前打开三点菜单的卡片 agent.id（用于受控弹出层，避免 computed 项无持久引用导致菜单不响应） */
 const openMoreAgentId = ref<string | null>(null)
 
@@ -909,15 +936,22 @@ const formatDate = (dateStr: string) => {
 }
 
 // 暴露创建方法供外部调用
-const openCreateModal = () => {
+const openCreateModal = (template: Partial<CustomAgent> | null = null) => {
   editingAgent.value = null
   editorMode.value = 'create'
+  editorTemplateConfig.value = template
   editorVisible.value = true
 }
 
-// 创建智能体
+// 创建智能体：先显示模板选择器
 const handleCreateAgent = () => {
-  openCreateModal()
+  templateSelectorVisible.value = true
+}
+
+// 模板选择完成后打开编辑器
+const handleTemplateSelect = (template: Partial<CustomAgent> | null) => {
+  templateSelectorVisible.value = false
+  openCreateModal(template)
 }
 
 defineExpose({
@@ -1184,6 +1218,18 @@ defineExpose({
   display: grid;
   gap: 20px;
   grid-template-columns: 1fr;
+}
+
+.agent-section-divider {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--td-text-color-secondary);
+  padding: 4px 0 0;
+  margin-bottom: -8px;
 }
 
 /* 与知识库列表卡片统一尺寸：160px 高、18px 20px 内边距、12px 圆角 */

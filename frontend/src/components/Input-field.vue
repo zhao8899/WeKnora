@@ -670,9 +670,14 @@ const selectedModel = computed(() => {
   return availableModels.value.find(model => model.id === selectedModelId.value);
 });
 
-// 模型展示名：本租户列表中有则用名称；若为共享助手且其 model_id 不在本租户列表中则显示“共享问答助手配置的模型”
+// 模型展示名：区分平台内置模型、租户自有模型、共享助手模型
 const selectedModelDisplayName = computed(() => {
-  if (selectedModel.value) return selectedModel.value.name;
+  if (selectedModel.value) {
+    if (selectedModel.value.is_builtin) {
+      return t('input.platformModel', { name: selectedModel.value.name });
+    }
+    return selectedModel.value.name;
+  }
   if (!selectedModelId.value) return t('input.notConfigured');
   const isSharedAgent = !!settingsStore.selectedAgentSourceTenantId;
   const modelFromAgent = agentModelId.value && agentModelId.value === selectedModelId.value;
@@ -1643,26 +1648,15 @@ const handleGoToAgentSettings = (section?: string) => {
 const getBuiltinAgentNotReadyReasons = (agent: CustomAgent, isAgentMode: boolean): string[] => {
   const reasons: string[] = []
   const config = agent.config || {}
-  
-  // 检查对话模型（Summary Model）
-  if (!config.model_id || config.model_id.trim() === '') {
-    reasons.push(t('input.customAgentMissingSummaryModel'))
-  }
-  
-  // 检查重排模型（Rerank Model）- 如果使用知识库则需要
-  if (config.kb_selection_mode !== 'none') {
-    if (!config.rerank_model_id || config.rerank_model_id.trim() === '') {
-      reasons.push(t('input.customAgentMissingRerankModel'))
-    }
-  }
-  
-  // 智能推理模式还需要检查允许的工具
+
+  // 内置 Agent 的 model_id 和 rerank_model_id 为空时后端会自动用平台默认模型，无需前端拦截。
+  // 只需检查智能推理模式是否配置了 allowed_tools（由 YAML 驱动，理论上始终存在）。
   if (isAgentMode) {
     if (!config.allowed_tools || config.allowed_tools.length === 0) {
       reasons.push(t('input.agentMissingAllowedTools'))
     }
   }
-  
+
   return reasons
 }
 

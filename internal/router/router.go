@@ -62,6 +62,7 @@ type RouterParams struct {
 	OrganizationHandler   *handler.OrganizationHandler
 	IMHandler             *handler.IMHandler
 	DataSourceHandler     *handler.DataSourceHandler
+	UsageHandler          *handler.UsageHandler
 }
 
 // NewRouter 创建新的路由
@@ -144,6 +145,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterOrganizationRoutes(v1, params.OrganizationHandler)
 		RegisterIMChannelRoutes(v1, params.IMHandler)
 		RegisterDataSourceRoutes(v1, params.DataSourceHandler)
+		RegisterUsageRoutes(v1, params.UsageHandler)
 	}
 
 	return r
@@ -302,6 +304,8 @@ func RegisterMessageRoutes(r *gin.RouterGroup, handler *handler.MessageHandler) 
 		messages.GET("/:session_id/load", handler.LoadMessages)
 		// 删除消息
 		messages.DELETE("/:session_id/:id", handler.DeleteMessage)
+		// 消息质量反馈
+		messages.POST("/:session_id/:id/feedback", handler.FeedbackMessage)
 	}
 }
 
@@ -794,5 +798,14 @@ func RegisterDataSourceRoutes(r *gin.RouterGroup, handler *handler.DataSourceHan
 		// Sync logs
 		ds.GET("/:id/logs", handler.GetSyncLogs)
 		ds.GET("/logs/:log_id", handler.GetSyncLog)
+	}
+}
+
+// RegisterUsageRoutes registers usage audit routes
+func RegisterUsageRoutes(r *gin.RouterGroup, h *handler.UsageHandler) {
+	usage := r.Group("/usage")
+	{
+		usage.GET("/stats", h.GetUsageStats)
+		usage.GET("/daily-trend", h.GetDailyTrend)
 	}
 }

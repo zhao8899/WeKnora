@@ -57,6 +57,9 @@ type MessageService interface {
 
 	// GetChatHistoryKBStats returns statistics about the chat history knowledge base (indexed message count, etc.)
 	GetChatHistoryKBStats(ctx context.Context) (*types.ChatHistoryKBStats, error)
+
+	// UpdateMessageFeedback sets the user quality feedback ("like" or "dislike") on an assistant message.
+	UpdateMessageFeedback(ctx context.Context, sessionID, messageID, feedback string) error
 }
 
 // MessageRepository defines the message repository interface
@@ -95,4 +98,7 @@ type MessageRepository interface {
 	GetKnowledgeIDsBySessionID(ctx context.Context, sessionID string) ([]string, error)
 	// UpdateMessageKnowledgeID updates the knowledge_id field for a message
 	UpdateMessageKnowledgeID(ctx context.Context, messageID string, knowledgeID string) error
+
+	// UpdateMessageFeedback updates only the feedback column for a message
+	UpdateMessageFeedback(ctx context.Context, sessionID, messageID, feedback string) error
 }

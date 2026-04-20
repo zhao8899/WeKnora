@@ -212,6 +212,47 @@ func (h *MessageHandler) SearchMessages(c *gin.Context) {
 	})
 }
 
+// FeedbackMessageRequest defines the request body for message feedback
+type FeedbackMessageRequest struct {
+	// Feedback value: "like" or "dislike"
+	Feedback string `json:"feedback" binding:"required,oneof=like dislike"`
+}
+
+// FeedbackMessage godoc
+// @Summary      提交消息质量反馈
+// @Description  对指定 AI 回复提交点赞或踩的质量反馈
+// @Tags         消息
+// @Accept       json
+// @Produce      json
+// @Param        session_id  path      string                  true  "会话ID"
+// @Param        id          path      string                  true  "消息ID"
+// @Param        request     body      FeedbackMessageRequest  true  "反馈内容"
+// @Success      200         {object}  map[string]interface{}  "成功"
+// @Failure      400         {object}  errors.AppError         "参数错误"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /messages/{session_id}/{id}/feedback [post]
+func (h *MessageHandler) FeedbackMessage(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	sessionID := secutils.SanitizeForLog(c.Param("session_id"))
+	messageID := secutils.SanitizeForLog(c.Param("id"))
+
+	var req FeedbackMessageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
+	if err := h.MessageService.UpdateMessageFeedback(ctx, sessionID, messageID, req.Feedback); err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
 // SearchMessagesRequest defines the request structure for searching messages
 type SearchMessagesRequest struct {
 	// Query text for search
