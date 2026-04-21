@@ -23,10 +23,12 @@ const dataSources = ref<DataSource[]>([])
 const loading = ref(false)
 const editorVisible = ref(false)
 const editingDs = ref<DataSource | null>(null)
+const editorFocusHint = ref('')
 const logsVisible = ref(false)
 const logsDsId = ref('')
 const logsDsName = ref('')
 const pollTimer = ref<number | null>(null)
+const expandedPreviewId = ref('')
 
 function stopPolling() {
   if (pollTimer.value !== null) {
@@ -64,11 +66,24 @@ async function loadList(silent = false) {
 
 function openCreate() {
   editingDs.value = null
+  editorFocusHint.value = ''
   editorVisible.value = true
 }
 
-function openEdit(ds: DataSource) {
+function resolveEditorFocusHint(ds: DataSource) {
+  const key = remediationKey(ds)
+  if (key === 'storage') return 'storage'
+  if (key === 'feeds') return 'feed_urls'
+  if (key === 'pages') return 'urls'
+  if (key === 'auth' || key === 'config') return 'primary'
+  if (key === 'format' && ds.type === 'rss') return 'feed_urls'
+  if (key === 'format' && ds.type === 'web_crawler') return 'urls'
+  return ''
+}
+
+function openEdit(ds: DataSource, focusHint = '') {
   editingDs.value = ds
+  editorFocusHint.value = focusHint
   editorVisible.value = true
 }
 
@@ -76,6 +91,10 @@ function openLogs(ds: DataSource) {
   logsDsId.value = ds.id
   logsDsName.value = ds.name
   logsVisible.value = true
+}
+
+function togglePreview(ds: DataSource) {
+  expandedPreviewId.value = expandedPreviewId.value === ds.id ? '' : ds.id
 }
 
 function handleDelete(ds: DataSource) {
@@ -193,6 +212,214 @@ function isSyncRunning(ds: DataSource) {
   return ds.latest_sync_log?.status === 'running'
 }
 
+function getSettingString(ds: DataSource, key: string) {
+  const value = ds.config?.settings?.[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function getSettingList(ds: DataSource, key: string) {
+  const value = ds.config?.settings?.[key]
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+  }
+  if (typeof value === 'string' && value.trim()) {
+    return [value.trim()]
+  }
+  return []
+}
+
+function sourceSummary(ds: DataSource) {
+  if (ds.type === 'rss') {
+    const feeds = getSettingList(ds, 'feed_urls')
+    return feeds.length > 0
+      ? t('datasource.summary.rssFeeds', { count: feeds.length })
+      : t('datasource.summary.notConfigured')
+  }
+
+  if (ds.type === 'web_crawler') {
+    const urls = getSettingList(ds, 'urls')
+    const sitemap = getSettingString(ds, 'sitemap_url')
+    if (urls.length > 0 && sitemap) {
+      return t('datasource.summary.webMixed', { count: urls.length })
+    }
+    if (urls.length > 0) {
+      return t('datasource.summary.webUrls', { count: urls.length })
+    }
+    if (sitemap) {
+      return t('datasource.summary.webSitemap')
+    }
+    return t('datasource.summary.notConfigured')
+  }
+
+  const resourceCount = Array.isArray(ds.config?.resource_ids) ? ds.config.resource_ids.length : 0
+  if (resourceCount > 0) {
+    return t('datasource.summary.resources', { count: resourceCount })
+  }
+  return t('datasource.summary.notConfigured')
+}
+
+function latestFailureReason(ds: DataSource) {
+  if (ds.error_message) {
+    return ds.error_message
+  }
+  const log = ds.latest_sync_log
+  if (!log) {
+    return ''
+  }
+  if (log.error_message) {
+    return log.error_message
+  }
+  if (Array.isArray(log.result?.errors) && log.result.errors.length > 0) {
+    return log.result.errors[0]
+  }
+  return ''
+}
+
+function normalizedFailureReason(ds: DataSource) {
+  return latestFailureReason(ds).toLowerCase()
+}
+
+function remediationKey(ds: DataSource) {
+  const msg = normalizedFailureReason(ds)
+  if (!msg) return ''
+  if (msg.includes('storage engine') || msg.includes('storage provider') || msg.includes('storage')) {
+    return 'storage'
+  }
+  if (msg.includes('feed_urls is required') || msg.includes('page url') || msg.includes('urls is required') || msg.includes('sitemap')) {
+    return ds.type === 'rss' ? 'feeds' : 'pages'
+  }
+  if (msg.includes('403') || msg.includes('401') || msg.includes('forbidden') || msg.includes('unauthorized') || msg.includes('access denied')) {
+    return 'auth'
+  }
+  if (msg.includes('404') || msg.includes('not found') || msg.includes('nosuchbucket')) {
+    return 'missing'
+  }
+  if (msg.includes('timeout') || msg.includes('deadline exceeded') || msg.includes('i/o timeout') || msg.includes('connection reset')) {
+    return 'network'
+  }
+  if (msg.includes('unsupported feed format') || msg.includes('invalid feed') || msg.includes('xml')) {
+    return 'format'
+  }
+  if (msg.includes('invalid') || msg.includes('validate') || msg.includes('required')) {
+    return 'config'
+  }
+  return 'retry'
+}
+
+function issueKind(ds: DataSource): 'config' | 'sync' | 'none' {
+  if (ds.status === 'error' || !!ds.error_message) {
+    return 'config'
+  }
+  if (ds.latest_sync_log?.status === 'failed' || ds.latest_sync_log?.status === 'partial') {
+    return 'sync'
+  }
+  return 'none'
+}
+
+function issueLabel(ds: DataSource) {
+  const kind = issueKind(ds)
+  if (kind === 'config') return t('datasource.issue.config')
+  if (kind === 'sync') return t('datasource.issue.sync')
+  return ''
+}
+
+function issueTheme(ds: DataSource): 'danger' | 'warning' | 'default' {
+  const kind = issueKind(ds)
+  if (kind === 'config') return 'danger'
+  if (kind === 'sync') return 'warning'
+  return 'default'
+}
+
+function needsManualAction(ds: DataSource) {
+  return issueKind(ds) !== 'none'
+}
+
+function manualActionTheme(ds: DataSource): 'danger' | 'warning' | 'default' {
+  const key = remediationKey(ds)
+  if (['storage', 'feeds', 'pages', 'auth', 'format', 'config'].includes(key)) {
+    return 'danger'
+  }
+  if (['missing', 'network', 'retry'].includes(key)) {
+    return 'warning'
+  }
+  return 'default'
+}
+
+function manualActionLabel(ds: DataSource) {
+  const key = remediationKey(ds)
+  if (!key) return ''
+  return t(`datasource.manualAction.${key}`)
+}
+
+function manualActionHint(ds: DataSource) {
+  const key = remediationKey(ds)
+  if (!key) return ''
+  return t(`datasource.manualHint.${key}`)
+}
+
+function syncBlockedReason(ds: DataSource) {
+  const key = remediationKey(ds)
+  if (['storage', 'feeds', 'pages', 'auth', 'format', 'config'].includes(key)) {
+    return t(`datasource.syncBlocked.${key}`)
+  }
+  return ''
+}
+
+function canSyncNow(ds: DataSource) {
+  return !syncBlockedReason(ds)
+}
+
+function syncActionLabel(ds: DataSource) {
+  return canSyncNow(ds) ? t('datasource.syncNow') : t('datasource.fixBeforeSync')
+}
+
+function handlePrimaryAction(ds: DataSource) {
+  if (canSyncNow(ds)) {
+    handleSync(ds)
+    return
+  }
+  openEdit(ds, resolveEditorFocusHint(ds))
+}
+
+function truncationSafeText(text: string, limit = 140) {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= limit) {
+    return normalized
+  }
+  return `${normalized.slice(0, limit)}...`
+}
+
+function isPreviewOpen(ds: DataSource) {
+  return expandedPreviewId.value === ds.id
+}
+
+function previewMetricItems(ds: DataSource) {
+  const log = ds.latest_sync_log
+  if (!log) return []
+  return [
+    { key: 'created', value: log.items_created },
+    { key: 'updated', value: log.items_updated },
+    { key: 'deleted', value: log.items_deleted },
+    { key: 'skipped', value: log.items_skipped },
+    { key: 'failed', value: log.items_failed },
+  ]
+}
+
+function previewErrorList(ds: DataSource) {
+  const log = ds.latest_sync_log
+  if (!log) return []
+  if (Array.isArray(log.result?.errors) && log.result.errors.length > 0) {
+    return log.result.errors.filter(Boolean).slice(0, 3)
+  }
+  if (log.error_message) {
+    return [log.error_message]
+  }
+  if (ds.error_message) {
+    return [ds.error_message]
+  }
+  return []
+}
+
 function onEditorSaved() {
   editorVisible.value = false
   loadList()
@@ -243,16 +470,16 @@ onBeforeUnmount(stopPolling)
           </div>
           
           <div class="ds-card-actions">
-            <t-tooltip :content="isSyncRunning(ds) ? t('datasource.logStatus.running') : t('datasource.syncNow')">
+            <t-tooltip :content="isSyncRunning(ds) ? t('datasource.logStatus.running') : (syncBlockedReason(ds) || syncActionLabel(ds))">
               <t-button
                 size="small"
                 variant="text"
-                theme="primary"
+                :theme="canSyncNow(ds) ? 'primary' : 'warning'"
                 :disabled="isSyncRunning(ds)"
-                @click="handleSync(ds)"
+                @click="handlePrimaryAction(ds)"
               >
                 <template #icon>
-                  <t-icon name="refresh" :class="{ 'ds-icon-spin': isSyncRunning(ds) }" />
+                  <t-icon :name="canSyncNow(ds) ? 'refresh' : 'edit-1'" :class="{ 'ds-icon-spin': isSyncRunning(ds) }" />
                 </template>
               </t-button>
             </t-tooltip>
@@ -320,9 +547,82 @@ onBeforeUnmount(stopPolling)
           </div>
         </div>
 
-        <div v-if="ds.error_message" class="ds-card-error">
-          <t-icon name="error-circle-filled" size="16px" />
-          <span>{{ ds.error_message }}</span>
+        <div class="ds-card-meta">
+          <div class="ds-meta-row">
+            <span class="ds-meta-label">{{ t('datasource.summaryLabel') }}</span>
+            <span class="ds-meta-value">{{ sourceSummary(ds) }}</span>
+          </div>
+          <div class="ds-meta-row">
+            <span class="ds-meta-label">{{ t('datasource.deletionModeLabel') }}</span>
+            <span class="ds-meta-value">
+              {{ ds.sync_deletions ? t('datasource.deletionMode.sync') : t('datasource.deletionMode.ignore') }}
+            </span>
+          </div>
+        </div>
+
+        <div v-if="ds.latest_sync_log" class="ds-preview-toggle">
+          <t-button size="small" variant="text" theme="primary" @click="togglePreview(ds)">
+            {{ isPreviewOpen(ds) ? t('datasource.hideRunDetails') : t('datasource.showRunDetails') }}
+          </t-button>
+        </div>
+
+        <div v-if="ds.latest_sync_log && isPreviewOpen(ds)" class="ds-sync-preview">
+          <div class="ds-sync-preview-header">
+            <span class="ds-sync-preview-title">{{ t('datasource.latestRunDetails') }}</span>
+            <span class="ds-sync-preview-time">
+              {{ ds.latest_sync_log.finished_at ? new Date(ds.latest_sync_log.finished_at).toLocaleString() : t('datasource.logStatus.running') }}
+            </span>
+          </div>
+
+          <div class="ds-sync-preview-grid">
+            <div v-for="item in previewMetricItems(ds)" :key="item.key" class="ds-preview-metric">
+              <span class="ds-preview-metric-value">{{ item.value }}</span>
+              <span class="ds-preview-metric-label">{{ t(`datasource.logMetric.${item.key}`) }}</span>
+            </div>
+          </div>
+
+          <div class="ds-sync-preview-errors">
+            <div class="ds-sync-preview-subtitle">{{ t('datasource.latestErrors') }}</div>
+            <template v-if="previewErrorList(ds).length > 0">
+              <div
+                v-for="(error, index) in previewErrorList(ds)"
+                :key="`${ds.id}-error-${index}`"
+                class="ds-sync-preview-error"
+                :title="error"
+              >
+                <t-icon name="error-circle-filled" size="14px" />
+                <span>{{ truncationSafeText(error, 220) }}</span>
+              </div>
+            </template>
+            <div v-else class="ds-sync-preview-empty">{{ t('datasource.noRecentErrors') }}</div>
+          </div>
+        </div>
+
+        <div v-if="needsManualAction(ds)" class="ds-manual-action">
+          <div class="ds-manual-action-header">
+            <t-tag size="small" :theme="manualActionTheme(ds)" variant="light-outline">
+              {{ t('datasource.manualActionRequired') }}
+            </t-tag>
+            <span class="ds-manual-action-label">{{ manualActionLabel(ds) }}</span>
+          </div>
+          <div class="ds-manual-action-hint">{{ manualActionHint(ds) }}</div>
+        </div>
+
+        <div v-if="issueKind(ds) !== 'none'" class="ds-card-issue">
+          <div class="ds-issue-header">
+            <t-tag size="small" :theme="issueTheme(ds)" variant="light-outline">
+              {{ issueLabel(ds) }}
+            </t-tag>
+            <t-button size="small" variant="text" theme="primary" @click="openLogs(ds)">
+              {{ t('datasource.viewLogs') }}
+            </t-button>
+          </div>
+          <div class="ds-issue-body">
+            <t-icon name="error-circle-filled" size="16px" />
+            <span :title="latestFailureReason(ds)">
+              {{ truncationSafeText(latestFailureReason(ds)) }}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -338,6 +638,7 @@ onBeforeUnmount(stopPolling)
       v-model:visible="editorVisible"
       :kb-id="kbId"
       :data-source="editingDs"
+      :focus-hint="editorFocusHint"
       @saved="onEditorSaved"
     />
 
@@ -515,6 +816,152 @@ onBeforeUnmount(stopPolling)
   border-top: 1px solid var(--td-border-level-1-color);
 }
 
+.ds-card-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--td-border-level-1-color);
+}
+
+.ds-preview-toggle {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.ds-sync-preview {
+  margin-top: 10px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--td-border-level-1-color);
+  background: linear-gradient(180deg, var(--td-bg-color-container-hover) 0%, var(--td-bg-color-container) 100%);
+}
+
+.ds-sync-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ds-sync-preview-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.ds-sync-preview-time {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+}
+
+.ds-sync-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ds-preview-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--td-bg-color-secondarycontainer);
+}
+
+.ds-preview-metric-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+  line-height: 1;
+}
+
+.ds-preview-metric-label {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+}
+
+.ds-sync-preview-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ds-sync-preview-subtitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--td-text-color-secondary);
+}
+
+.ds-sync-preview-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--td-error-color-6);
+}
+
+.ds-sync-preview-empty {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+}
+
+.ds-manual-action {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--td-bg-color-container-hover);
+  border: 1px dashed var(--td-border-level-2-color);
+}
+
+.ds-manual-action-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ds-manual-action-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.ds-manual-action-hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--td-text-color-secondary);
+}
+
+.ds-meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ds-meta-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--td-text-color-placeholder);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 16px;
+}
+
+.ds-meta-value {
+  font-size: 13px;
+  color: var(--td-text-color-secondary);
+  line-height: 20px;
+  word-break: break-word;
+}
+
 .ds-stat-item {
   display: flex;
   flex-direction: column;
@@ -572,17 +1019,35 @@ onBeforeUnmount(stopPolling)
 }
 
 /* --- Error alert --- */
-.ds-card-error {
-  margin-top: 16px;
-  padding: 10px 14px;
+.ds-card-issue {
+  margin-top: 14px;
+  padding: 12px 14px;
   border-radius: 8px;
-  background: var(--td-error-color-1);
-  color: var(--td-error-color);
-  font-size: 13px;
+  background: var(--td-bg-color-container-hover);
+  border: 1px solid var(--td-border-level-1-color);
+}
+
+.ds-issue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ds-issue-body {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  color: var(--td-text-color-secondary);
+  font-size: 13px;
   line-height: 20px;
+}
+
+.ds-issue-body :deep(.t-icon) {
+  margin-top: 2px;
+  color: var(--td-warning-color);
+  flex-shrink: 0;
 }
 
 /* --- Add card --- */
@@ -625,5 +1090,49 @@ onBeforeUnmount(stopPolling)
 .ds-card-add:hover .ds-card-add-icon {
   background: var(--td-brand-color-light);
   color: var(--td-brand-color);
+}
+
+@media (max-width: 900px) {
+  .ds-card-stats,
+  .ds-card-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .ds-sync-preview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .ds-card {
+    padding: 14px 16px;
+  }
+
+  .ds-card-header {
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .ds-card-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .ds-card-stats,
+  .ds-card-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .ds-sync-preview-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ds-sync-preview-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

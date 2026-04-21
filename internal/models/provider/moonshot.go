@@ -2,6 +2,7 @@ package provider
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -47,4 +48,12 @@ func (p *MoonshotProvider) ValidateConfig(config *Config) error {
 		return fmt.Errorf("model name is required")
 	}
 	return nil
+}
+
+// IsFixedTemperatureModel reports whether the Moonshot/Kimi model only accepts
+// a single temperature value at runtime.
+func IsFixedTemperatureModel(modelName string) bool {
+	lowerName := strings.ToLower(strings.TrimSpace(modelName))
+	return strings.Contains(lowerName, "kimi-k2.6") ||
+		strings.Contains(lowerName, "kimi-k2-6")
 }

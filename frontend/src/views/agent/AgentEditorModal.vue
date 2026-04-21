@@ -294,9 +294,10 @@
                       </div>
                       <div class="setting-control">
                         <div class="slider-wrapper">
-                          <t-slider v-model="formData.config.temperature" :min="0" :max="1" :step="0.1" />
+                          <t-slider v-model="formData.config.temperature" :min="0" :max="1" :step="0.1" @change="handleTemperatureSliderChange" />
                           <span class="slider-value">{{ formData.config.temperature }}</span>
                         </div>
+                        <p v-if="fixedTemperatureValue !== null" class="setting-hint">当前模型仅支持 Temperature = {{ fixedTemperatureValue }}</p>
                       </div>
                     </div>
 
@@ -1224,6 +1225,7 @@ import PromptTemplateSelector from '@/components/PromptTemplateSelector.vue';
 import ModelSelector from '@/components/ModelSelector.vue';
 import AgentShareSettings from '@/components/AgentShareSettings.vue';
 import IMChannelPanel from '@/components/IMChannelPanel.vue';
+import { getFixedTemperatureForModel } from '@/utils/modelCapabilities';
 
 const uiStore = useUIStore();
 const orgStore = useOrganizationStore();
@@ -1246,6 +1248,8 @@ const emit = defineEmits<{
 const currentSection = ref(props.initialSection || 'basic');
 const saving = ref(false);
 const allModels = ref<ModelConfig[]>([]);
+const selectedChatModel = computed(() => allModels.value.find(model => model.id === formData.value.config.model_id) || null);
+const fixedTemperatureValue = computed(() => getFixedTemperatureForModel(selectedChatModel.value));
 const kbOptions = ref<{ label: string; value: string; type?: 'document' | 'faq'; count?: number; shared?: boolean; orgName?: string }[]>([]);
 const mcpOptions = ref<{ label: string; value: string }[]>([]);
 const webSearchProviderList = ref<WebSearchProviderEntity[]>([]);
@@ -1881,6 +1885,15 @@ watch(isAgentMode, (isAgent) => {
 });
 
 // 监听设置弹窗关闭，刷新模型列表
+watch(
+  () => [selectedChatModel.value?.id, allModels.value.length],
+  () => {
+    if (fixedTemperatureValue.value !== null) {
+      formData.value.config.temperature = fixedTemperatureValue.value;
+    }
+  }
+);
+
 watch(() => uiStore.showSettingsModal, async (visible, prevVisible) => {
   // 从设置页面返回时（弹窗关闭），刷新模型列表
   if (prevVisible && !visible && props.visible) {
@@ -2058,6 +2071,16 @@ const loadDependencies = async () => {
 };
 
 // 跳转到模型管理页面添加模型
+const handleTemperatureSliderChange = (value: number) => {
+  if (fixedTemperatureValue.value !== null && value !== fixedTemperatureValue.value) {
+    MessagePlugin.warning(`当前模型仅支持 Temperature = ${fixedTemperatureValue.value}，已自动恢复`)
+    formData.value.config.temperature = fixedTemperatureValue.value
+    return
+  }
+
+  formData.value.config.temperature = value
+}
+
 const handleAddModel = (subSection: string) => {
   uiStore.openSettings('models', subSection);
 };
@@ -3849,5 +3872,11 @@ const handleSave = async () => {
   &:first-of-type {
     padding-top: 0;
   }
+}
+
+.setting-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
 }
 </style>

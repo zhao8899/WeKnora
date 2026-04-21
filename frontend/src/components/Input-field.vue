@@ -1789,6 +1789,17 @@ onBeforeRouteUpdate((to, from, next) => {
 })
 
 defineExpose({
+  prefillQuestion(text: string) {
+    if (!text.trim()) return;
+    query.value = text;
+    nextTick(() => {
+      const textarea = getTextareaEl();
+      if (!textarea) return;
+      textarea.focus();
+      const end = query.value.length;
+      textarea.setSelectionRange(end, end);
+    });
+  },
   triggerSend(text: string) {
     if (!text.trim()) return;
     query.value = text;

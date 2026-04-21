@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/models/rerank"
@@ -16,13 +17,19 @@ import (
 
 // PluginRerank implements reranking functionality for chat pipeline
 type PluginRerank struct {
-	modelService interfaces.ModelService // Service to access rerank models
+	modelService     interfaces.ModelService     // Service to access rerank models
+	knowledgeService interfaces.KnowledgeService // Service to access knowledge metadata
 }
 
 // NewPluginRerank creates a new rerank plugin instance
-func NewPluginRerank(eventManager *EventManager, modelService interfaces.ModelService) *PluginRerank {
+func NewPluginRerank(
+	eventManager *EventManager,
+	modelService interfaces.ModelService,
+	knowledgeService interfaces.KnowledgeService,
+) *PluginRerank {
 	res := &PluginRerank{
-		modelService: modelService,
+		modelService:     modelService,
+		knowledgeService: knowledgeService,
 	}
 	eventManager.Register(res)
 	return res
@@ -138,6 +145,7 @@ func (p *PluginRerank) OnEvent(ctx context.Context,
 	for i := range chatManage.SearchResult {
 		chatManage.SearchResult[i].Metadata = ensureMetadata(chatManage.SearchResult[i].Metadata)
 	}
+	p.injectSourceWeights(ctx, chatManage.TenantID, chatManage.SearchResult)
 	reranked := make([]*types.SearchResult, 0, len(rerankResp)+len(directLoadResults))
 
 	// Process reranked results
@@ -149,7 +157,9 @@ func (p *PluginRerank) OnEvent(ctx context.Context,
 		base := sr.Score
 		sr.Metadata["base_score"] = fmt.Sprintf("%.4f", base)
 		modelScore := rr.RelevanceScore
+		sr.Metadata["model_score"] = fmt.Sprintf("%.4f", modelScore)
 		sr.Score = compositeScore(sr, modelScore, base)
+		sr.Metadata["final_score"] = fmt.Sprintf("%.4f", sr.Score)
 
 		// Apply FAQ score boost if enabled
 		if chatManage.FAQPriorityEnabled && chatManage.FAQScoreBoost > 1.0 &&
@@ -158,6 +168,7 @@ func (p *PluginRerank) OnEvent(ctx context.Context,
 			sr.Score = math.Min(sr.Score*chatManage.FAQScoreBoost, 1.0)
 			sr.Metadata["faq_boosted"] = "true"
 			sr.Metadata["faq_original_score"] = fmt.Sprintf("%.4f", originalScore)
+			sr.Metadata["final_score"] = fmt.Sprintf("%.4f", sr.Score)
 			pipelineInfo(ctx, "Rerank", "faq_boost", map[string]interface{}{
 				"chunk_id":       sr.ID,
 				"original_score": fmt.Sprintf("%.4f", originalScore),
@@ -175,7 +186,9 @@ func (p *PluginRerank) OnEvent(ctx context.Context,
 		sr.Metadata["base_score"] = fmt.Sprintf("%.4f", base)
 		// Assign high model score for direct load items
 		modelScore := 1.0
+		sr.Metadata["model_score"] = fmt.Sprintf("%.4f", modelScore)
 		sr.Score = compositeScore(sr, modelScore, base)
+		sr.Metadata["final_score"] = fmt.Sprintf("%.4f", sr.Score)
 		reranked = append(reranked, sr)
 	}
 	final := applyMMR(ctx, reranked, chatManage, min(len(reranked), max(1, chatManage.RerankTopK)), 0.7)
@@ -185,10 +198,12 @@ func (p *PluginRerank) OnEvent(ctx context.Context,
 	topN := min(3, len(reranked))
 	for i := 0; i < topN; i++ {
 		pipelineInfo(ctx, "Rerank", "composite_top", map[string]interface{}{
-			"rank":        i + 1,
-			"chunk_id":    reranked[i].ID,
-			"base_score":  reranked[i].Metadata["base_score"],
-			"final_score": fmt.Sprintf("%.4f", reranked[i].Score),
+			"rank":          i + 1,
+			"chunk_id":      reranked[i].ID,
+			"base_score":    reranked[i].Metadata["base_score"],
+			"model_score":   reranked[i].Metadata["model_score"],
+			"source_weight": reranked[i].Metadata["source_weight"],
+			"final_score":   reranked[i].Metadata["final_score"],
 		})
 	}
 
@@ -203,6 +218,55 @@ func (p *PluginRerank) OnEvent(ctx context.Context,
 		"filtered_cnt": len(chatManage.RerankResult),
 	})
 	return next()
+}
+
+func (p *PluginRerank) injectSourceWeights(ctx context.Context, tenantID uint64, results []*types.SearchResult) {
+	if p.knowledgeService == nil || tenantID == 0 || len(results) == 0 {
+		return
+	}
+
+	knowledgeIDs := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, result := range results {
+		if result == nil || result.KnowledgeID == "" {
+			continue
+		}
+		if _, ok := seen[result.KnowledgeID]; ok {
+			continue
+		}
+		seen[result.KnowledgeID] = struct{}{}
+		knowledgeIDs = append(knowledgeIDs, result.KnowledgeID)
+	}
+	if len(knowledgeIDs) == 0 {
+		return
+	}
+
+	knowledges, err := p.knowledgeService.GetKnowledgeBatch(ctx, tenantID, knowledgeIDs)
+	if err != nil {
+		pipelineWarn(ctx, "Rerank", "source_weight_fetch_failed", map[string]interface{}{
+			"knowledge_cnt": len(knowledgeIDs),
+			"error":         err.Error(),
+		})
+		return
+	}
+
+	weights := make(map[string]float64, len(knowledges))
+	for _, knowledge := range knowledges {
+		if knowledge == nil || knowledge.ID == "" {
+			continue
+		}
+		weights[knowledge.ID] = knowledge.SourceWeight
+	}
+
+	for _, result := range results {
+		if result == nil || result.KnowledgeID == "" {
+			continue
+		}
+		result.Metadata = ensureMetadata(result.Metadata)
+		if weight, ok := weights[result.KnowledgeID]; ok && weight > 0 {
+			result.Metadata["source_weight"] = fmt.Sprintf("%.4f", weight)
+		}
+	}
 }
 
 // rerank performs the actual reranking operation with given query and passages
@@ -321,11 +385,16 @@ func safeTopScore(results []rerank.RankResult) float64 {
 // compositeScore calculates the composite score for a search result
 func compositeScore(sr *types.SearchResult, modelScore, baseScore float64) float64 {
 	sourceWeight := 1.0
+	if sr != nil && sr.Metadata != nil {
+		if rawWeight := strings.TrimSpace(sr.Metadata["source_weight"]); rawWeight != "" {
+			if parsed, err := strconv.ParseFloat(rawWeight, 64); err == nil && parsed > 0 {
+				sourceWeight = parsed
+			}
+		}
+	}
 	switch strings.ToLower(sr.KnowledgeSource) {
 	case "web_search":
-		sourceWeight = 0.95
-	default:
-		sourceWeight = 1.0
+		sourceWeight *= 0.95
 	}
 	positionPrior := 1.0
 	if sr.StartAt >= 0 {

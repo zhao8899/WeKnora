@@ -803,6 +803,16 @@ watch(
     }
   }
 )
+
+watch(
+  () => uiStore.kbEditorInitialSection,
+  (section) => {
+    if (!props.visible || !section || currentSection.value === section) {
+      return
+    }
+    currentSection.value = section
+  }
+)
 </script>
 
 <style scoped lang="less">

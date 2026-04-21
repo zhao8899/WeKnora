@@ -489,7 +489,7 @@ const sanitizeForDisplay = (text: string): string => {
   if (!text) return text;
   let result = text;
   for (const [name, i18nKey] of Object.entries(TOOL_NAME_KEYS)) {
-    result = result.replaceAll(name, i18n.global.t(i18nKey));
+    result = result.split(name).join(i18n.global.t(i18nKey));
   }
   // Format any remaining mcp_ tool names inline
   result = result.replace(/\bmcp_([a-z0-9_]+)/g, (_match, rest) => {
@@ -597,6 +597,7 @@ interface SessionData {
   isAgentMode?: boolean;
   agentEventStream?: any[];
   knowledge_references?: any[];
+  is_completed?: boolean;
 }
 
 const props = defineProps<{

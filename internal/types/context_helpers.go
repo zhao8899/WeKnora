@@ -36,6 +36,18 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 	return v, ok && v != ""
 }
 
+// UserFromContext extracts the *User from ctx.
+func UserFromContext(ctx context.Context) (*User, bool) {
+	v, ok := ctx.Value(UserContextKey).(*User)
+	return v, ok && v != nil
+}
+
+// IsSuperAdmin returns true when the user in ctx has cross-tenant access (super admin).
+func IsSuperAdmin(ctx context.Context) bool {
+	u, ok := UserFromContext(ctx)
+	return ok && u.CanAccessAllTenants
+}
+
 // SessionTenantIDFromContext extracts the session-owner tenant ID from ctx.
 // Falls back to TenantIDFromContext when the session key is absent.
 func SessionTenantIDFromContext(ctx context.Context) (uint64, bool) {

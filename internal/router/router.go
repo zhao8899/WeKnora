@@ -31,38 +31,40 @@ import (
 type RouterParams struct {
 	dig.In
 
-	Config                *config.Config
-	UserService           interfaces.UserService
-	KBService             interfaces.KnowledgeBaseService
-	KnowledgeService      interfaces.KnowledgeService
-	ChunkService          interfaces.ChunkService
-	SessionService        interfaces.SessionService
-	MessageService        interfaces.MessageService
-	ModelService          interfaces.ModelService
-	EvaluationService     interfaces.EvaluationService
-	KBHandler             *handler.KnowledgeBaseHandler
-	KnowledgeHandler      *handler.KnowledgeHandler
-	TenantHandler         *handler.TenantHandler
-	TenantService         interfaces.TenantService
-	ChunkHandler          *handler.ChunkHandler
-	SessionHandler        *session.Handler
-	MessageHandler        *handler.MessageHandler
-	ModelHandler          *handler.ModelHandler
-	EvaluationHandler     *handler.EvaluationHandler
-	AuthHandler           *handler.AuthHandler
-	InitializationHandler *handler.InitializationHandler
-	SystemHandler         *handler.SystemHandler
-	MCPServiceHandler     *handler.MCPServiceHandler
-	WebSearchHandler              *handler.WebSearchHandler
-	WebSearchProviderHandler      *handler.WebSearchProviderHandler
-	FAQHandler            *handler.FAQHandler
-	TagHandler            *handler.TagHandler
-	CustomAgentHandler    *handler.CustomAgentHandler
-	SkillHandler          *handler.SkillHandler
-	OrganizationHandler   *handler.OrganizationHandler
-	IMHandler             *handler.IMHandler
-	DataSourceHandler     *handler.DataSourceHandler
-	UsageHandler          *handler.UsageHandler
+	Config                   *config.Config
+	UserService              interfaces.UserService
+	KBService                interfaces.KnowledgeBaseService
+	KnowledgeService         interfaces.KnowledgeService
+	ChunkService             interfaces.ChunkService
+	SessionService           interfaces.SessionService
+	MessageService           interfaces.MessageService
+	ModelService             interfaces.ModelService
+	EvaluationService        interfaces.EvaluationService
+	KBHandler                *handler.KnowledgeBaseHandler
+	KnowledgeHandler         *handler.KnowledgeHandler
+	TenantHandler            *handler.TenantHandler
+	TenantService            interfaces.TenantService
+	ChunkHandler             *handler.ChunkHandler
+	SessionHandler           *session.Handler
+	MessageHandler           *handler.MessageHandler
+	ModelHandler             *handler.ModelHandler
+	EvaluationHandler        *handler.EvaluationHandler
+	AuthHandler              *handler.AuthHandler
+	InitializationHandler    *handler.InitializationHandler
+	SystemHandler            *handler.SystemHandler
+	MCPServiceHandler        *handler.MCPServiceHandler
+	WebSearchHandler         *handler.WebSearchHandler
+	WebSearchProviderHandler *handler.WebSearchProviderHandler
+	FAQHandler               *handler.FAQHandler
+	TagHandler               *handler.TagHandler
+	CustomAgentHandler       *handler.CustomAgentHandler
+	SkillHandler             *handler.SkillHandler
+	OrganizationHandler      *handler.OrganizationHandler
+	IMHandler                *handler.IMHandler
+	DataSourceHandler        *handler.DataSourceHandler
+	UsageHandler             *handler.UsageHandler
+	ConfidenceHandler        *handler.ConfidenceHandler
+	AnalyticsHandler         *handler.AnalyticsHandler
 }
 
 // NewRouter 创建新的路由
@@ -146,6 +148,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterIMChannelRoutes(v1, params.IMHandler)
 		RegisterDataSourceRoutes(v1, params.DataSourceHandler)
 		RegisterUsageRoutes(v1, params.UsageHandler)
+		RegisterConfidenceRoutes(v1, params.ConfidenceHandler)
+		RegisterAnalyticsRoutes(v1, params.AnalyticsHandler)
 	}
 
 	return r
@@ -807,5 +811,25 @@ func RegisterUsageRoutes(r *gin.RouterGroup, h *handler.UsageHandler) {
 	{
 		usage.GET("/stats", h.GetUsageStats)
 		usage.GET("/daily-trend", h.GetDailyTrend)
+	}
+}
+
+// RegisterConfidenceRoutes registers answer confidence and source feedback routes.
+func RegisterConfidenceRoutes(r *gin.RouterGroup, h *handler.ConfidenceHandler) {
+	answer := r.Group("/chat/answer")
+	{
+		answer.GET("/:message_id/confidence", h.GetAnswerConfidence)
+		answer.POST("/:message_id/feedback", h.SubmitSourceFeedback)
+	}
+}
+
+// RegisterAnalyticsRoutes registers knowledge health analytics routes.
+func RegisterAnalyticsRoutes(r *gin.RouterGroup, h *handler.AnalyticsHandler) {
+	analytics := r.Group("/analytics")
+	{
+		analytics.GET("/hot-questions", h.GetHotQuestions)
+		analytics.GET("/coverage-gaps", h.GetCoverageGaps)
+		analytics.GET("/stale-documents", h.GetStaleDocuments)
+		analytics.GET("/citation-heatmap", h.GetCitationHeatmap)
 	}
 }

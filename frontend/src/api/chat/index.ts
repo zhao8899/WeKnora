@@ -68,3 +68,11 @@ export async function clearSessionMessages(session_id: string) {
 export async function submitMessageFeedback(session_id: string, message_id: string, feedback: 'like' | 'dislike') {
   return post(`/api/v1/messages/${session_id}/${message_id}/feedback`, { feedback });
 }
+
+export async function getAnswerConfidence(message_id: string) {
+  return get(`/api/v1/chat/answer/${message_id}/confidence`);
+}
+
+export async function submitSourceFeedback(message_id: string, evidence_id: string, feedback: 'up' | 'down' | 'expired', comment = '') {
+  return post(`/api/v1/chat/answer/${message_id}/feedback`, { evidence_id, feedback, comment });
+}

@@ -2589,6 +2589,214 @@ func (s *knowledgeService) UpdateManualKnowledge(ctx context.Context,
 	return existing, nil
 }
 
+// ReplaceSyncedKnowledge updates an existing datasource-synced knowledge item in place
+// so downstream evidence and analytics references keep the same knowledge ID.
+func (s *knowledgeService) ReplaceSyncedKnowledge(
+	ctx context.Context,
+	knowledgeID string,
+	file *multipart.FileHeader,
+	sourceURL string,
+	title string,
+	fileName string,
+	metadata map[string]string,
+	tagID string,
+	channel string,
+) (*types.Knowledge, error) {
+	logger.Info(ctx, "Start replacing synced knowledge content")
+
+	tenantID := ctx.Value(types.TenantIDContextKey).(uint64)
+	existing, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to load existing synced knowledge: %v", err)
+		return nil, err
+	}
+
+	kb, err := s.kbService.GetKnowledgeBaseByID(ctx, existing.KnowledgeBaseID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to get knowledge base for synced replace: %v", err)
+		return nil, err
+	}
+	if err := checkStorageEngineConfigured(ctx, kb); err != nil {
+		return nil, err
+	}
+
+	var metadataJSON types.JSON
+	if metadata != nil {
+		metadataBytes, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, err
+		}
+		metadataJSON = types.JSON(metadataBytes)
+	}
+
+	enableMultimodel := kb.IsMultimodalEnabled()
+	enableQuestionGeneration := false
+	questionCount := 3
+	if kb.QuestionGenerationConfig != nil && kb.QuestionGenerationConfig.Enabled {
+		enableQuestionGeneration = true
+		if kb.QuestionGenerationConfig.QuestionCount > 0 {
+			questionCount = kb.QuestionGenerationConfig.QuestionCount
+		}
+	}
+
+	updatedAt := time.Now()
+	existing.TagID = tagID
+	existing.Channel = defaultChannel(channel)
+	existing.Metadata = metadataJSON
+	existing.Description = ""
+	existing.ErrorMessage = ""
+	existing.EnableStatus = "disabled"
+	existing.ParseStatus = "pending"
+	existing.ProcessedAt = nil
+	existing.EmbeddingModelID = kb.EmbeddingModelID
+	existing.UpdatedAt = updatedAt
+	if sourceURL != "" {
+		existing.Source = sourceURL
+	}
+
+	if file != nil {
+		resolvedName := file.Filename
+		if fileName != "" {
+			resolvedName = fileName
+		}
+		if !isValidFileType(resolvedName) {
+			return nil, ErrInvalidFileType
+		}
+
+		hash, err := calculateFileHash(file)
+		if err != nil {
+			return nil, err
+		}
+
+		newPath, err := s.resolveFileService(ctx, kb).SaveFile(ctx, file, existing.TenantID, existing.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := s.cleanupKnowledgeResources(ctx, existing); err != nil {
+			if delErr := s.resolveFileService(ctx, kb).DeleteFile(ctx, newPath); delErr != nil {
+				logger.Warnf(ctx, "failed to cleanup staged synced file %s after replace error: %v", newPath, delErr)
+			}
+			return nil, err
+		}
+
+		existing.Type = "file"
+		existing.Title = resolvedName
+		existing.FileName = resolvedName
+		existing.FileType = getFileType(resolvedName)
+		existing.FileSize = file.Size
+		existing.FileHash = hash
+		existing.FilePath = newPath
+
+		if err := s.repo.UpdateKnowledge(ctx, existing); err != nil {
+			return nil, err
+		}
+
+		taskPayload := types.DocumentProcessPayload{
+			TenantID:                 tenantID,
+			KnowledgeID:              existing.ID,
+			KnowledgeBaseID:          existing.KnowledgeBaseID,
+			FilePath:                 existing.FilePath,
+			FileName:                 existing.FileName,
+			FileType:                 getFileType(existing.FileName),
+			EnableMultimodel:         enableMultimodel,
+			EnableQuestionGeneration: enableQuestionGeneration,
+			QuestionCount:            questionCount,
+		}
+		payloadBytes, err := json.Marshal(taskPayload)
+		if err != nil {
+			return existing, nil
+		}
+		task := asynq.NewTask(types.TypeDocumentProcess, payloadBytes, asynq.Queue("default"), asynq.MaxRetry(3))
+		if _, err := s.task.Enqueue(task); err != nil {
+			logger.Errorf(ctx, "Failed to enqueue synced file replace task: %v", err)
+			return existing, nil
+		}
+
+		if slices.Contains([]string{"csv", "xlsx", "xls"}, getFileType(existing.FileName)) {
+			NewDataTableSummaryTask(ctx, s.task, tenantID, existing.ID, kb.SummaryModelID, kb.EmbeddingModelID)
+		}
+
+		return existing, nil
+	}
+
+	if err := s.cleanupKnowledgeResources(ctx, existing); err != nil {
+		return nil, err
+	}
+
+	if isFileURL(sourceURL, fileName, "") {
+		existing.Type = "file_url"
+		existing.Title = title
+		if fileName == "" {
+			fileName = extractFileNameFromURL(sourceURL)
+		}
+		existing.FileName = fileName
+		existing.FileType = getFileType(fileName)
+		existing.FileHash = calculateStr(sourceURL)
+		existing.FilePath = ""
+		existing.FileSize = 0
+
+		if err := s.repo.UpdateKnowledge(ctx, existing); err != nil {
+			return nil, err
+		}
+
+		taskPayload := types.DocumentProcessPayload{
+			TenantID:                 tenantID,
+			KnowledgeID:              existing.ID,
+			KnowledgeBaseID:          existing.KnowledgeBaseID,
+			FileURL:                  existing.Source,
+			FileName:                 existing.FileName,
+			FileType:                 existing.FileType,
+			EnableMultimodel:         enableMultimodel,
+			EnableQuestionGeneration: enableQuestionGeneration,
+			QuestionCount:            questionCount,
+		}
+		payloadBytes, err := json.Marshal(taskPayload)
+		if err != nil {
+			return existing, nil
+		}
+		task := asynq.NewTask(types.TypeDocumentProcess, payloadBytes, asynq.Queue("default"), asynq.MaxRetry(3))
+		if _, err := s.task.Enqueue(task); err != nil {
+			logger.Errorf(ctx, "Failed to enqueue synced file URL replace task: %v", err)
+			return existing, nil
+		}
+		return existing, nil
+	}
+
+	existing.Type = "url"
+	existing.Title = title
+	existing.FileName = ""
+	existing.FileType = "html"
+	existing.FileSize = 0
+	existing.FileHash = calculateStr(sourceURL)
+	existing.FilePath = ""
+
+	if err := s.repo.UpdateKnowledge(ctx, existing); err != nil {
+		return nil, err
+	}
+
+	taskPayload := types.DocumentProcessPayload{
+		TenantID:                 tenantID,
+		KnowledgeID:              existing.ID,
+		KnowledgeBaseID:          existing.KnowledgeBaseID,
+		URL:                      existing.Source,
+		EnableMultimodel:         enableMultimodel,
+		EnableQuestionGeneration: enableQuestionGeneration,
+		QuestionCount:            questionCount,
+	}
+	payloadBytes, err := json.Marshal(taskPayload)
+	if err != nil {
+		return existing, nil
+	}
+	task := asynq.NewTask(types.TypeDocumentProcess, payloadBytes, asynq.Queue("default"), asynq.MaxRetry(3))
+	if _, err := s.task.Enqueue(task); err != nil {
+		logger.Errorf(ctx, "Failed to enqueue synced URL replace task: %v", err)
+		return existing, nil
+	}
+
+	return existing, nil
+}
+
 // enqueueManualProcessing enqueues a manual:process Asynq task for async cleanup + re-indexing.
 func (s *knowledgeService) enqueueManualProcessing(ctx context.Context,
 	knowledge *types.Knowledge, content string, needCleanup bool,

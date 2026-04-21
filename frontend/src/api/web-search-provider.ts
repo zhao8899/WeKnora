@@ -23,6 +23,7 @@ export interface WebSearchProviderTypeInfo {
   name: string
   requires_api_key: boolean
   requires_engine_id?: boolean
+  free?: boolean
   description?: string
   docs_url?: string
 }

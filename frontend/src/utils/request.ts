@@ -210,44 +210,44 @@ instance.interceptors.response.use(
   }
 );
 
-export function get(url: string) {
-  return instance.get(url);
+export function get<T = any>(url: string): Promise<T> {
+  return instance.get(url) as Promise<T>;
 }
 
-export async function getDown(url: string) {
-  let res = await instance.get(url, {
+export async function getDown<T = Blob>(url: string): Promise<T> {
+  const res = await instance.get(url, {
     responseType: "blob",
   });
-  return res
+  return res as T;
 }
 
-export function postUpload(url: string, data = {}, onUploadProgress?: (progressEvent: any) => void) {
+export function postUpload<T = any>(url: string, data = {}, onUploadProgress?: (progressEvent: any) => void): Promise<T> {
   return instance.post(url, data, {
     headers: {
       "Content-Type": "multipart/form-data",
       "X-Request-ID": `${generateRandomString(12)}`,
     },
     onUploadProgress,
-  });
+  }) as Promise<T>;
 }
 
-export function postChat(url: string, data = {}) {
+export function postChat<T = any>(url: string, data = {}): Promise<T> {
   return instance.post(url, data, {
     headers: {
       "Content-Type": "text/event-stream;charset=utf-8",
       "X-Request-ID": `${generateRandomString(12)}`,
     },
-  });
+  }) as Promise<T>;
 }
 
-export function post(url: string, data = {}, config?: any) {
-  return instance.post(url, data, config);
+export function post<T = any>(url: string, data = {}, config?: any): Promise<T> {
+  return instance.post(url, data, config) as Promise<T>;
 }
 
-export function put(url: string, data = {}) {
-  return instance.put(url, data);
+export function put<T = any>(url: string, data = {}): Promise<T> {
+  return instance.put(url, data) as Promise<T>;
 }
 
-export function del(url: string, data?: any) {
-  return instance.delete(url, { data });
+export function del<T = any>(url: string, data?: any): Promise<T> {
+  return instance.delete(url, { data }) as Promise<T>;
 }

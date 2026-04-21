@@ -63,6 +63,7 @@ const (
 	ManualKnowledgeFormatMarkdown = "markdown"
 	ManualKnowledgeStatusDraft    = "draft"
 	ManualKnowledgeStatusPublish  = "publish"
+	ManualKnowledgeStatusArchived = "archived"
 )
 
 // Knowledge represents a knowledge entity in the system.
@@ -109,8 +110,14 @@ type Knowledge struct {
 	StorageSize int64 `json:"storage_size"`
 	// Metadata of the knowledge
 	Metadata JSON `json:"metadata"           gorm:"type:json"`
+	// ExternalID stores the stable upstream identifier used by datasource sync.
+	ExternalID string `json:"external_id"`
 	// Last FAQ import result (for FAQ type knowledge only)
 	LastFAQImportResult JSON `json:"last_faq_import_result" gorm:"type:json"`
+	// SourceWeight adjusts retrieval preference using recent source-level feedback.
+	SourceWeight float64 `json:"source_weight" gorm:"default:1.0"`
+	// FreshnessFlag marks sources that recently received negative feedback and may need review.
+	FreshnessFlag bool `json:"freshness_flag" gorm:"default:false"`
 	// Creation time of the knowledge
 	CreatedAt time.Time `json:"created_at"`
 	// Last updated time of the knowledge

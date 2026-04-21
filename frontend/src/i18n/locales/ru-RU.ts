@@ -1909,7 +1909,8 @@ export default {
   chat: {
     title: 'Диалог',
     newChat: 'Новый чат',
-    suggestedQuestions: 'Вы можете спросить меня',
+    suggestedQuestions: 'Попробуйте спросить',
+    suggestedQuestionsHint: 'Нажмите на вопрос, чтобы сразу начать диалог',
     suggestedQuestionsLoading: 'Загрузка предложений...',
     inputPlaceholder: 'Введите ваше сообщение...',
     send: 'Отправить',

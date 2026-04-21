@@ -89,6 +89,18 @@ type KnowledgeService interface {
 	) (*types.Knowledge, error)
 	// ReparseKnowledge deletes existing document content and re-parses the knowledge asynchronously.
 	ReparseKnowledge(ctx context.Context, knowledgeID string) (*types.Knowledge, error)
+	// ReplaceSyncedKnowledge updates an existing datasource-synced knowledge item in place and re-parses it.
+	ReplaceSyncedKnowledge(
+		ctx context.Context,
+		knowledgeID string,
+		file *multipart.FileHeader,
+		sourceURL string,
+		title string,
+		fileName string,
+		metadata map[string]string,
+		tagID string,
+		channel string,
+	) (*types.Knowledge, error)
 	// CloneKnowledgeBase clones knowledge to another knowledge base.
 	CloneKnowledgeBase(ctx context.Context, srcID, dstID string) error
 	// UpdateImageInfo updates image information for a knowledge chunk.
@@ -201,6 +213,7 @@ type KnowledgeRepository interface {
 	) (bool, *types.Knowledge, error)
 	// AminusB returns the difference set of A and B.
 	AminusB(ctx context.Context, Atenant uint64, A string, Btenant uint64, B string) ([]string, error)
+	UpdateStatus(ctx context.Context, id string, status string) error
 	UpdateKnowledgeColumn(ctx context.Context, id string, column string, value interface{}) error
 	// CountKnowledgeByKnowledgeBaseID counts the number of knowledge items in a knowledge base.
 	CountKnowledgeByKnowledgeBaseID(ctx context.Context, tenantID uint64, kbID string) (int64, error)
@@ -213,6 +226,7 @@ type KnowledgeRepository interface {
 	// FindByMetadataKey finds a knowledge item by a key-value pair in the metadata JSON column.
 	// Used by data source sync to locate existing items by external_id.
 	FindByMetadataKey(ctx context.Context, tenantID uint64, kbID string, key string, value string) (*types.Knowledge, error)
+	FindByExternalID(ctx context.Context, tenantID uint64, kbID, externalID string) (*types.Knowledge, error)
 	// SearchKnowledgeInScopes searches knowledge items by keyword within the given (tenant_id, kb_id) scopes (own + shared).
 	SearchKnowledgeInScopes(ctx context.Context, scopes []types.KnowledgeSearchScope, keyword string, offset, limit int, fileTypes []string) ([]*types.Knowledge, bool, error)
 	// ListIDsByTagID returns all knowledge IDs that have the specified tag ID.

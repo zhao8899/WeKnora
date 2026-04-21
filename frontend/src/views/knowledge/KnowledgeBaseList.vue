@@ -687,7 +687,7 @@ const sharingKbName = ref('')
 // Shared knowledge bases
 const sharedKbs = computed<SharedKnowledgeBase[]>(() => orgStore.sharedKnowledgeBases || [])
 
-const matchCurrentView = (type?: 'document' | 'faq') => {
+const matchCurrentView = (type?: string) => {
   const normalizedType = type || 'document'
   return isFaqView.value ? normalizedType === 'faq' : true
 }

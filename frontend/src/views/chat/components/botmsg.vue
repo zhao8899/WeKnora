@@ -19,6 +19,11 @@
                 </span>
             </div>
             <docInfo :session="session"></docInfo>
+            <ConfidencePanel
+                :message-id="session?.id"
+                :is-completed="session?.is_completed"
+                :reference-count="session?.knowledge_references?.length || 0"
+            />
             <AgentStreamDisplay :session="session" :user-query="userQuery" :session-id="sessionId" v-if="session.isAgentMode"></AgentStreamDisplay>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
         </div>
@@ -82,6 +87,7 @@
 import { onMounted, onBeforeUnmount, watch, computed, ref, reactive, defineProps, nextTick, onUpdated } from 'vue';
 import { marked } from 'marked';
 import docInfo from './docInfo.vue';
+import ConfidencePanel from './ConfidencePanel.vue';
 import deepThink from './deepThink.vue';
 import AgentStreamDisplay from './AgentStreamDisplay.vue';
 import picturePreview from '@/components/picture-preview.vue';

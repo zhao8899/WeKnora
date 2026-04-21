@@ -55,12 +55,11 @@
           </div>
         </div>
 
+        <template v-for="(engine, idx) in sortedEngines" :key="engine.Name">
         <div
-          v-for="(engine, idx) in sortedEngines"
-          :key="engine.Name"
+          v-if="shouldShowEngine(engine.Name)"
           :class="['engine-item', { first: idx === firstVisibleEngineIndex && hasBuiltinEngine }]"
           :data-model-type="engine.Name"
-          v-if="shouldShowEngine(engine.Name)"
         >
           <div class="engine-item-header">
             <div class="engine-title-row">
@@ -173,6 +172,7 @@
             </div>
           </div>
         </div>
+        </template>
       </template>
 
       <!-- 检测与保存 -->

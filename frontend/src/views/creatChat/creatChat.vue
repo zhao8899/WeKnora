@@ -14,6 +14,7 @@
                 >
                     <div v-if="suggestedQuestions.length > 0" :key="sqRenderKey" class="suggested-questions-inner">
                         <div class="suggested-questions-title">{{ $t('chat.suggestedQuestions') }}</div>
+                        <div class="suggested-questions-subtitle">{{ $t('chat.suggestedQuestionsHint') }}</div>
                         <div class="suggested-questions-grid">
                             <div
                                 v-for="(item, index) in suggestedQuestions"
@@ -24,7 +25,6 @@
                                 @click="handleSuggestedQuestionClick(item.question)"
                             >
                                 <span class="suggested-question-text">{{ item.question }}</span>
-                                <span v-if="item.source === 'faq'" class="suggested-question-badge faq">FAQ</span>
                             </div>
                         </div>
                     </div>
@@ -58,6 +58,7 @@ import { MessagePlugin } from 'tdesign-vue-next';
 import { useI18n } from 'vue-i18n';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
+import { normalizeSuggestedQuestions } from '@/utils/suggestedQuestions';
 
 const router = useRouter();
 const route = useRoute();
@@ -133,12 +134,12 @@ const fetchSuggestedQuestions = async () => {
         if (fetchId === suggestedQuestionsFetchId) {
             sqCardsRevealed.value = false;
             sqRenderKey.value++;
-            suggestedQuestions.value = res?.data?.questions || [];
+            suggestedQuestions.value = normalizeSuggestedQuestions(res?.data?.questions, 6);
         }
     } catch (err) {
         console.warn('[SuggestedQuestions] Failed to fetch:', err);
         if (fetchId === suggestedQuestionsFetchId) {
-            suggestedQuestions.value = [];
+            suggestedQuestions.value = normalizeSuggestedQuestions([], 6);
         }
     }
 };
@@ -282,6 +283,10 @@ const handleKBEditorSuccess = (kbId: string) => {
     flex-direction: column;
     align-items: center;
     width: 100%;
+    padding: 20px 20px 12px;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: 20px;
+    background: linear-gradient(180deg, var(--td-bg-color-container) 0%, var(--td-bg-color-container-hover) 100%);
 }
 
 // 容器整体过渡：淡入 + 轻微上滑
@@ -303,16 +308,22 @@ const handleKBEditorSuccess = (kbId: string) => {
 }
 
 .suggested-questions-title {
-    font-size: 14px;
+    font-size: 16px;
+    color: var(--td-text-color-primary);
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.suggested-questions-subtitle {
+    font-size: 12px;
     color: var(--td-text-color-secondary);
-    margin-bottom: 12px;
-    font-weight: 500;
+    margin-bottom: 16px;
 }
 
 .suggested-questions-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 12px;
     justify-content: center;
     width: 100%;
 }
@@ -320,11 +331,10 @@ const handleKBEditorSuccess = (kbId: string) => {
 .suggested-question-card {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 10px 16px;
-    border-radius: 20px;
+    padding: 10px 18px;
+    border-radius: 999px;
     border: 1px solid var(--td-component-stroke);
-    background: var(--td-bg-color-container);
+    background: var(--td-bg-color-page);
     cursor: pointer;
     max-width: 100%;
     opacity: 0;
@@ -342,8 +352,8 @@ const handleKBEditorSuccess = (kbId: string) => {
 
     &:hover {
         border-color: var(--td-brand-color);
-        background: var(--td-brand-color-light);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        background: var(--td-bg-color-container);
+        transform: translateY(-1px);
     }
 }
 
@@ -351,22 +361,7 @@ const handleKBEditorSuccess = (kbId: string) => {
     font-size: 13px;
     color: var(--td-text-color-primary);
     line-height: 1.4;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.suggested-question-badge {
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    flex-shrink: 0;
-    font-weight: 500;
-
-    &.faq {
-        background: var(--td-success-color-1);
-        color: var(--td-success-color);
-    }
+    text-align: center;
 }
 
 @media (max-width: 1250px) and (min-width: 1045px) {

@@ -2,8 +2,11 @@ package types
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
 	"time"
 
+	configcrypto "github.com/Tencent/WeKnora/internal/crypto"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -66,6 +69,8 @@ type DataSource struct {
 	// Encrypted configuration (API credentials, tokens, etc.)
 	// Stored as JSON with AES-256-GCM encryption
 	Config JSON `json:"config" gorm:"type:jsonb"`
+	// ConfigEncrypted stores the encrypted datasource config and is never exposed via API responses.
+	ConfigEncrypted string `json:"-" gorm:"column:config_encrypted"`
 
 	// Cron expression for scheduled syncs (e.g., "0 */6 * * *" = every 6 hours)
 	SyncSchedule string `json:"sync_schedule"`
@@ -365,6 +370,19 @@ func (r *SyncResult) ToJSON() (JSON, error) {
 
 // ParseConfig parses the encrypted config JSON back to DataSourceConfig
 func (d *DataSource) ParseConfig() (*DataSourceConfig, error) {
+	if d.ConfigEncrypted != "" {
+		if keyHex := os.Getenv("DATA_SOURCE_CONFIG_KEY"); keyHex != "" {
+			plaintext, err := configcrypto.Decrypt(d.ConfigEncrypted, keyHex)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt config: %w", err)
+			}
+			var config DataSourceConfig
+			if err := json.Unmarshal(plaintext, &config); err != nil {
+				return nil, err
+			}
+			return &config, nil
+		}
+	}
 	if len(d.Config) == 0 {
 		return nil, nil
 	}
@@ -373,6 +391,33 @@ func (d *DataSource) ParseConfig() (*DataSourceConfig, error) {
 		return nil, err
 	}
 	return &config, nil
+}
+
+func (d *DataSource) SaveConfig(config *DataSourceConfig) error {
+	if config == nil {
+		d.Config = nil
+		d.ConfigEncrypted = ""
+		return nil
+	}
+
+	bytes, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+
+	if keyHex := os.Getenv("DATA_SOURCE_CONFIG_KEY"); keyHex != "" {
+		encrypted, err := configcrypto.Encrypt(bytes, keyHex)
+		if err != nil {
+			return fmt.Errorf("encrypt config: %w", err)
+		}
+		d.ConfigEncrypted = encrypted
+		d.Config = nil
+		return nil
+	}
+
+	d.Config = JSON(bytes)
+	d.ConfigEncrypted = ""
+	return nil
 }
 
 // ParseSyncCursor parses the cursor JSON

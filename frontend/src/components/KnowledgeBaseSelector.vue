@@ -199,6 +199,10 @@ const updateDropdownPosition = () => {
   try {
     if (typeof anchor.getBoundingClientRect === 'function') {
       rect = anchor.getBoundingClientRect()
+      if (!rect) {
+        applyFallback()
+        return
+      }
       console.log('[KB Selector] Button rect:', {
         top: rect.top,
         bottom: rect.bottom,

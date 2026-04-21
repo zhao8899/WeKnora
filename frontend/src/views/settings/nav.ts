@@ -78,6 +78,12 @@ export function getSettingsNavItems(t: TranslateFn, isAdmin = false): SettingsNa
       key: 'api',
       label: t('settings.apiInfo'),
       icon: 'code'
+    },
+    {
+      key: 'knowledge-health',
+      label: t('settings.health.title'),
+      icon: 'chart-bubble',
+      adminOnly: true
     }
   ]
 

@@ -80,6 +80,9 @@ func (s *DataSourceService) CreateDataSource(ctx context.Context, ds *types.Data
 	if err := s.validateDataSourceConfig(ctx, ds); err != nil {
 		return nil, err
 	}
+	if err := s.prepareConfigForStorage(ds); err != nil {
+		return nil, err
+	}
 
 	// Create in database
 	if err := s.dsRepo.Create(ctx, ds); err != nil {
@@ -95,6 +98,7 @@ func (s *DataSourceService) CreateDataSource(ctx context.Context, ds *types.Data
 	}
 
 	logger.Infof(ctx, "data source created: id=%s type=%s kb=%s", ds.ID, ds.Type, ds.KnowledgeBaseID)
+	s.hydrateConfigForResponse(ds)
 	return ds, nil
 }
 
@@ -104,6 +108,7 @@ func (s *DataSourceService) GetDataSource(ctx context.Context, id string) (*type
 	if err != nil {
 		return nil, err
 	}
+	s.hydrateConfigForResponse(ds)
 	return ds, nil
 }
 
@@ -121,6 +126,7 @@ func (s *DataSourceService) ListDataSources(ctx context.Context, kbID string) ([
 		if log != nil {
 			ds.LatestSyncLog = log
 		}
+		s.hydrateConfigForResponse(ds)
 	}
 
 	return dataSources, nil
@@ -158,6 +164,12 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 			return nil, err
 		}
 	}
+	if len(ds.Config) == 0 && ds.ConfigEncrypted == "" {
+		ds.Config = existing.Config
+		ds.ConfigEncrypted = existing.ConfigEncrypted
+	} else if err := s.prepareConfigForStorage(ds); err != nil {
+		return nil, err
+	}
 
 	if err := s.dsRepo.Update(ctx, ds); err != nil {
 		logger.Errorf(ctx, "failed to update data source: %v", err)
@@ -170,6 +182,7 @@ func (s *DataSourceService) UpdateDataSource(ctx context.Context, ds *types.Data
 	}
 
 	logger.Infof(ctx, "data source updated: id=%s", ds.ID)
+	s.hydrateConfigForResponse(ds)
 	return ds, nil
 }
 
@@ -512,8 +525,19 @@ func (s *DataSourceService) ProcessSync(ctx context.Context, task *asynq.Task) e
 
 	for _, item := range items {
 		if item.IsDeleted {
-			if ds.SyncDeletions {
-				result.Deleted++
+			if ds.SyncDeletions && item.ExternalID != "" {
+				repo := s.knowledgeService.GetRepository()
+				existing, err := repo.FindByExternalID(ctx, ds.TenantID, ds.KnowledgeBaseID, item.ExternalID)
+				if err != nil {
+					logger.Warnf(ctx, "archive: failed to find knowledge for external_id=%s: %v", item.ExternalID, err)
+				} else if existing != nil && existing.ParseStatus != types.ManualKnowledgeStatusArchived {
+					if err := repo.UpdateStatus(ctx, existing.ID, types.ManualKnowledgeStatusArchived); err != nil {
+						logger.Warnf(ctx, "archive: failed to set archived for knowledge=%s: %v", existing.ID, err)
+					} else {
+						logger.Infof(ctx, "archived knowledge %s (external_id=%s)", existing.ID, item.ExternalID)
+						result.Deleted++
+					}
+				}
 			}
 			continue
 		}
@@ -628,8 +652,29 @@ func (s *DataSourceService) validateDataSourceConfig(ctx context.Context, ds *ty
 	return connector.Validate(ctx, config)
 }
 
+func (s *DataSourceService) prepareConfigForStorage(ds *types.DataSource) error {
+	config, err := ds.ParseConfig()
+	if err != nil {
+		return datasource.ErrInvalidConfig
+	}
+	return ds.SaveConfig(config)
+}
+
+func (s *DataSourceService) hydrateConfigForResponse(ds *types.DataSource) {
+	if ds == nil {
+		return
+	}
+	config, err := ds.ParseConfig()
+	if err != nil || config == nil {
+		return
+	}
+	if raw, err := config.ToJSON(); err == nil {
+		ds.Config = raw
+	}
+}
+
 // ingestItem writes a single FetchedItem into the knowledge base.
-// If a knowledge item with the same external_id already exists, it is deleted first (update = delete + re-create).
+// If a knowledge item with the same external_id already exists, it is updated in place and re-parsed.
 //
 // Routing logic:
 //   - Has Content bytes → CreateKnowledgeFromFile (走完整的文档解析 pipeline)
@@ -650,20 +695,39 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 
 	// Check if a knowledge item with this external_id already exists → delete it first (update)
 	isUpdate := false
+	var existingKnowledge *types.Knowledge
 	if item.ExternalID != "" {
 		repo := s.knowledgeService.GetRepository()
-		existing, err := repo.FindByMetadataKey(ctx, ds.TenantID, ds.KnowledgeBaseID, "external_id", item.ExternalID)
+		existing, err := repo.FindByExternalID(ctx, ds.TenantID, ds.KnowledgeBaseID, item.ExternalID)
 		if err != nil {
 			logger.Warnf(ctx, "failed to check existing knowledge for external_id=%s: %v", item.ExternalID, err)
-			// Non-fatal: proceed with creation (may produce duplicate)
 		} else if existing != nil {
-			logger.Infof(ctx, "found existing knowledge %s for external_id=%s, deleting for update", existing.ID, item.ExternalID)
-			if err := s.knowledgeService.DeleteKnowledge(ctx, existing.ID); err != nil {
-				logger.Warnf(ctx, "failed to delete existing knowledge %s: %v", existing.ID, err)
-			} else {
-				isUpdate = true
+			existingKnowledge = existing
+			isUpdate = true
+		}
+	}
+
+	if existingKnowledge != nil {
+		var fh *multipart.FileHeader
+		if len(item.Content) > 0 {
+			var err error
+			fh, err = bytesToFileHeader(item.Content, item.FileName)
+			if err != nil {
+				return true, fmt.Errorf("build file header: %w", err)
 			}
 		}
+		_, err := s.knowledgeService.ReplaceSyncedKnowledge(
+			ctx,
+			existingKnowledge.ID,
+			fh,
+			item.URL,
+			item.Title,
+			item.FileName,
+			metadata,
+			tagID,
+			channel,
+		)
+		return true, err
 	}
 
 	// Case 1: content already fetched → build a FileHeader from bytes and call CreateKnowledgeFromFile
@@ -672,7 +736,7 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 		if err != nil {
 			return isUpdate, fmt.Errorf("build file header: %w", err)
 		}
-		_, err = s.knowledgeService.CreateKnowledgeFromFile(
+		knowledge, err := s.knowledgeService.CreateKnowledgeFromFile(
 			ctx,
 			ds.KnowledgeBaseID,
 			fh,
@@ -682,12 +746,17 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 			tagID,         // auto-tag from data source
 			channel,
 		)
+		if err == nil && item.ExternalID != "" && knowledge != nil {
+			if updateErr := s.knowledgeService.GetRepository().UpdateKnowledgeColumn(ctx, knowledge.ID, "external_id", item.ExternalID); updateErr != nil {
+				logger.Warnf(ctx, "failed to persist external_id for knowledge=%s: %v", knowledge.ID, updateErr)
+			}
+		}
 		return isUpdate, err
 	}
 
 	// Case 2: only a remote URL — let WeKnora handle downloading and parsing
 	if item.URL != "" {
-		_, err := s.knowledgeService.CreateKnowledgeFromURL(
+		knowledge, err := s.knowledgeService.CreateKnowledgeFromURL(
 			ctx,
 			ds.KnowledgeBaseID,
 			item.URL,
@@ -698,6 +767,11 @@ func (s *DataSourceService) ingestItem(ctx context.Context, ds *types.DataSource
 			tagID, // auto-tag from data source
 			channel,
 		)
+		if err == nil && item.ExternalID != "" && knowledge != nil {
+			if updateErr := s.knowledgeService.GetRepository().UpdateKnowledgeColumn(ctx, knowledge.ID, "external_id", item.ExternalID); updateErr != nil {
+				logger.Warnf(ctx, "failed to persist external_id for knowledge=%s: %v", knowledge.ID, updateErr)
+			}
+		}
 		return isUpdate, err
 	}
 

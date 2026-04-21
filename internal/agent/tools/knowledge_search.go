@@ -632,6 +632,8 @@ func (t *KnowledgeSearchTool) rerankResults(
 	// Apply composite scoring to reranked results
 	logger.Debugf(ctx, "[Tool][KnowledgeSearch] Applying composite scoring")
 
+	t.injectSourceWeights(ctx, rerankedCandidates)
+
 	// Store base scores before composite scoring
 	for _, result := range rerankedCandidates {
 		baseScore := result.Score
@@ -650,6 +652,59 @@ func (t *KnowledgeSearchTool) rerankResults(
 	})
 
 	return combined, nil
+}
+
+func (t *KnowledgeSearchTool) injectSourceWeights(ctx context.Context, results []*searchResultWithMeta) {
+	if t.knowledgeService == nil || len(results) == 0 {
+		return
+	}
+
+	tenantID, _ := types.TenantIDFromContext(ctx)
+	if tenantID == 0 {
+		return
+	}
+
+	knowledgeIDs := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, result := range results {
+		if result == nil || result.SearchResult == nil || result.KnowledgeID == "" {
+			continue
+		}
+		if _, ok := seen[result.KnowledgeID]; ok {
+			continue
+		}
+		seen[result.KnowledgeID] = struct{}{}
+		knowledgeIDs = append(knowledgeIDs, result.KnowledgeID)
+	}
+	if len(knowledgeIDs) == 0 {
+		return
+	}
+
+	knowledges, err := t.knowledgeService.GetKnowledgeBatch(ctx, tenantID, knowledgeIDs)
+	if err != nil {
+		logger.Warnf(ctx, "[Tool][KnowledgeSearch] Failed to fetch source weights: %v", err)
+		return
+	}
+
+	weights := make(map[string]float64, len(knowledges))
+	for _, knowledge := range knowledges {
+		if knowledge == nil || knowledge.ID == "" {
+			continue
+		}
+		weights[knowledge.ID] = knowledge.SourceWeight
+	}
+
+	for _, result := range results {
+		if result == nil || result.SearchResult == nil || result.KnowledgeID == "" {
+			continue
+		}
+		if result.Metadata == nil {
+			result.Metadata = make(map[string]string)
+		}
+		if weight, ok := weights[result.KnowledgeID]; ok && weight > 0 {
+			result.Metadata["source_weight"] = fmt.Sprintf("%.4f", weight)
+		}
+	}
 }
 
 func (t *KnowledgeSearchTool) getFAQMetadata(
@@ -1362,8 +1417,15 @@ func (t *KnowledgeSearchTool) compositeScore(
 ) float64 {
 	// Source weight: web_search results get slightly lower weight
 	sourceWeight := 1.0
+	if result != nil && result.Metadata != nil {
+		if rawWeight := strings.TrimSpace(result.Metadata["source_weight"]); rawWeight != "" {
+			if parsed, err := strconv.ParseFloat(rawWeight, 64); err == nil && parsed > 0 {
+				sourceWeight = parsed
+			}
+		}
+	}
 	if strings.ToLower(result.KnowledgeSource) == "web_search" {
-		sourceWeight = 0.95
+		sourceWeight *= 0.95
 	}
 
 	// Position prior: slightly favor chunks earlier in the document

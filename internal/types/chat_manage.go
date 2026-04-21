@@ -46,12 +46,12 @@ type PipelineRequest struct {
 	ChatModelSupportsVision bool     `json:"-"`
 
 	// Misc request-scoped config
-	TenantID              uint64 `json:"-"`
-	WebSearchEnabled      bool   `json:"-"`
-	WebSearchProviderID   string `json:"-"` // Resolved from agent config or tenant default
-	WebFetchEnabled       bool   `json:"-"` // Auto-fetch full page content for web search results after rerank
-	WebFetchTopN          int    `json:"-"` // Max pages to fetch (default 3)
-	Language              string `json:"-"`
+	TenantID            uint64 `json:"-"`
+	WebSearchEnabled    bool   `json:"-"`
+	WebSearchProviderID string `json:"-"` // Resolved from agent config or tenant default
+	WebFetchEnabled     bool   `json:"-"` // Auto-fetch full page content for web search results after rerank
+	WebFetchTopN        int    `json:"-"` // Max pages to fetch (default 3)
+	Language            string `json:"-"`
 }
 
 // QueryIntent represents the classified intent of a user query.
@@ -186,9 +186,9 @@ func (c *ChatManage) Clone() *ChatManage {
 			ChatModelSupportsVision:  c.ChatModelSupportsVision,
 			TenantID:                 c.TenantID,
 			WebSearchEnabled:         c.WebSearchEnabled,
-			WebSearchProviderID:     c.WebSearchProviderID,
-			WebFetchEnabled:         c.WebFetchEnabled,
-			WebFetchTopN:            c.WebFetchTopN,
+			WebSearchProviderID:      c.WebSearchProviderID,
+			WebFetchEnabled:          c.WebFetchEnabled,
+			WebFetchTopN:             c.WebFetchTopN,
 			Language:                 c.Language,
 		},
 		PipelineState: PipelineState{
@@ -215,6 +215,7 @@ const (
 	CHUNK_MERGE            EventType = "chunk_merge"
 	DATA_ANALYSIS          EventType = "data_analysis"
 	INTO_CHAT_MESSAGE      EventType = "into_chat_message"
+	EVIDENCE_CAPTURE       EventType = "evidence_capture"
 	CHAT_COMPLETION        EventType = "chat_completion"
 	CHAT_COMPLETION_STREAM EventType = "chat_completion_stream"
 	FILTER_TOP_K           EventType = "filter_top_k"
@@ -284,6 +285,7 @@ var Pipeline = map[string][]EventType{
 		FILTER_TOP_K,
 		DATA_ANALYSIS,
 		INTO_CHAT_MESSAGE,
+		EVIDENCE_CAPTURE,
 		CHAT_COMPLETION_STREAM,
 	},
 }

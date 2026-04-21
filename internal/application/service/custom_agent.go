@@ -29,6 +29,12 @@ type customAgentService struct {
 	kbService interfaces.KnowledgeBaseService
 }
 
+type suggestedQuestionCandidate struct {
+	question  types.SuggestedQuestion
+	intent    string
+	updatedAt time.Time
+}
+
 // NewCustomAgentService creates a new custom agent service
 func NewCustomAgentService(
 	repo interfaces.CustomAgentRepository,
@@ -505,11 +511,7 @@ func (s *customAgentService) GetSuggestedQuestions(
 
 	// 3. Collect all candidate chunks from both FAQ and Document KBs,
 	//    then sort by updated_at uniformly (not FAQ-first).
-	type candidate struct {
-		question  types.SuggestedQuestion
-		updatedAt time.Time
-	}
-	var candidates []candidate
+	var candidates []suggestedQuestionCandidate
 
 	// Determine query scope
 	queryKBIDs := effectiveKBIDs
@@ -537,12 +539,13 @@ func (s *customAgentService) GetSuggestedQuestions(
 				continue
 			}
 			seen[meta.StandardQuestion] = true
-			candidates = append(candidates, candidate{
+			candidates = append(candidates, suggestedQuestionCandidate{
 				question: types.SuggestedQuestion{
 					Question:        meta.StandardQuestion,
 					Source:          "faq",
 					KnowledgeBaseID: chunk.KnowledgeBaseID,
 				},
+				intent:    classifySuggestedQuestionIntent(meta.StandardQuestion),
 				updatedAt: chunk.UpdatedAt,
 			})
 		}
@@ -565,12 +568,13 @@ func (s *customAgentService) GetSuggestedQuestions(
 				continue
 			}
 			seen[q] = true
-			candidates = append(candidates, candidate{
+			candidates = append(candidates, suggestedQuestionCandidate{
 				question: types.SuggestedQuestion{
 					Question:        q,
 					Source:          "document",
 					KnowledgeBaseID: chunk.KnowledgeBaseID,
 				},
+				intent:    classifySuggestedQuestionIntent(q),
 				updatedAt: chunk.UpdatedAt,
 			})
 		}
@@ -581,13 +585,9 @@ func (s *customAgentService) GetSuggestedQuestions(
 		return candidates[i].updatedAt.After(candidates[j].updatedAt)
 	})
 
-	// 5. Pick top N
-	for _, c := range candidates {
-		if len(result) >= limit {
-			break
-		}
-		result = append(result, c.question)
-	}
+	// 5. Pick top N with lightweight intent diversification first,
+	//    then fall back to recency for remaining slots.
+	result = append(result, s.pickDiversifiedSuggestedQuestions(candidates, remaining)...)
 
 	return s.truncateQuestions(result, limit), nil
 }
@@ -598,4 +598,113 @@ func (s *customAgentService) truncateQuestions(questions []types.SuggestedQuesti
 		return questions[:limit]
 	}
 	return questions
+}
+
+func (s *customAgentService) pickDiversifiedSuggestedQuestions(candidates []suggestedQuestionCandidate, limit int) []types.SuggestedQuestion {
+	if limit <= 0 || len(candidates) == 0 {
+		return nil
+	}
+
+	primaryIntentOrder := []string{"deployment", "optimization", "troubleshooting"}
+	intentOrder := []string{"deployment", "optimization", "troubleshooting", "general"}
+	buckets := make(map[string][]suggestedQuestionCandidate, len(intentOrder))
+	intentCaps := map[string]int{
+		"deployment":      2,
+		"optimization":    2,
+		"troubleshooting": 2,
+		"general":         2,
+	}
+	intentCounts := make(map[string]int, len(intentOrder))
+
+	for _, c := range candidates {
+		intent := c.intent
+		if intent == "" {
+			intent = "general"
+		}
+		buckets[intent] = append(buckets[intent], c)
+	}
+
+	selected := make([]types.SuggestedQuestion, 0, limit)
+
+	// First pass: take one recent question from each intent bucket.
+	for _, intent := range primaryIntentOrder {
+		if len(selected) >= limit {
+			return selected
+		}
+		if len(buckets[intent]) == 0 || intentCounts[intent] >= intentCaps[intent] {
+			continue
+		}
+		selected = append(selected, buckets[intent][0].question)
+		buckets[intent] = buckets[intent][1:]
+		intentCounts[intent]++
+	}
+
+	// Second pass: continue round-robin across primary intents first.
+	for len(selected) < limit {
+		picked := false
+		for _, intent := range primaryIntentOrder {
+			if len(selected) >= limit {
+				break
+			}
+			if len(buckets[intent]) == 0 || intentCounts[intent] >= intentCaps[intent] {
+				continue
+			}
+			selected = append(selected, buckets[intent][0].question)
+			buckets[intent] = buckets[intent][1:]
+			intentCounts[intent]++
+			picked = true
+		}
+		if !picked {
+			break
+		}
+	}
+
+	// Final pass: use general suggestions only as fallback.
+	for len(selected) < limit && len(buckets["general"]) > 0 && intentCounts["general"] < intentCaps["general"] {
+		selected = append(selected, buckets["general"][0].question)
+		buckets["general"] = buckets["general"][1:]
+		intentCounts["general"]++
+	}
+
+	return selected
+}
+
+func classifySuggestedQuestionIntent(question string) string {
+	q := strings.ToLower(strings.TrimSpace(question))
+	if q == "" {
+		return "general"
+	}
+
+	deploymentKeywords := []string{
+		"部署", "搭建", "安装", "配置", "开机自启", "启动", "接入", "本地", "容器", "docker",
+		"deploy", "setup", "install", "configure", "configuration", "startup", "boot",
+	}
+	optimizationKeywords := []string{
+		"优化", "提升", "准确率", "速度", "性能", "延迟", "吞吐", "效果", "微调",
+		"optimize", "optimization", "improve", "accuracy", "performance", "latency", "speed", "tuning",
+	}
+	troubleshootingKeywords := []string{
+		"报错", "错误", "失败", "异常", "排查", "解决", "处理", "找不到", "截断", "重复",
+		"error", "issue", "failed", "failure", "troubleshoot", "debug", "fix", "not found",
+	}
+
+	if containsSuggestedQuestionKeyword(q, deploymentKeywords) {
+		return "deployment"
+	}
+	if containsSuggestedQuestionKeyword(q, optimizationKeywords) {
+		return "optimization"
+	}
+	if containsSuggestedQuestionKeyword(q, troubleshootingKeywords) {
+		return "troubleshooting"
+	}
+	return "general"
+}
+
+func containsSuggestedQuestionKeyword(question string, keywords []string) bool {
+	for _, keyword := range keywords {
+		if strings.Contains(question, keyword) {
+			return true
+		}
+	}
+	return false
 }

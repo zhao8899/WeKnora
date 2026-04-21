@@ -102,6 +102,7 @@
           />
             <span class="value-display">{{ localTemperature.toFixed(1) }}</span>
           </div>
+          <p v-if="fixedTemperatureValue !== null" class="setting-hint">当前模型仅支持 Temperature = {{ fixedTemperatureValue }}</p>
         </div>
       </div>
 
@@ -607,6 +608,7 @@
               />
               <span class="value-display">{{ localTemperatureNormal.toFixed(1) }}</span>
             </div>
+            <p v-if="fixedTemperatureValue !== null" class="setting-hint">当前模型仅支持 Temperature = {{ fixedTemperatureValue }}</p>
           </div>
         </div>
 
@@ -642,6 +644,7 @@ import { useI18n } from 'vue-i18n'
 import { listModels, type ModelConfig } from '@/api/model'
 import { getAgentConfig, updateAgentConfig, getConversationConfig, updateConversationConfig, type AgentConfig, type ConversationConfig, type ToolDefinition, type PlaceholderDefinition, type PromptTemplate } from '@/api/system'
 import PromptTemplateSelector from '@/components/PromptTemplateSelector.vue'
+import { getFixedTemperatureForModel } from '@/utils/modelCapabilities'
 
 const props = defineProps<{
   // 来自外部设置弹窗的子菜单 key: 'modes' | 'models' | 'thresholds' | 'advanced'
@@ -856,6 +859,8 @@ const handleGoToModelSettings = () => {
 const chatModels = ref<ModelConfig[]>([])
 const rerankModels = ref<ModelConfig[]>([])
 const loadingModels = ref(false)
+const selectedSummaryModel = computed(() => chatModels.value.find(model => model.id === localSummaryModelId.value) || null)
+const fixedTemperatureValue = computed(() => getFixedTemperatureForModel(selectedSummaryModel.value))
 
 // 可用工具列表
 const availableTools = ref<ToolDefinition[]>([])
@@ -981,6 +986,8 @@ const getTextareaElement = (): HTMLTextAreaElement | null => {
   const wrapper = document.querySelector('.setting-control.full-width')
   return wrapper?.querySelector('textarea') || null
 }
+
+const getActivePromptRef = () => localSystemPrompt
 
 // 初始化加载
 onMounted(async () => {
@@ -1165,10 +1172,16 @@ const handleTemperatureChange = async (value: number) => {
   // 如果正在初始化，不触发保存
   if (isInitializing.value) return
   
+  const normalizedValue = fixedTemperatureValue.value ?? value
+  if (fixedTemperatureValue.value !== null && value !== normalizedValue) {
+    MessagePlugin.warning(`当前模型仅支持 Temperature = ${fixedTemperatureValue.value}，已自动恢复`)
+  }
+
   try {
-    const config = buildAgentConfigPayload({ temperature: value })
+    localTemperature.value = normalizedValue
+    const config = buildAgentConfigPayload({ temperature: normalizedValue })
     await updateAgentConfig(config)
-    settingsStore.updateAgentConfig({ temperature: value })
+    settingsStore.updateAgentConfig({ temperature: normalizedValue })
     MessagePlugin.success(t('agentSettings.toasts.temperatureSaved'))
   } catch (error) {
     console.error('保存失败:', error)
@@ -1462,6 +1475,13 @@ watch(isAgentReady, (newValue, oldValue) => {
 })
 
 // 普通模式配置处理函数
+watch(
+  () => [selectedSummaryModel.value?.id, chatModels.value.length],
+  async () => {
+    await enforceFixedTemperatureForSelectedModel()
+  }
+)
+
 const handleContextTemplateChange = async () => {
   if (!conversationConfigLoaded.value) return
   
@@ -1512,17 +1532,53 @@ const handleSystemPromptNormalChange = async () => {
 
 const handleTemperatureNormalChange = async (value: number) => {
   if (!conversationConfigLoaded.value) return
-  if (value === savedTemperatureNormal) return
+  const normalizedValue = fixedTemperatureValue.value ?? value
+  if (fixedTemperatureValue.value !== null && value !== normalizedValue) {
+    MessagePlugin.warning(`当前模型仅支持 Temperature = ${fixedTemperatureValue.value}，已自动恢复`)
+  }
+  if (normalizedValue === savedTemperatureNormal) return
   
   try {
+    localTemperatureNormal.value = normalizedValue
     await saveConversationConfig(
-      { temperature: value },
+      { temperature: normalizedValue },
       t('conversationSettings.toasts.temperatureSaved')
     )
-    savedTemperatureNormal = value
+    savedTemperatureNormal = normalizedValue
   } catch (error) {
     console.error('保存Temperature失败:', error)
     MessagePlugin.error(getErrorMessage(error))
+  }
+}
+
+const enforceFixedTemperatureForSelectedModel = async () => {
+  const fixedValue = fixedTemperatureValue.value
+  if (fixedValue === null) return
+
+  const agentChanged = localTemperature.value !== fixedValue
+  const normalChanged = localTemperatureNormal.value !== fixedValue
+
+  localTemperature.value = fixedValue
+  localTemperatureNormal.value = fixedValue
+  savedTemperatureNormal = fixedValue
+
+  const tasks: Promise<unknown>[] = []
+
+  if (configLoaded.value && agentChanged) {
+    const config = buildAgentConfigPayload({ temperature: fixedValue })
+    tasks.push(
+      updateAgentConfig(config).then(() => {
+        settingsStore.updateAgentConfig({ temperature: fixedValue })
+      })
+    )
+  }
+
+  if (conversationConfigLoaded.value && normalChanged) {
+    tasks.push(saveConversationConfig({ temperature: fixedValue }))
+  }
+
+  if (tasks.length > 0) {
+    await Promise.allSettled(tasks)
   }
 }
 
@@ -2273,6 +2329,12 @@ const handleConversationRerankModelChange = async (value: string) => {
     color: var(--td-text-color-secondary);
     line-height: 1.4;
   }
+}
+
+.setting-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
 }
 
 </style>

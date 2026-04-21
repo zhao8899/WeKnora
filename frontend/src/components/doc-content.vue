@@ -58,9 +58,9 @@ let page = 1;
 let loadingChunks = false;
 let pendingRequestedPage: number | null = null;
 let pendingChunksBeforeLoad = 0;
-let doc = null;
+let doc: HTMLElement | null = null;
 let down = ref()
-let mdContentWrap = ref()
+let mdContentWrap = ref<HTMLElement | null>(null)
 let url = ref('')
 // 视图模式：chunks / merged / preview
 // file 类型默认「预览」，URL / 手动创建 默认「全文」
@@ -136,8 +136,8 @@ const mergeChunks = (chunks: any[]): string => {
 
 onMounted(() => {
   nextTick(() => {
-    doc = document.getElementsByClassName('t-drawer__body')[0]
-    doc.addEventListener('scroll', handleDetailsScroll);
+    doc = document.getElementsByClassName('t-drawer__body')[0] as HTMLElement | undefined || null
+    doc?.addEventListener('scroll', handleDetailsScroll);
   })
 })
 watch(() => props.details?.id, () => {
@@ -162,9 +162,9 @@ watch(() => props.details?.chunkLoading, (val) => {
   }
 });
 onUnmounted(() => {
-  doc.removeEventListener('scroll', handleDetailsScroll);
+  doc?.removeEventListener('scroll', handleDetailsScroll);
 })
-const checkImage = (url) => {
+const checkImage = (url: string): Promise<boolean> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => resolve(true);
@@ -298,7 +298,7 @@ watch(() => props.visible, (visible) => {
 // 渲染 Mermaid 图表的函数
 const renderMermaidDiagrams = async () => {
   try {
-    const mermaidElements = mdContentWrap.value?.querySelectorAll('.mermaid');
+    const mermaidElements = mdContentWrap.value?.querySelectorAll<HTMLElement>('.mermaid');
     console.log('[Mermaid] Found mermaid elements:', mermaidElements?.length);
     if (mermaidElements && mermaidElements.length > 0) {
       await mermaid.run({
@@ -332,7 +332,7 @@ const bindMermaidClickEvents = () => {
     return;
   }
   // 绑定在 .mermaid div 上，而不是 SVG 上
-  const mermaidDivs = mdContentWrap.value.querySelectorAll('.mermaid');
+  const mermaidDivs = mdContentWrap.value.querySelectorAll<HTMLElement>('.mermaid');
   console.log('[Mermaid] Found mermaid divs:', mermaidDivs.length);
   mermaidDivs.forEach((div, index) => {
     const divEl = div as HTMLElement;
@@ -345,7 +345,7 @@ const bindMermaidClickEvents = () => {
 };
 
 // 安全地处理 Markdown 内容（使用 marked）
-const processMarkdown = (markdownText) => {
+const processMarkdown = (markdownText: string): string => {
   if (!markdownText || typeof markdownText !== 'string') return '';
 
   // 先还原原始文本中的 HTML 实体，让它们作为普通字符参与渲染
@@ -370,7 +370,7 @@ const processMarkdown = (markdownText) => {
 
   // 使用标记渲染
   marked.use({ renderer });
-  let html = marked.parse(safeMarkdown);
+  let html = marked.parse(safeMarkdown, { async: false }) as string;
 
   // 还原被转义的 <br>
   html = html.replace(/&lt;br\s*\/?&gt;/gi, '<br>');
@@ -382,7 +382,9 @@ const processMarkdown = (markdownText) => {
 };
 const handleClose = () => {
   emit("closeDoc", false);
-  doc.scrollTop = 0;
+  if (doc) {
+    doc.scrollTop = 0;
+  }
   viewMode.value = 'merged';
 };
 
@@ -470,8 +472,11 @@ const getTimeLabel = () => {
 };
 
 // 获取Chunk样式类
-const getChunkClass = (index: number) => {
-  return index % 2 !== 0 ? 'chunk-odd' : 'chunk-even';
+const normalizeChunkIndex = (index: string | number) => Number(index) || 0;
+const getChunkDisplayIndex = (index: string | number) => normalizeChunkIndex(index) + 1;
+
+const getChunkClass = (index: string | number) => {
+  return normalizeChunkIndex(index) % 2 !== 0 ? 'chunk-odd' : 'chunk-even';
 };
 
 // 获取Chunk元数据
@@ -513,9 +518,9 @@ const getGeneratedQuestions = (item: any): GeneratedQuestion[] => {
 };
 
 // 展开状态管理
-const expandedChunks = ref<Set<number>>(new Set());
+const expandedChunks = ref<Set<string | number>>(new Set());
 
-const toggleQuestions = (index: number) => {
+const toggleQuestions = (index: string | number) => {
   if (expandedChunks.value.has(index)) {
     expandedChunks.value.delete(index);
   } else {
@@ -525,13 +530,13 @@ const toggleQuestions = (index: number) => {
   expandedChunks.value = new Set(expandedChunks.value);
 };
 
-const isExpanded = (index: number) => expandedChunks.value.has(index);
+const isExpanded = (index: string | number) => expandedChunks.value.has(index);
 
 // 删除中的状态
-const deletingQuestion = ref<{ chunkIndex: number; questionId: string } | null>(null);
+const deletingQuestion = ref<{ chunkIndex: string | number; questionId: string } | null>(null);
 
 // 删除生成的问题
-const handleDeleteQuestion = async (item: any, chunkIndex: number, question: GeneratedQuestion) => {
+const handleDeleteQuestion = async (item: any, chunkIndex: string | number, question: GeneratedQuestion) => {
   if (!item || !item.id) {
     MessagePlugin.error(t('common.error'));
     return;
@@ -580,20 +585,20 @@ const handleDeleteQuestion = async (item: any, chunkIndex: number, question: Gen
 };
 
 // 检查是否正在删除某个问题
-const isDeleting = (chunkIndex: number, questionId: string) => {
+const isDeleting = (chunkIndex: string | number, questionId: string) => {
   return deletingQuestion.value?.chunkIndex === chunkIndex && deletingQuestion.value?.questionId === questionId;
 };
 
 // 父 Chunk 上下文展开状态
-const parentContextExpanded = ref<Set<number>>(new Set());
+const parentContextExpanded = ref<Set<string | number>>(new Set());
 const parentContextCache = ref<Map<string, string>>(new Map());
-const parentContextLoading = ref<Set<number>>(new Set());
+const parentContextLoading = ref<Set<string | number>>(new Set());
 
 const hasParentChunk = (item: any) => !!item?.parent_chunk_id;
 
-const isParentExpanded = (index: number) => parentContextExpanded.value.has(index);
+const isParentExpanded = (index: string | number) => parentContextExpanded.value.has(index);
 
-const toggleParentContext = async (item: any, index: number) => {
+const toggleParentContext = async (item: any, index: string | number) => {
   if (parentContextExpanded.value.has(index)) {
     parentContextExpanded.value.delete(index);
     parentContextExpanded.value = new Set(parentContextExpanded.value);
@@ -783,7 +788,7 @@ const handleDetailsScroll = () => {
             :class="getChunkClass(index)"
           >
             <div class="chunk-header">
-              <span class="chunk-index">{{ $t('knowledgeBase.segment') }} {{ index + 1 }}</span>
+              <span class="chunk-index">{{ $t('knowledgeBase.segment') }} {{ getChunkDisplayIndex(index) }}</span>
               <div class="chunk-header-right">
                 <t-tag 
                   v-if="hasParentChunk(item)" 

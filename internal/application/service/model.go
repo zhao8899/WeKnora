@@ -168,7 +168,7 @@ func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) erro
 	logger.Info(ctx, "Start updating model")
 	logger.Infof(ctx, "Updating model ID: %s, name: %s", model.ID, model.Name)
 
-	// Check if the model is builtin - builtin models cannot be updated
+	// Check if the model is builtin - only super admins may update builtin models
 	tenantID := types.MustTenantIDFromContext(ctx)
 	existingModel, err := s.repo.GetByID(ctx, tenantID, model.ID)
 	if err != nil {
@@ -178,8 +178,13 @@ func (s *modelService) UpdateModel(ctx context.Context, model *types.Model) erro
 		return err
 	}
 	if existingModel != nil && existingModel.IsBuiltin {
-		logger.Warnf(ctx, "Attempted to update builtin model: %s", model.ID)
-		return errors.New("builtin models cannot be updated")
+		if !types.IsSuperAdmin(ctx) {
+			logger.Warnf(ctx, "Tenant user attempted to update builtin model: %s", model.ID)
+			return errors.New("builtin models cannot be updated")
+		}
+		// Preserve original tenant_id so the DB WHERE clause (id=? AND tenant_id=?) matches.
+		model.TenantID = existingModel.TenantID
+		logger.Infof(ctx, "Super admin updating builtin model: %s", model.ID)
 	}
 
 	// Update model in repository
@@ -204,7 +209,7 @@ func (s *modelService) DeleteModel(ctx context.Context, id string) error {
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
-	// Check if the model is builtin - builtin models cannot be deleted
+	// Check if the model is builtin - only super admins may delete builtin models
 	existingModel, err := s.repo.GetByID(ctx, tenantID, id)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -213,8 +218,20 @@ func (s *modelService) DeleteModel(ctx context.Context, id string) error {
 		return err
 	}
 	if existingModel != nil && existingModel.IsBuiltin {
-		logger.Warnf(ctx, "Attempted to delete builtin model: %s", id)
-		return errors.New("builtin models cannot be deleted")
+		if !types.IsSuperAdmin(ctx) {
+			logger.Warnf(ctx, "Tenant user attempted to delete builtin model: %s", id)
+			return errors.New("builtin models cannot be deleted")
+		}
+		// Delete using the model's original tenant_id, not the current context tenant.
+		logger.Infof(ctx, "Super admin deleting builtin model: %s", id)
+		err = s.repo.Delete(ctx, existingModel.TenantID, id)
+		if err != nil {
+			logger.ErrorWithFields(ctx, err, map[string]interface{}{
+				"model_id":  id,
+				"tenant_id": existingModel.TenantID,
+			})
+		}
+		return err
 	}
 
 	// Delete model from repository

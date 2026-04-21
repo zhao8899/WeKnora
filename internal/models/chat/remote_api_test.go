@@ -241,3 +241,28 @@ func TestRemoteAPIChat(t *testing.T) {
 		})
 	}
 }
+
+func TestNewRemoteChat_MoonshotFixedTemperature(t *testing.T) {
+	chatInstance, err := NewRemoteChat(&ChatConfig{
+		Source:    types.ModelSourceRemote,
+		BaseURL:   "https://api.moonshot.ai/v1",
+		ModelName: "kimi-k2.6",
+		APIKey:    "test-key",
+		ModelID:   "kimi-k2.6",
+		Provider:  "moonshot",
+	})
+	require.NoError(t, err)
+
+	remoteChat, ok := chatInstance.(*RemoteAPIChat)
+	require.True(t, ok)
+	require.NotNil(t, remoteChat.requestCustomizer)
+
+	req := remoteChat.BuildChatCompletionRequest([]Message{{Role: "user", Content: "hello"}}, &ChatOptions{
+		Temperature: 0.3,
+	}, false)
+
+	customReq, useRawHTTP := remoteChat.requestCustomizer(&req, &ChatOptions{Temperature: 0.3}, false)
+	assert.Nil(t, customReq)
+	assert.False(t, useRawHTTP)
+	assert.Equal(t, float32(1), req.Temperature)
+}

@@ -284,6 +284,13 @@ func (r *knowledgeRepository) UpdateKnowledgeColumn(
 	return err
 }
 
+func (r *knowledgeRepository) UpdateStatus(ctx context.Context, id string, status string) error {
+	return r.db.WithContext(ctx).
+		Model(&types.Knowledge{}).
+		Where("id = ?", id).
+		Update("parse_status", status).Error
+}
+
 // CountKnowledgeByKnowledgeBaseID counts the number of knowledge items in a knowledge base
 func (r *knowledgeRepository) CountKnowledgeByKnowledgeBaseID(
 	ctx context.Context,
@@ -337,6 +344,25 @@ func (r *knowledgeRepository) FindByMetadataKey(
 	err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND knowledge_base_id = ? AND deleted_at IS NULL", tenantID, kbID).
 		Where("metadata->>? = ?", key, value).
+		First(&knowledge).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &knowledge, nil
+}
+
+func (r *knowledgeRepository) FindByExternalID(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+	externalID string,
+) (*types.Knowledge, error) {
+	var knowledge types.Knowledge
+	err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND knowledge_base_id = ? AND external_id = ? AND deleted_at IS NULL", tenantID, kbID, externalID).
 		First(&knowledge).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

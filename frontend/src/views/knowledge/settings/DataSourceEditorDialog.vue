@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
+import { useUIStore } from '@/stores/ui'
 import {
   createDataSource,
   updateDataSource,
@@ -13,16 +14,19 @@ import {
   type DataSource,
   type Resource,
 } from '@/api/datasource'
+import { getKnowledgeBaseById } from '@/api/knowledge-base'
 import DataSourceTypeIcon from './DataSourceTypeIcon.vue'
 
 const props = defineProps<{
   kbId: string
   dataSource: DataSource | null
+  focusHint?: string
 }>()
 
 const visible = defineModel<boolean>('visible', { default: false })
 const emit = defineEmits<{ saved: [] }>()
 const { t } = useI18n()
+const uiStore = useUIStore()
 
 const isEdit = computed(() => !!props.dataSource)
 const step = ref(0)
@@ -52,6 +56,10 @@ const selectedResourceIds = ref<string[]>([])
 const testing = ref(false)
 const testResult = ref<'success' | 'error' | ''>('')
 const testErrorMsg = ref('')
+const kbStorageLoading = ref(false)
+const kbStorageProvider = ref('')
+const highlightedFocusHint = ref('')
+const fieldRefs = new Map<string, HTMLElement>()
 
 // Collapsible prereq in Step 1
 const prereqExpanded = ref(false)
@@ -77,7 +85,15 @@ interface ConnectorDef {
   permissionDocUrl: string
   permissionPageUrl: string
   requiredPermissions: string[]
-  fields: { key: string; labelKey: string; placeholder: string; secret?: boolean }[]
+  fields: {
+    key: string
+    labelKey: string
+    placeholder: string
+    secret?: boolean
+    required?: boolean
+    scope?: 'credentials' | 'settings'
+    kind?: 'text' | 'multiline-list'
+  }[]
 }
 
 const connectorDefs = computed<ConnectorDef[]>(() => [
@@ -96,6 +112,62 @@ const connectorDefs = computed<ConnectorDef[]>(() => [
     fields: [
       { key: 'app_id', labelKey: 'datasource.field.appId', placeholder: 'cli_xxxx' },
       { key: 'app_secret', labelKey: 'datasource.field.appSecret', placeholder: '', secret: true },
+    ],
+  },
+  {
+    type: 'web_crawler',
+    available: true,
+    docUrl: 'https://www.sitemaps.org/protocol.html',
+    permissionDocUrl: '',
+    permissionPageUrl: '',
+    requiredPermissions: [],
+    fields: [
+      {
+        key: 'urls',
+        labelKey: 'datasource.field.pageUrls',
+        placeholder: t('datasource.fieldHint.pageUrls'),
+        scope: 'settings',
+        kind: 'multiline-list',
+        required: false,
+      },
+      {
+        key: 'sitemap_url',
+        labelKey: 'datasource.field.sitemapUrl',
+        placeholder: 'https://example.com/sitemap.xml',
+        scope: 'settings',
+        required: false,
+      },
+      {
+        key: 'user_agent',
+        labelKey: 'datasource.field.userAgent',
+        placeholder: 'WeKnora-Crawler/1.0',
+        scope: 'settings',
+        required: false,
+      },
+    ],
+  },
+  {
+    type: 'rss',
+    available: true,
+    docUrl: 'https://validator.w3.org/feed/',
+    permissionDocUrl: '',
+    permissionPageUrl: '',
+    requiredPermissions: [],
+    fields: [
+      {
+        key: 'feed_urls',
+        labelKey: 'datasource.field.feedUrls',
+        placeholder: t('datasource.fieldHint.feedUrls'),
+        scope: 'settings',
+        kind: 'multiline-list',
+      },
+      {
+        key: 'user_agent',
+        labelKey: 'datasource.field.userAgent',
+        placeholder: 'WeKnora-RSS/1.0',
+        scope: 'settings',
+        required: false,
+      },
     ],
   },
   {
@@ -124,6 +196,135 @@ const connectorDefs = computed<ConnectorDef[]>(() => [
 
 
 const currentDef = computed(() => connectorDefs.value.find(d => d.type === form.value.type))
+const isKbStorageConfigured = computed(() => {
+  const provider = kbStorageProvider.value.trim()
+  return !!provider && provider !== '__pending_env__'
+})
+
+function ensureConfigBuckets() {
+  if (!form.value.config) {
+    form.value.config = { credentials: {}, resource_ids: [], settings: {} }
+  }
+  if (!form.value.config.credentials) {
+    form.value.config.credentials = {}
+  }
+  if (!form.value.config.settings) {
+    form.value.config.settings = {}
+  }
+  if (!Array.isArray(form.value.config.resource_ids)) {
+    form.value.config.resource_ids = []
+  }
+}
+
+function getFieldBucket(field: ConnectorDef['fields'][number]) {
+  ensureConfigBuckets()
+  return field.scope === 'settings' ? form.value.config.settings : form.value.config.credentials
+}
+
+function getFieldValue(field: ConnectorDef['fields'][number]) {
+  const bucket = getFieldBucket(field)
+  const value = bucket[field.key]
+  if (field.kind === 'multiline-list') {
+    if (Array.isArray(value)) {
+      return value.join('\n')
+    }
+    return typeof value === 'string' ? value : ''
+  }
+  return typeof value === 'string' ? value : ''
+}
+
+function setFieldValue(field: ConnectorDef['fields'][number], value: string) {
+  const bucket = getFieldBucket(field)
+  if (field.kind === 'multiline-list') {
+    bucket[field.key] = value
+      .split(/\r?\n|,/)
+      .map(item => item.trim())
+      .filter(Boolean)
+    return
+  }
+  bucket[field.key] = value
+}
+
+function handleFieldChange(field: ConnectorDef['fields'][number], value: string | number) {
+  setFieldValue(field, String(value ?? ''))
+}
+
+function supportsRawCredentialValidation(def?: ConnectorDef) {
+  if (!def || def.fields.length === 0) {
+    return false
+  }
+  return def.fields.every(field => (field.scope || 'credentials') === 'credentials')
+}
+
+async function loadKnowledgeBaseStorageStatus() {
+  if (!props.kbId) return
+  kbStorageLoading.value = true
+  try {
+    const res: any = await getKnowledgeBaseById(props.kbId)
+    const kb = res?.data || res
+    kbStorageProvider.value = kb?.storage_provider_config?.provider || kb?.storage_config?.provider || ''
+  } catch {
+    kbStorageProvider.value = ''
+  } finally {
+    kbStorageLoading.value = false
+  }
+}
+
+function ensureStorageConfigured() {
+  if (isKbStorageConfigured.value) {
+    return true
+  }
+  MessagePlugin.warning(t('datasource.storageRequired'))
+  return false
+}
+
+function goToStorageSettings() {
+  if (!props.kbId) {
+    return
+  }
+  uiStore.kbEditorInitialSection = 'storage'
+  visible.value = false
+}
+
+function setFieldRef(key: string, el: Element | ComponentPublicInstance | null) {
+  const element = el instanceof HTMLElement
+    ? el
+    : el && '$el' in el && el.$el instanceof HTMLElement
+      ? el.$el
+      : null
+
+  if (element) {
+    fieldRefs.set(key, element)
+    return
+  }
+  fieldRefs.delete(key)
+}
+
+function resolveFocusFieldKey() {
+  if (props.focusHint === 'storage') {
+    return 'storage'
+  }
+  if (props.focusHint === 'primary') {
+    return currentDef.value?.fields?.[0]?.key || ''
+  }
+  return props.focusHint || ''
+}
+
+async function focusHintTarget() {
+  const key = resolveFocusFieldKey()
+  highlightedFocusHint.value = key
+  if (!key) {
+    return
+  }
+  await nextTick()
+  if (key === 'storage') {
+    const warning = document.querySelector('.ds-storage-warning') as HTMLElement | null
+    warning?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    return
+  }
+  const target = fieldRefs.get(key)
+  target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
 
 // --- Dialog lifecycle ---
 watch(visible, (v) => {
@@ -132,9 +333,11 @@ watch(visible, (v) => {
   testResult.value = ''
   testErrorMsg.value = ''
   tempDsId.value = ''
+  kbStorageProvider.value = ''
   prereqExpanded.value = false
   resources.value = []
   selectedResourceIds.value = []
+  loadKnowledgeBaseStorageStatus()
 
   if (isEdit.value && props.dataSource) {
     form.value = {
@@ -159,6 +362,8 @@ watch(visible, (v) => {
       sync_deletions: true,
     }
   }
+  ensureConfigBuckets()
+  focusHintTarget()
 })
 
 function selectType(def: ConnectorDef) {
@@ -172,7 +377,10 @@ function selectType(def: ConnectorDef) {
 async function testConnection() {
   const fields = currentDef.value?.fields || []
   for (const f of fields) {
-    if (!form.value.config.credentials[f.key]) {
+    const required = f.required !== false
+    const value = getFieldBucket(f)[f.key]
+    const hasValue = Array.isArray(value) ? value.length > 0 : !!String(value || '').trim()
+    if (required && !hasValue) {
       MessagePlugin.warning(`${t(f.labelKey)} ${t('datasource.isRequired')}`)
       return
     }
@@ -188,8 +396,24 @@ async function testConnection() {
         knowledge_base_id: props.kbId,
       } as any)
       await validateConnection(tempDsId.value)
-    } else {
+    } else if (supportsRawCredentialValidation(currentDef.value)) {
       await validateCredentials(form.value.type, form.value.config.credentials)
+    } else {
+      if (!tempDsId.value) {
+        const res = await createDataSource({
+          ...form.value,
+          knowledge_base_id: props.kbId,
+          status: 'paused',
+        } as any)
+        const created = res?.data || res
+        tempDsId.value = created.id
+      } else {
+        await updateDataSource(tempDsId.value, {
+          ...form.value,
+          knowledge_base_id: props.kbId,
+        } as any)
+      }
+      await validateConnection(tempDsId.value)
     }
     testResult.value = 'success'
     MessagePlugin.success(t('datasource.testSuccess'))
@@ -213,7 +437,7 @@ async function loadResources() {
       } as any)
       const created = res?.data || res
       tempDsId.value = created.id
-    } else if (!isEdit.value) {
+    } else {
       await updateDataSource(tempDsId.value, {
         ...form.value,
         knowledge_base_id: props.kbId,
@@ -240,7 +464,10 @@ function toggleResource(id: string) {
 function validateStep1Fields(): boolean {
   const fields = currentDef.value?.fields || []
   for (const f of fields) {
-    if (!form.value.config.credentials[f.key]) {
+    const required = f.required !== false
+    const value = getFieldBucket(f)[f.key]
+    const hasValue = Array.isArray(value) ? value.length > 0 : !!String(value || '').trim()
+    if (required && !hasValue) {
       MessagePlugin.warning(`${t(f.labelKey)} ${t('datasource.isRequired')}`)
       return false
     }
@@ -268,6 +495,9 @@ function prevStep() {
 
 // --- Final submit ---
 async function handleSubmit() {
+  if (!ensureStorageConfigured()) {
+    return
+  }
   form.value.config.resource_ids = selectedResourceIds.value
   submitting.value = true
   try {
@@ -425,19 +655,50 @@ const stepTitles = computed(() => [
         <t-input v-model="form.name" :placeholder="t('datasource.namePlaceholder')" />
       </div>
 
+      <div
+        v-if="!kbStorageLoading && !isKbStorageConfigured"
+        :class="['ds-storage-warning', { 'is-highlighted': highlightedFocusHint === 'storage' }]"
+      >
+        <t-icon name="error-circle-filled" size="16px" />
+        <div class="ds-storage-warning-content">
+          <span class="ds-storage-warning-title">{{ t('datasource.storageWarningTitle') }}</span>
+          <span>{{ t('datasource.storageWarningDesc') }}</span>
+        </div>
+        <t-button size="small" variant="outline" theme="warning" @click="goToStorageSettings">
+          {{ t('knowledgeBase.goToStorageSettings') }}
+        </t-button>
+      </div>
+
       <div v-if="currentDef?.docUrl" class="ds-doc-link">
         <t-icon name="info-circle" size="14px" />
         <span>{{ t('datasource.docHint') }}</span>
         <a :href="currentDef.docUrl" target="_blank" rel="noopener">{{ currentDef.docUrl }}</a>
       </div>
 
-      <div v-for="field in currentDef?.fields || []" :key="field.key" class="form-item">
+      <div
+        v-for="field in currentDef?.fields || []"
+        :key="field.key"
+        :ref="(el) => setFieldRef(field.key, el)"
+        :class="['form-item', { 'is-highlighted': highlightedFocusHint === field.key }]"
+      >
         <label class="form-label">{{ t(field.labelKey) }}</label>
         <t-input
-          v-model="form.config.credentials[field.key]"
+          v-if="field.kind !== 'multiline-list'"
+          :value="getFieldValue(field)"
           :placeholder="field.placeholder"
           :type="field.secret ? 'password' : 'text'"
+          @change="handleFieldChange(field, $event)"
         />
+        <t-textarea
+          v-else
+          :value="getFieldValue(field)"
+          :placeholder="field.placeholder"
+          :autosize="{ minRows: 4, maxRows: 8 }"
+          @change="handleFieldChange(field, $event)"
+        />
+        <div v-if="field.kind === 'multiline-list'" class="form-tip compact">
+          {{ t('datasource.multilineHint') }}
+        </div>
       </div>
 
       <div class="form-actions">
@@ -655,6 +916,43 @@ const stepTitles = computed(() => [
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.ds-storage-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  background: var(--td-warning-color-1);
+  color: var(--td-warning-color-7);
+  border: 1px solid var(--td-warning-color-3);
+}
+
+.ds-storage-warning.is-highlighted,
+.form-item.is-highlighted {
+  box-shadow: 0 0 0 2px rgba(0, 82, 217, 0.16);
+  border-radius: 10px;
+  transition: box-shadow 0.2s ease;
+}
+
+.form-item.is-highlighted {
+  padding: 10px 12px;
+  margin: 0 -12px 12px;
+  background: var(--td-brand-color-light);
+}
+
+.ds-storage-warning-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ds-storage-warning-title {
+  font-weight: 600;
 }
 
 .ds-prereq-item {

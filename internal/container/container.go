@@ -47,11 +47,12 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/service/llmcontext"
 	memoryService "github.com/Tencent/WeKnora/internal/application/service/memory"
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
-	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/database"
 	"github.com/Tencent/WeKnora/internal/datasource"
 	feishuConnector "github.com/Tencent/WeKnora/internal/datasource/connector/feishu"
+	rssConnector "github.com/Tencent/WeKnora/internal/datasource/connector/rss"
+	webConnector "github.com/Tencent/WeKnora/internal/datasource/connector/web"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/handler/session"
@@ -63,6 +64,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/im/telegram"
 	"github.com/Tencent/WeKnora/internal/im/wecom"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
+	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/mcp"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
@@ -133,6 +135,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewKnowledgeTagRepository))
 	must(container.Provide(repository.NewSessionRepository))
 	must(container.Provide(repository.NewMessageRepository))
+	must(container.Provide(repository.NewAnswerEvidenceRepository))
+	must(container.Provide(repository.NewDocumentAccessLogRepository))
 	must(container.Provide(repository.NewModelRepository))
 	must(container.Provide(repository.NewUserRepository))
 	must(container.Provide(repository.NewAuthTokenRepository))
@@ -147,6 +151,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewWebSearchStateService))
 	must(container.Provide(repository.NewDataSourceRepository))
 	must(container.Provide(repository.NewSyncLogRepository))
+	must(container.Provide(repository.NewAnalyticsRepository))
 
 	// MCP manager for managing MCP client connections
 	logger.Debugf(ctx, "[Container] Registering MCP manager...")
@@ -174,6 +179,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewImageMultimodalService, dig.Name("imageMultimodal")))
 
 	must(container.Provide(service.NewMessageService))
+	must(container.Provide(service.NewConfidenceService))
+	must(container.Provide(service.NewAnalyticsService))
+	must(container.Provide(service.NewSourceWeightUpdater))
 	must(container.Provide(service.NewMCPServiceService))
 	must(container.Provide(service.NewCustomAgentService))
 	must(container.Provide(memoryService.NewMemoryService))
@@ -217,6 +225,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(datasource.NewScheduler))
 	must(container.Provide(service.NewDataSourceService))
 	must(container.Invoke(startDataSourceScheduler))
+	must(container.Invoke(startSourceWeightUpdater))
 	logger.Debugf(ctx, "[Container] Data source sync framework registered")
 	must(container.Provide(chatpipeline.NewEventManager))
 	must(container.Invoke(chatpipeline.NewPluginSearch))
@@ -225,6 +234,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(chatpipeline.NewPluginMerge))
 	must(container.Invoke(chatpipeline.NewPluginDataAnalysis))
 	must(container.Invoke(chatpipeline.NewPluginIntoChatMessage))
+	must(container.Invoke(chatpipeline.NewPluginEvidenceCapture))
 	must(container.Invoke(chatpipeline.NewPluginChatCompletion))
 	must(container.Invoke(chatpipeline.NewPluginChatCompletionStream))
 	must(container.Invoke(chatpipeline.NewPluginFilterTopK))
@@ -263,6 +273,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewDataSourceHandler))
 	// Usage audit handler
 	must(container.Provide(handler.NewUsageHandler))
+	must(container.Provide(handler.NewConfidenceHandler))
+	must(container.Provide(handler.NewAnalyticsHandler))
 	// IM integration
 	logger.Debugf(ctx, "[Container] Registering IM integration...")
 	must(container.Provide(imPkg.NewService))
@@ -1278,6 +1290,8 @@ func initConnectorRegistry() *datasource.ConnectorRegistry {
 
 	// Register Feishu connector
 	_ = registry.Register(feishuConnector.NewConnector())
+	_ = registry.Register(rssConnector.NewConnector())
+	_ = registry.Register(webConnector.NewConnector())
 
 	// Future connectors will be registered here:
 	// _ = registry.Register(notionConnector.NewConnector())
@@ -1296,6 +1310,37 @@ func startDataSourceScheduler(scheduler *datasource.Scheduler, cleaner interface
 
 	cleaner.RegisterWithName("DataSourceScheduler", func() error {
 		scheduler.Stop()
+		return nil
+	})
+}
+
+// startSourceWeightUpdater refreshes knowledge source weights on startup and then daily.
+func startSourceWeightUpdater(updater *service.SourceWeightUpdater, cleaner interfaces.ResourceCleaner) {
+	ctx, cancel := context.WithCancel(context.Background())
+	ticker := time.NewTicker(24 * time.Hour)
+
+	run := func() {
+		if err := updater.Run(context.Background()); err != nil {
+			logger.Warnf(context.Background(), "[Container] source weight update failed: %v", err)
+		}
+	}
+
+	run()
+
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				run()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	cleaner.RegisterWithName("SourceWeightUpdater", func() error {
+		cancel()
+		ticker.Stop()
 		return nil
 	})
 }

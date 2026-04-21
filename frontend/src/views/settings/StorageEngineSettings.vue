@@ -446,12 +446,42 @@ import {
   type MinioBucketInfo,
 } from '@/api/system'
 
+type FullStorageEngineConfig = {
+  default_provider: string
+  local: { path_prefix: string }
+  minio: { mode: string; endpoint: string; access_key_id: string; secret_access_key: string; bucket_name: string; use_ssl: boolean; path_prefix: string }
+  cos: {
+    secret_id: string
+    secret_key: string
+    region: string
+    bucket_name: string
+    app_id: string
+    path_prefix: string
+  }
+  tos: {
+    endpoint: string
+    region: string
+    access_key: string
+    secret_key: string
+    bucket_name: string
+    path_prefix: string
+  }
+  s3: {
+    endpoint: string
+    region: string
+    access_key: string
+    secret_key: string
+    bucket_name: string
+    path_prefix: string
+  }
+}
+
 const { t } = useI18n()
 const props = defineProps<{
   activeSubSection?: string
 }>()
 
-const defaultConfig = (): StorageEngineConfig => ({
+const defaultConfig = (): FullStorageEngineConfig => ({
   default_provider: 'local',
   local: { path_prefix: '' },
   minio: { mode: 'docker', endpoint: '', access_key_id: '', secret_access_key: '', bucket_name: '', use_ssl: false, path_prefix: '' },
@@ -483,7 +513,7 @@ const defaultConfig = (): StorageEngineConfig => ({
 
 const loading = ref(true)
 const error = ref('')
-const config = ref<StorageEngineConfig>(defaultConfig())
+const config = ref<FullStorageEngineConfig>(defaultConfig())
 const engineStatus = ref<{ local: boolean; minio: boolean; cos: boolean }>({
   local: true,
   minio: false,
@@ -506,7 +536,7 @@ const checkingS3 = ref(false)
 const s3CheckResult = ref<{ ok: boolean; message: string } | null>(null)
 
 const minioAvailable = computed(() => {
-  if (config.value.minio?.mode === 'remote') {
+  if (config.value.minio.mode === 'remote') {
     return !!(config.value.minio.endpoint && config.value.minio.access_key_id && config.value.minio.secret_access_key)
   }
   return minioEnvAvailable.value
@@ -621,42 +651,42 @@ async function loadAll() {
 }
 
 function buildPayload(): StorageEngineConfig {
-  const mode = config.value.minio?.mode || 'docker'
+  const mode = config.value.minio.mode || 'docker'
   return {
     default_provider: config.value.default_provider || 'local',
-    local: { path_prefix: (config.value.local?.path_prefix || '').trim() },
+    local: { path_prefix: config.value.local.path_prefix.trim() },
     minio: {
       mode,
-      endpoint: mode === 'remote' ? (config.value.minio?.endpoint || '').trim() : '',
-      access_key_id: mode === 'remote' ? (config.value.minio?.access_key_id || '').trim() : '',
-      secret_access_key: mode === 'remote' ? (config.value.minio?.secret_access_key || '').trim() : '',
-      bucket_name: (config.value.minio?.bucket_name || '').trim(),
-      use_ssl: config.value.minio?.use_ssl ?? false,
-      path_prefix: (config.value.minio?.path_prefix || '').trim(),
+      endpoint: mode === 'remote' ? config.value.minio.endpoint.trim() : '',
+      access_key_id: mode === 'remote' ? config.value.minio.access_key_id.trim() : '',
+      secret_access_key: mode === 'remote' ? config.value.minio.secret_access_key.trim() : '',
+      bucket_name: config.value.minio.bucket_name.trim(),
+      use_ssl: config.value.minio.use_ssl,
+      path_prefix: config.value.minio.path_prefix.trim(),
     },
     cos: {
-      secret_id: (config.value.cos?.secret_id || '').trim(),
-      secret_key: (config.value.cos?.secret_key || '').trim(),
-      region: (config.value.cos?.region || '').trim(),
-      bucket_name: (config.value.cos?.bucket_name || '').trim(),
-      app_id: (config.value.cos?.app_id || '').trim(),
-      path_prefix: (config.value.cos?.path_prefix || '').trim(),
+      secret_id: config.value.cos.secret_id.trim(),
+      secret_key: config.value.cos.secret_key.trim(),
+      region: config.value.cos.region.trim(),
+      bucket_name: config.value.cos.bucket_name.trim(),
+      app_id: config.value.cos.app_id.trim(),
+      path_prefix: config.value.cos.path_prefix.trim(),
     },
     tos: {
-      endpoint: (config.value.tos?.endpoint || '').trim(),
-      region: (config.value.tos?.region || '').trim(),
-      access_key: (config.value.tos?.access_key || '').trim(),
-      secret_key: (config.value.tos?.secret_key || '').trim(),
-      bucket_name: (config.value.tos?.bucket_name || '').trim(),
-      path_prefix: (config.value.tos?.path_prefix || '').trim(),
+      endpoint: config.value.tos.endpoint.trim(),
+      region: config.value.tos.region.trim(),
+      access_key: config.value.tos.access_key.trim(),
+      secret_key: config.value.tos.secret_key.trim(),
+      bucket_name: config.value.tos.bucket_name.trim(),
+      path_prefix: config.value.tos.path_prefix.trim(),
     },
     s3: {
-      endpoint: (config.value.s3?.endpoint || '').trim(),
-      region: (config.value.s3?.region || '').trim(),
-      access_key: (config.value.s3?.access_key || '').trim(),
-      secret_key: (config.value.s3?.secret_key || '').trim(),
-      bucket_name: (config.value.s3?.bucket_name || '').trim(),
-      path_prefix: (config.value.s3?.path_prefix || '').trim(),
+      endpoint: config.value.s3.endpoint.trim(),
+      region: config.value.s3.region.trim(),
+      access_key: config.value.s3.access_key.trim(),
+      secret_key: config.value.s3.secret_key.trim(),
+      bucket_name: config.value.s3.bucket_name.trim(),
+      path_prefix: config.value.s3.path_prefix.trim(),
     },
   }
 }

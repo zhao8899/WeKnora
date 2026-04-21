@@ -40,9 +40,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, defineProps, computed } from 'vue';
-import type { SearchResultsData, SearchResultItem, RelevanceLevel } from '@/types/tool-results';
-import { getMatchTypeIcon } from '@/utils/tool-icons';
+import { computed } from 'vue';
+import type { SearchResultsData, RelevanceLevel } from '@/types/tool-results';
 import ContentPopup from './ContentPopup.vue';
 import { useI18n } from 'vue-i18n';
 

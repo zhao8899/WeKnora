@@ -157,7 +157,9 @@ const kbLastUpdated = computed(() => {
   return formatStringDate(new Date(raw));
 });
 
-const knowledgeList = ref<Array<{ id: string; name: string; type?: string }>>([]);
+type KnowledgeBaseOption = { id: string; name: string; type?: string };
+
+const knowledgeList = ref<KnowledgeBaseOption[]>([]);
 let { cardList, total, moreIndex, details, getKnowled, delKnowledge, openMore, onVisibleChange: _onVisibleChange, getCardDetails, getfDetails } = useKnowledgeBase(kbId.value)
 const onVisibleChange = (visible: boolean) => {
   _onVisibleChange(visible);
@@ -196,8 +198,8 @@ const tagPage = ref(1);
 const tagHasMore = ref(false);
 const tagLoadingMore = ref(false);
 const tagTotal = ref(0);
-let tagSearchDebounce: ReturnType<typeof setTimeout> | null = null;
-let docSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+let tagSearchDebounce: number | null = null;
+let docSearchDebounce: number | null = null;
 const docSearchKeyword = ref('');
 const selectedFileType = ref('');
 const fileTypeOptions = computed(() => [
@@ -590,8 +592,8 @@ const loadKnowledgeList = async () => {
       }));
     
     // Merge and deduplicate by id (my KBs take precedence)
-    const myKbIds = new Set(myKbs.map(kb => kb.id));
-    const uniqueSharedKbs = sharedKbs.filter(kb => !myKbIds.has(kb.id));
+    const myKbIds = new Set(myKbs.map((kb: KnowledgeBaseOption) => kb.id));
+    const uniqueSharedKbs = sharedKbs.filter((kb: KnowledgeBaseOption) => !myKbIds.has(kb.id));
     
     knowledgeList.value = [...myKbs, ...uniqueSharedKbs];
   } catch (error) {
@@ -620,7 +622,7 @@ watch(selectedTagId, (newVal, oldVal) => {
 watch(tagSearchQuery, (newVal, oldVal) => {
   if (newVal === oldVal) return;
   if (tagSearchDebounce) {
-    clearTimeout(tagSearchDebounce);
+    window.clearTimeout(tagSearchDebounce);
   }
   tagSearchDebounce = window.setTimeout(() => {
     if (kbId.value) {
@@ -633,7 +635,7 @@ watch(tagSearchQuery, (newVal, oldVal) => {
 watch(docSearchKeyword, (newVal, oldVal) => {
   if (newVal === oldVal) return;
   if (docSearchDebounce) {
-    clearTimeout(docSearchDebounce);
+    window.clearTimeout(docSearchDebounce);
   }
   docSearchDebounce = window.setTimeout(() => {
     if (kbId.value) {

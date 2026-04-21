@@ -59,7 +59,7 @@
                 </div>
 
                 <div v-if="currentSection === 'models'" class="section">
-                  <ModelSettings :active-sub-section="currentSubSection || undefined" />
+                  <ModelSettings :active-sub-section="modelSubSection" />
                 </div>
 
                 <div v-if="currentSection === 'ollama'" class="section">
@@ -89,6 +89,10 @@
                 <div v-if="currentSection === 'api'" class="section">
                   <ApiInfo />
                 </div>
+
+                <div v-if="currentSection === 'knowledge-health'" class="section">
+                  <KnowledgeHealthDashboard />
+                </div>
               </div>
             </div>
           </div>
@@ -113,6 +117,7 @@ import SystemInfo from './SystemInfo.vue'
 import TenantInfo from './TenantInfo.vue'
 import ApiInfo from './ApiInfo.vue'
 import WebSearchSettings from './WebSearchSettings.vue'
+import KnowledgeHealthDashboard from './KnowledgeHealthDashboard.vue'
 import { getSettingsNavItems, type SettingsNavItem } from './nav'
 
 const route = useRoute()
@@ -124,6 +129,12 @@ const { t } = useI18n()
 const currentSection = ref<string>('general')
 const currentSubSection = ref<string>('')
 const expandedMenus = ref<string[]>([])
+const modelSubSection = computed<'chat' | 'embedding' | 'rerank' | 'vllm' | undefined>(() => {
+  const value = currentSubSection.value
+  return value === 'chat' || value === 'embedding' || value === 'rerank' || value === 'vllm'
+    ? value
+    : undefined
+})
 
 const isAdmin = computed(() => authStore.canAccessAllTenants)
 const navItems = computed<SettingsNavItem[]>(() => getSettingsNavItems(t, isAdmin.value))

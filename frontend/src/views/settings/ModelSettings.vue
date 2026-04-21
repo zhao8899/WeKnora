@@ -238,8 +238,11 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import ModelEditorDialog from '@/components/ModelEditorDialog.vue'
 import { listModels, createModel, updateModel as updateModelAPI, deleteModel as deleteModelAPI, type ModelConfig } from '@/api/model'
+import { useAuthStore } from '@/stores/auth'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
+const isSuperAdmin = computed(() => authStore.canAccessAllTenants)
 const props = defineProps<{
   activeSubSection?: 'chat' | 'embedding' | 'rerank' | 'vllm'
 }>()
@@ -321,8 +324,8 @@ const openAddDialog = (type: 'chat' | 'embedding' | 'rerank' | 'vllm') => {
 
 // 编辑模型
 const editModel = (type: 'chat' | 'embedding' | 'rerank' | 'vllm', model: any) => {
-  // 内置模型不能编辑
-  if (model.isBuiltin) {
+  // 非超级管理员不能编辑内置模型
+  if (model.isBuiltin && !isSuperAdmin.value) {
     MessagePlugin.warning(t('modelSettings.toasts.builtinCannotEdit'))
     return
   }
@@ -414,9 +417,9 @@ const handleModelSave = async (modelData: any) => {
 
 // 删除模型
 const deleteModel = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm', modelId: string) => {
-  // 检查是否是内置模型
+  // 非超级管理员不能删除内置模型
   const model = allModels.value.find(m => m.id === modelId)
-  if (model?.is_builtin) {
+  if (model?.is_builtin && !isSuperAdmin.value) {
     MessagePlugin.warning(t('modelSettings.toasts.builtinCannotDelete'))
     return
   }
@@ -435,25 +438,23 @@ const deleteModel = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm', model
 // 获取模型操作菜单选项
 const getModelOptions = (type: 'chat' | 'embedding' | 'rerank' | 'vllm', model: any) => {
   const options: any[] = []
-  
-  // 内置模型不能编辑和删除
-  if (model.isBuiltin) {
+
+  // 内置模型仅超级管理员可编辑和删除
+  if (model.isBuiltin && !isSuperAdmin.value) {
     return options
   }
-  
-  // 编辑选项
+
   options.push({
     content: t('common.edit'),
     value: `edit-${type}-${model.id}`
   })
 
-  // 删除选项
   options.push({
     content: t('common.delete'),
     value: `delete-${type}-${model.id}`,
     theme: 'error'
   })
-  
+
   return options
 }
 
