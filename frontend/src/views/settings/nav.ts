@@ -36,6 +36,11 @@ export function getSettingsNavItems(t: TranslateFn, isAdmin = false): SettingsNa
       adminOnly: true
     },
     {
+      key: 'agent',
+      label: t('settings.agentConfig'),
+      icon: 'chat'
+    },
+    {
       key: 'websearch',
       label: t('settings.webSearchConfig'),
       icon: 'internet'

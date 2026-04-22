@@ -35,6 +35,9 @@ type MessageService interface {
 	// UpdateMessageRenderedContent updates the rendered_content column for a user message.
 	UpdateMessageRenderedContent(ctx context.Context, sessionID, messageID string, renderedContent string) error
 
+	// UpdateMessageExecutionMeta updates only the execution_meta column for a message.
+	UpdateMessageExecutionMeta(ctx context.Context, sessionID, messageID string, executionMeta types.JSON) error
+
 	// DeleteMessage deletes a message
 	DeleteMessage(ctx context.Context, sessionID string, id string) error
 
@@ -82,6 +85,8 @@ type MessageRepository interface {
 	UpdateMessageImages(ctx context.Context, sessionID, messageID string, images types.MessageImages) error
 	// UpdateMessageRenderedContent updates the rendered_content column for a user message
 	UpdateMessageRenderedContent(ctx context.Context, sessionID, messageID string, renderedContent string) error
+	// UpdateMessageExecutionMeta updates only the execution_meta column for a message
+	UpdateMessageExecutionMeta(ctx context.Context, sessionID, messageID string, executionMeta types.JSON) error
 	// DeleteMessage deletes a message
 	DeleteMessage(ctx context.Context, sessionID string, id string) error
 	// DeleteMessagesBySessionID deletes all messages belonging to a session

@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT NOT NULL,
     knowledge_references JSONB NOT NULL DEFAULT '[]',
     agent_steps JSONB DEFAULT NULL,
+    execution_meta JSONB DEFAULT NULL,
     is_completed BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

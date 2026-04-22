@@ -10,7 +10,12 @@ export interface CustomAgentConfig {
   // ===== 模型设置 =====
   model_id?: string;
   rerank_model_id?: string;         // ReRank 模型 ID
-  temperature?: number;
+  temperature?: number;             // 0–1，默认 0.3（精准）
+  top_p?: number;                   // Nucleus sampling 0–1，0=禁用（使用模型默认）
+  llm_call_timeout?: number;        // LLM 单次调用超时（秒），默认 120
+  max_context_tokens?: number;      // 上下文窗口最大 Token，默认 200000
+  max_tool_output_chars?: number;   // 工具输出截断字符数，默认 16000
+  parallel_tool_calls?: boolean;    // 是否并行执行独立工具调用，默认 false
   max_completion_tokens?: number;   // 最大生成token数（普通模式）
 
   // ===== Agent模式设置 =====

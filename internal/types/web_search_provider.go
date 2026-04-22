@@ -40,6 +40,8 @@ type WebSearchProviderEntity struct {
 	Parameters WebSearchProviderParameters `yaml:"parameters" json:"parameters" gorm:"type:json"`
 	// Whether this is the default provider for the tenant
 	IsDefault bool `yaml:"is_default" json:"is_default" gorm:"default:false"`
+	// Whether this provider is shared as a platform-level default visible to all tenants.
+	IsPlatform bool `yaml:"is_platform" json:"is_platform" gorm:"default:false"`
 	// Timestamps
 	CreatedAt time.Time      `yaml:"created_at" json:"created_at"`
 	UpdatedAt time.Time      `yaml:"updated_at" json:"updated_at"`

@@ -323,6 +323,94 @@
                       </div>
                     </div>
 
+                    <!-- 高级推理参数折叠面板 -->
+                    <div class="advanced-params-panel">
+                      <div class="advanced-params-toggle" @click="showAdvancedParams = !showAdvancedParams">
+                        <span class="advanced-params-title">{{ $t('agentSettings.advancedParams.label') }}</span>
+                        <t-icon :name="showAdvancedParams ? 'chevron-up' : 'chevron-down'" class="advanced-params-chevron" />
+                      </div>
+                      <div v-if="showAdvancedParams" class="advanced-params-body">
+
+                        <!-- Top P -->
+                        <div class="setting-row compact">
+                          <div class="setting-info">
+                            <label>{{ $t('agentSettings.advancedParams.topP.label') }}</label>
+                            <p class="desc">{{ $t('agentEditor.desc.topP') }}</p>
+                          </div>
+                          <div class="setting-control">
+                            <div class="slider-wrapper">
+                              <span class="slider-label-left">{{ $t('agent.editor.topPFocused') }}</span>
+                              <t-slider v-model="formData.config.top_p" :min="0" :max="1" :step="0.05" style="width: 140px;" />
+                              <span class="slider-label-right">{{ $t('agent.editor.topPDiverse') }}</span>
+                              <span class="slider-value">{{ formData.config.top_p === 0 ? $t('agent.editor.topPDisabled') : formData.config.top_p?.toFixed(2) }}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- LLM 超时 -->
+                        <div class="setting-row compact">
+                          <div class="setting-info">
+                            <label>{{ $t('agentSettings.advancedParams.llmCallTimeout.label') }}</label>
+                            <p class="desc">{{ $t('agentEditor.desc.llmCallTimeout') }}</p>
+                          </div>
+                          <div class="setting-control inline-unit">
+                            <t-input-number
+                              v-model="formData.config.llm_call_timeout"
+                              :min="0" :max="600" :step="10" theme="column"
+                              :placeholder="'120'"
+                              style="width: 110px;"
+                            />
+                            <span class="unit-label">{{ $t('agentSettings.advancedParams.llmCallTimeout.unit') }}</span>
+                          </div>
+                        </div>
+
+                        <!-- 最大上下文 Token -->
+                        <div class="setting-row compact">
+                          <div class="setting-info">
+                            <label>{{ $t('agentSettings.advancedParams.maxContextTokens.label') }}</label>
+                            <p class="desc">{{ $t('agentEditor.desc.maxContextTokens') }}</p>
+                          </div>
+                          <div class="setting-control">
+                            <t-input-number
+                              v-model="formData.config.max_context_tokens"
+                              :min="0" :max="2000000" :step="10000" theme="column"
+                              :placeholder="'200000'"
+                              style="width: 130px;"
+                            />
+                          </div>
+                        </div>
+
+                        <!-- 工具输出截断 -->
+                        <div class="setting-row compact">
+                          <div class="setting-info">
+                            <label>{{ $t('agentSettings.advancedParams.maxToolOutputChars.label') }}</label>
+                            <p class="desc">{{ $t('agentEditor.desc.maxToolOutputChars') }}</p>
+                          </div>
+                          <div class="setting-control inline-unit">
+                            <t-input-number
+                              v-model="formData.config.max_tool_output_chars"
+                              :min="0" :max="100000" :step="1000" theme="column"
+                              :placeholder="'16000'"
+                              style="width: 110px;"
+                            />
+                            <span class="unit-label">{{ $t('agentSettings.advancedParams.maxToolOutputChars.unit') }}</span>
+                          </div>
+                        </div>
+
+                        <!-- 并行工具调用 -->
+                        <div class="setting-row compact">
+                          <div class="setting-info">
+                            <label>{{ $t('agentSettings.advancedParams.parallelToolCalls.label') }}</label>
+                            <p class="desc">{{ $t('agentEditor.desc.parallelToolCalls') }}</p>
+                          </div>
+                          <div class="setting-control">
+                            <t-switch v-model="formData.config.parallel_tool_calls" />
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+
                   </div>
                 </div>
 
@@ -1246,6 +1334,7 @@ const emit = defineEmits<{
 }>();
 
 const currentSection = ref(props.initialSection || 'basic');
+const showAdvancedParams = ref(false);
 const saving = ref(false);
 const allModels = ref<ModelConfig[]>([]);
 const selectedChatModel = computed(() => allModels.value.find(model => model.id === formData.value.config.model_id) || null);
@@ -1287,7 +1376,7 @@ const defaultVectorThreshold = ref(0.5);
 const defaultRerankTopK = ref(5);
 const defaultRerankThreshold = ref(0.5);
 const defaultMaxCompletionTokens = ref(2048);
-const defaultTemperature = ref(0.7);
+const defaultTemperature = ref(0.3);
 
 // 知识库相关工具列表
 const knowledgeBaseTools = ['grep_chunks', 'knowledge_search', 'list_knowledge_chunks', 'query_knowledge_graph', 'get_document_info', 'database_query'];
@@ -1482,9 +1571,14 @@ const defaultFormData = {
     // 模型设置
     model_id: '',
     rerank_model_id: '',
-    temperature: 0.7,
+    temperature: 0.3,
+    top_p: 0,
+    llm_call_timeout: 0,
+    max_context_tokens: 0,
+    max_tool_output_chars: 0,
+    parallel_tool_calls: false,
     max_completion_tokens: 2048,
-    thinking: false, // 默认禁用思考模式
+    thinking: false,
     // Agent模式设置
     max_iterations: 10,
     allowed_tools: [] as string[],
@@ -3878,5 +3972,74 @@ const handleSave = async () => {
   margin-top: 8px;
   font-size: 12px;
   color: var(--td-text-color-placeholder);
+}
+
+.slider-label-left,
+.slider-label-right {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  white-space: nowrap;
+}
+
+.inline-unit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unit-label {
+  font-size: 13px;
+  color: var(--td-text-color-secondary);
+}
+
+.advanced-params-panel {
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.advanced-params-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  background: var(--td-bg-color-container);
+  user-select: none;
+
+  &:hover {
+    background: var(--td-bg-color-container-hover);
+  }
+}
+
+.advanced-params-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+  flex: 1;
+}
+
+.advanced-params-chevron {
+  color: var(--td-text-color-secondary);
+}
+
+.advanced-params-body {
+  padding: 4px 14px;
+  border-top: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-page);
+
+  .setting-row.compact {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--td-component-stroke);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    label {
+      font-size: 13px;
+    }
+  }
 }
 </style>

@@ -22,6 +22,8 @@ func (e *AgentEngine) manageContextWindow(ctx context.Context, messages []chat.M
 	if e.config.MaxContextTokens <= 0 {
 		return messages
 	}
+	logger.Debugf(ctx, "[Agent][Round-%d] Context window check: current_tokens=%d, max_tokens=%d, message_count=%d",
+		round, currentTokens, e.config.MaxContextTokens, len(messages))
 
 	beforeLen := len(messages)
 
@@ -45,6 +47,9 @@ func (e *AgentEngine) manageContextWindow(ctx context.Context, messages []chat.M
 			round, beforeLen, len(messages), e.config.MaxContextTokens)
 	}
 
+	if len(messages) == beforeLen {
+		logger.Debugf(ctx, "[Agent][Round-%d] Context management not needed", round)
+	}
 	return messages
 }
 
@@ -66,6 +71,9 @@ func (e *AgentEngine) analyzeResponse(
 	ctx context.Context, response *types.ChatResponse,
 	step types.AgentStep, iteration int, sessionID string, roundStart time.Time,
 ) responseVerdict {
+	logger.Infof(ctx, "[Agent][Round-%d] Analyzing response: finish_reason=%s, tool_calls=%d, content_len=%d",
+		iteration+1, response.FinishReason, len(response.ToolCalls), len(response.Content))
+
 	// Case 1: LLM stopped naturally without requesting any tool calls
 	if response.FinishReason == "stop" && len(response.ToolCalls) == 0 {
 		// Strip <think>…</think> blocks that some models embed in content
@@ -151,6 +159,7 @@ func (e *AgentEngine) analyzeResponse(
 	}
 
 	// Not done — caller should continue the loop
+	logger.Infof(ctx, "[Agent][Round-%d] Response requires tool execution, continuing loop", iteration+1)
 	return responseVerdict{isDone: false, step: step}
 }
 
@@ -204,6 +213,9 @@ func (e *AgentEngine) appendToolResults(
 	messages []chat.Message,
 	step types.AgentStep,
 ) []chat.Message {
+	logger.Infof(ctx, "[Agent] Appending tool results: thought_len=%d, tool_calls=%d",
+		len(step.Thought), len(step.ToolCalls))
+
 	// Add assistant message with tool calls (if any)
 	if step.Thought != "" || len(step.ToolCalls) > 0 {
 		assistantMsg := chat.Message{
@@ -267,6 +279,7 @@ func (e *AgentEngine) appendToolResults(
 		}
 	}
 
+	logger.Infof(ctx, "[Agent] Tool results appended: total_messages=%d, session=%s", len(messages), e.sessionID)
 	return messages
 }
 
@@ -310,6 +323,8 @@ func (e *AgentEngine) buildMessagesWithLLMContext(
 		Images:  imageURLs,
 	}
 	messages = append(messages, userMsg)
+	logger.Debugf(context.Background(), "[Agent] Built message stack: session=%s, history=%d, images=%d, total=%d",
+		sessionID, len(llmContext), len(imageURLs), len(messages))
 
 	return messages
 }

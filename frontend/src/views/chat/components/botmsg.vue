@@ -77,8 +77,34 @@
                         <t-icon name="info-circle" />
                     </t-button>
                 </t-tooltip>
+                <!-- 重新生成 -->
+                <t-tooltip :content="$t('chat.regenerate')" placement="top">
+                    <t-button size="small" variant="outline" shape="round" @click.stop="emit('regenerate', userQuery)">
+                        <t-icon name="refresh" />
+                    </t-button>
+                </t-tooltip>
             </div>
             <div v-if="isImgLoading" class="img_loading"><t-loading size="small"></t-loading><span>{{ $t('common.loading') }}</span></div>
+        </div>
+        <!-- Agent 模式工具栏（重新生成）-->
+        <div v-if="session.isAgentMode && session.is_completed" class="answer-toolbar agent-toolbar">
+            <t-tooltip :content="$t('chat.regenerate')" placement="top">
+                <t-button size="small" variant="outline" shape="round" @click.stop="emit('regenerate', userQuery)">
+                    <t-icon name="refresh" />
+                </t-button>
+            </t-tooltip>
+        </div>
+        <!-- 答后追问推荐 -->
+        <div v-if="session.is_completed && isLatest && followUpQuestions.length > 0" class="follow-up-section">
+            <div class="follow-up-label">{{ $t('chat.followUpQuestions') }}</div>
+            <div class="follow-up-chips">
+                <span
+                    v-for="item in followUpQuestions"
+                    :key="item.question"
+                    class="follow-up-chip"
+                    @click="emit('send-question', item.question)"
+                >{{ item.question }}</span>
+            </div>
         </div>
         <picturePreview :reviewImg="reviewImg" :reviewUrl="reviewUrl" @closePreImg="closePreImg"></picturePreview>
     </div>
@@ -95,7 +121,10 @@ import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL, hyd
 import { useI18n } from 'vue-i18n';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { useUIStore } from '@/stores/ui';
+import { useSettingsStore } from '@/stores/settings';
 import { submitMessageFeedback } from '@/api/chat/index';
+import { getSuggestedQuestions } from '@/api/agent/index';
+import { normalizeSuggestedQuestions } from '@/utils/suggestedQuestions';
 import {
     buildManualMarkdown,
     copyTextToClipboard,
@@ -114,7 +143,7 @@ marked.use({
 
 ensureMermaidInitialized();
 
-const emit = defineEmits(['scroll-bottom'])
+const emit = defineEmits(['scroll-bottom', 'regenerate', 'send-question'])
 const { t } = useI18n()
 const uiStore = useUIStore();
 const renderer = new marked.Renderer();
@@ -145,11 +174,60 @@ const props = defineProps({
         type: [String, Object],
         required: false,
         default: ''
+    },
+    isLatest: {
+        type: Boolean,
+        required: false,
+        default: false
     }
 });
 
 // 本地反馈状态：初始化时从 session.feedback 读取
 const localFeedback = ref(props.session?.feedback || '');
+
+// 答后追问
+const useSettingsStoreInstance = useSettingsStore();
+const followUpQuestions = ref([]);
+const followUpLoading = ref(false);
+
+const fetchFollowUp = async () => {
+    const agentId = useSettingsStoreInstance.selectedAgentId;
+    if (!agentId || followUpLoading.value || followUpQuestions.value.length > 0) return;
+    followUpLoading.value = true;
+    try {
+        const selectedKBs = useSettingsStoreInstance.getSelectedKnowledgeBases();
+        const selectedFiles = useSettingsStoreInstance.getSelectedFiles();
+        const res = await getSuggestedQuestions(agentId, {
+            knowledge_base_ids: selectedKBs.length > 0 ? selectedKBs : undefined,
+            knowledge_ids: selectedFiles.length > 0 ? selectedFiles : undefined,
+            limit: 3,
+        });
+        followUpQuestions.value = normalizeSuggestedQuestions(res?.data?.questions, 3);
+    } catch {
+        // silently ignore
+    } finally {
+        followUpLoading.value = false;
+    }
+};
+
+watch(
+    () => props.session?.is_completed,
+    (completed) => {
+        if (completed && props.isLatest) {
+            fetchFollowUp();
+        }
+    },
+    { immediate: true }
+);
+
+watch(
+    () => props.isLatest,
+    (latest) => {
+        if (latest && props.session?.is_completed) {
+            fetchFollowUp();
+        }
+    }
+);
 
 const handleFeedback = async (value) => {
     if (localFeedback.value === value) return; // 已反馈，忽略重复点击
@@ -655,5 +733,49 @@ onBeforeUnmount(() => {
 :deep(.t-loading__gradient-conic) {
     background: conic-gradient(from 90deg at 50% 50%, #fff 0deg, #676767 360deg) !important;
 
+}
+
+.agent-toolbar {
+    margin-top: 4px;
+}
+
+.follow-up-section {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    animation: fadeInUp 0.25s ease;
+}
+
+.follow-up-label {
+    font-size: 12px;
+    color: var(--td-text-color-secondary);
+    font-weight: 500;
+}
+
+.follow-up-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.follow-up-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 12px;
+    border-radius: 16px;
+    font-size: 13px;
+    cursor: pointer;
+    border: 1px solid var(--td-component-stroke);
+    background: var(--td-bg-color-container);
+    color: var(--td-text-color-primary);
+    transition: all 0.15s ease;
+    line-height: 1.4;
+
+    &:hover {
+        background: var(--td-brand-color-light);
+        border-color: var(--td-brand-color);
+        color: var(--td-brand-color);
+    }
 }
 </style>

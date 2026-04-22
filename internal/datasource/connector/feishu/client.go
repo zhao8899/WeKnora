@@ -80,8 +80,11 @@ func (c *Client) getTenantAccessToken(ctx context.Context) (string, error) {
 	}
 	c.tokenExpAt = time.Now().Add(ttl)
 
-	logger.Infof(ctx, "[Feishu] got tenant_access_token: %s...%s expire=%ds",
-		result.TenantAccessToken[:8], result.TenantAccessToken[len(result.TenantAccessToken)-4:], result.Expire)
+	tokenPreview := result.TenantAccessToken
+	if len(tokenPreview) > 12 {
+		tokenPreview = fmt.Sprintf("%s...%s", tokenPreview[:8], tokenPreview[len(tokenPreview)-4:])
+	}
+	logger.Infof(ctx, "[Feishu] got tenant_access_token: %s expire=%ds", tokenPreview, result.Expire)
 
 	return c.tokenCache, nil
 }

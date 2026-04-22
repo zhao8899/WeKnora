@@ -141,9 +141,9 @@ type sqlValidator struct {
 	enableHiddenKBFilter bool
 
 	// Search scope filtering (restrict to specific KBs and knowledges)
-	enableSearchScopeFilter  bool
-	searchScopeKBIDs         []string
-	searchScopeKnowledgeIDs  []string
+	enableSearchScopeFilter bool
+	searchScopeKBIDs        []string
+	searchScopeKnowledgeIDs []string
 }
 
 // ParseSQL parses a SQL statement using pg_query_go and extracts table names, select fields, and where fields
@@ -157,8 +157,11 @@ func ParseSQL(sql string) *SQLParseResult {
 	}
 
 	// Parse the SQL using pg_query_go
-	parseResult, err := pg_query.Parse(sql)
+	parseResult, err := parsePGQuerySQL(sql)
 	if err != nil {
+		if fallback, ok := parseSQLFallback(sql); ok {
+			return fallback
+		}
 		result.IsSelect = false
 		result.ParseError = fmt.Sprintf("Failed to parse SQL: %v", err)
 		return result
@@ -661,12 +664,12 @@ func WithSecurityDefaults(tenantID uint64) SQLValidationOption {
 func ValidateSQL(sql string, opts ...SQLValidationOption) (*SQLParseResult, *SQLValidationResult) {
 	// Initialize validator with defaults
 	validator := &sqlValidator{
-		allowedTables:      make(map[string]bool),
-		allowedFunctions:   make(map[string]bool),
-		tablesWithTenantID: make(map[string]bool),
+		allowedTables:       make(map[string]bool),
+		allowedFunctions:    make(map[string]bool),
+		tablesWithTenantID:  make(map[string]bool),
 		tablesWithDeletedAt: make(map[string]bool),
-		minLength:          6,
-		maxLength:          4096,
+		minLength:           6,
+		maxLength:           4096,
 	}
 
 	// Apply options
@@ -694,8 +697,11 @@ func ValidateSQL(sql string, opts ...SQLValidationOption) (*SQLParseResult, *SQL
 	}
 
 	// Phase 2: Parse SQL using PostgreSQL's official parser
-	parseResult, err := pg_query.Parse(sql)
+	parseResult, err := parsePGQuerySQL(sql)
 	if err != nil {
+		if fallback, ok := validateSQLFallback(sql, validator, validationResult); ok {
+			return fallback, validationResult
+		}
 		validationResult.Valid = false
 		validationResult.Errors = append(validationResult.Errors, SQLValidationError{
 			Type:    "parse_error",
@@ -828,7 +834,7 @@ func ValidateAndSecureSQL(sql string, opts ...SQLValidationOption) (string, *SQL
 
 	// Find validator config to check if tenant injection is enabled
 	validator := &sqlValidator{
-		tablesWithTenantID: make(map[string]bool),
+		tablesWithTenantID:  make(map[string]bool),
 		tablesWithDeletedAt: make(map[string]bool),
 	}
 	for _, opt := range opts {
@@ -841,13 +847,13 @@ func ValidateAndSecureSQL(sql string, opts ...SQLValidationOption) (string, *SQL
 	}
 
 	// Parse again to get normalized SQL
-	result, err := pg_query.Parse(sql)
+	result, err := parsePGQuerySQL(sql)
 	if err != nil {
 		return "", validationResult, fmt.Errorf("failed to parse SQL: %v", err)
 	}
 
 	// Normalize SQL
-	normalizedSQL, err := pg_query.Deparse(result)
+	normalizedSQL, err := deparsePGQuerySQL(result)
 	if err != nil {
 		return "", validationResult, fmt.Errorf("failed to normalize SQL: %v", err)
 	}
@@ -1066,7 +1072,18 @@ func checkSQLInjectionRisks(whereClause string) []SQLValidationError {
 	normalizedWhere := strings.ToLower(strings.TrimSpace(whereClause))
 	normalizedWhere = regexp.MustCompile(`\s+`).ReplaceAllString(normalizedWhere, " ")
 
-	// Pattern 1: Always true conditions like "1=1", "'1'='1'", "true", etc.
+	// Pattern 1: OR with always-true condition is the most suspicious case and
+	// should be surfaced as the primary error without a duplicate lower-severity
+	// warning for the same clause.
+	if regexp.MustCompile(`or\s+(1\s*=\s*1|'1'\s*=\s*'1'|true)`).MatchString(normalizedWhere) {
+		return []SQLValidationError{{
+			Type:    "sql_injection_risk",
+			Message: "High-risk SQL injection pattern detected",
+			Details: fmt.Sprintf("OR with always-true condition found in WHERE clause: %s", whereClause),
+		}}
+	}
+
+	// Pattern 2: Always true conditions like "1=1", "'1'='1'", "true", etc.
 	alwaysTruePatterns := []struct {
 		pattern     *regexp.Regexp
 		description string
@@ -1099,7 +1116,7 @@ func checkSQLInjectionRisks(whereClause string) []SQLValidationError {
 		}
 	}
 
-	// Pattern 2: Always false conditions that might be used for testing
+	// Pattern 3: Always false conditions that might be used for testing
 	alwaysFalsePatterns := []struct {
 		pattern     *regexp.Regexp
 		description string
@@ -1122,15 +1139,6 @@ func checkSQLInjectionRisks(whereClause string) []SQLValidationError {
 				Details: fmt.Sprintf("%s found in WHERE clause: %s", pt.description, whereClause),
 			})
 		}
-	}
-
-	// Pattern 3: OR with always-true condition (common injection pattern)
-	if regexp.MustCompile(`or\s+(1\s*=\s*1|'1'\s*=\s*'1'|true)`).MatchString(normalizedWhere) {
-		errors = append(errors, SQLValidationError{
-			Type:    "sql_injection_risk",
-			Message: "High-risk SQL injection pattern detected",
-			Details: fmt.Sprintf("OR with always-true condition found in WHERE clause: %s", whereClause),
-		})
 	}
 
 	return errors
@@ -1860,13 +1868,13 @@ func (v *sqlValidator) validateFuncCall(fc *pg_query.FuncCall, result *SQLValida
 			"create_extension": true,
 
 			// Copy operations
-			"copy":        true,
-			"copy_to":     true,
-			"copy_from":   true,
-			"pg_copy_to":  true,
-			"pg_dump":     true,
-			"pg_dumpall":  true,
-			"pg_restore":  true,
+			"copy":          true,
+			"copy_to":       true,
+			"copy_from":     true,
+			"pg_copy_to":    true,
+			"pg_dump":       true,
+			"pg_dumpall":    true,
+			"pg_restore":    true,
 			"pg_basebackup": true,
 
 			// Process and system functions
@@ -1875,17 +1883,17 @@ func (v *sqlValidator) validateFuncCall(fc *pg_query.FuncCall, result *SQLValida
 			"pg_rotate_logfile":    true,
 
 			// Advisory locks (can be abused for DoS)
-			"pg_advisory_lock":           true,
-			"pg_advisory_unlock":         true,
-			"pg_advisory_lock_shared":    true,
-			"pg_advisory_unlock_shared":  true,
-			"pg_try_advisory_lock":       true,
+			"pg_advisory_lock":            true,
+			"pg_advisory_unlock":          true,
+			"pg_advisory_lock_shared":     true,
+			"pg_advisory_unlock_shared":   true,
+			"pg_try_advisory_lock":        true,
 			"pg_try_advisory_lock_shared": true,
 
 			// Backup and replication
-			"pg_start_backup":  true,
-			"pg_stop_backup":   true,
-			"pg_switch_wal":    true,
+			"pg_start_backup":         true,
+			"pg_stop_backup":          true,
+			"pg_switch_wal":           true,
 			"pg_create_restore_point": true,
 
 			// Foreign data wrappers
@@ -1893,12 +1901,12 @@ func (v *sqlValidator) validateFuncCall(fc *pg_query.FuncCall, result *SQLValida
 			"file_fdw_handler":     true,
 
 			// Procedural languages (code execution)
-			"plpgsql_call_handler": true,
+			"plpgsql_call_handler":  true,
 			"plpython_call_handler": true,
-			"plperl_call_handler": true,
+			"plperl_call_handler":   true,
 
 			// System catalog modification
-			"pg_catalog":  true,
+			"pg_catalog":         true,
 			"information_schema": true,
 		}
 		if dangerousFunctions[funcName] {

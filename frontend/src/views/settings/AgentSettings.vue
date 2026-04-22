@@ -106,6 +106,98 @@
         </div>
       </div>
 
+      <!-- 高级推理参数 -->
+      <div class="advanced-params-panel">
+        <div class="advanced-params-toggle" @click="showAdvancedParams = !showAdvancedParams">
+          <span class="advanced-params-title">{{ $t('agentSettings.advancedParams.label') }}</span>
+          <span class="advanced-params-subtitle">{{ $t('agentSettings.advancedParams.desc') }}</span>
+          <t-icon :name="showAdvancedParams ? 'chevron-up' : 'chevron-down'" class="advanced-params-chevron" />
+        </div>
+        <div v-if="showAdvancedParams" class="advanced-params-body">
+
+          <!-- Top P -->
+          <div class="setting-row compact">
+            <div class="setting-info">
+              <label>{{ $t('agentSettings.advancedParams.topP.label') }}</label>
+              <p class="desc">{{ $t('agentSettings.advancedParams.topP.desc') }}</p>
+            </div>
+            <div class="setting-control">
+              <div class="slider-with-value">
+                <span class="slider-endpoint-label">{{ $t('agent.editor.topPFocused') }}</span>
+                <t-slider v-model="localTopP" :min="0" :max="1" :step="0.05" style="width: 160px;" @change="handleTopPChange" />
+                <span class="slider-endpoint-label">{{ $t('agent.editor.topPDiverse') }}</span>
+                <span class="value-display">{{ localTopP === 0 ? $t('agent.editor.topPDisabled') : localTopP.toFixed(2) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- LLM 超时 -->
+          <div class="setting-row compact">
+            <div class="setting-info">
+              <label>{{ $t('agentSettings.advancedParams.llmCallTimeout.label') }}</label>
+              <p class="desc">{{ $t('agentSettings.advancedParams.llmCallTimeout.desc') }}</p>
+            </div>
+            <div class="setting-control inline-unit">
+              <t-input-number
+                v-model="localLLMCallTimeout"
+                :min="0" :max="600" :step="10"
+                :placeholder="'120'"
+                style="width: 110px;"
+                @change="handleLLMCallTimeoutChange"
+              />
+              <span class="unit-label">{{ $t('agentSettings.advancedParams.llmCallTimeout.unit') }}</span>
+            </div>
+          </div>
+
+          <!-- 最大上下文 Token -->
+          <div class="setting-row compact">
+            <div class="setting-info">
+              <label>{{ $t('agentSettings.advancedParams.maxContextTokens.label') }}</label>
+              <p class="desc">{{ $t('agentSettings.advancedParams.maxContextTokens.desc') }}</p>
+            </div>
+            <div class="setting-control">
+              <t-input-number
+                v-model="localMaxContextTokens"
+                :min="0" :max="2000000" :step="10000"
+                :placeholder="'200000'"
+                style="width: 130px;"
+                @change="handleMaxContextTokensChange"
+              />
+            </div>
+          </div>
+
+          <!-- 工具输出截断 -->
+          <div class="setting-row compact">
+            <div class="setting-info">
+              <label>{{ $t('agentSettings.advancedParams.maxToolOutputChars.label') }}</label>
+              <p class="desc">{{ $t('agentSettings.advancedParams.maxToolOutputChars.desc') }}</p>
+            </div>
+            <div class="setting-control inline-unit">
+              <t-input-number
+                v-model="localMaxToolOutputChars"
+                :min="0" :max="100000" :step="1000"
+                :placeholder="'16000'"
+                style="width: 110px;"
+                @change="handleMaxToolOutputCharsChange"
+              />
+              <span class="unit-label">{{ $t('agentSettings.advancedParams.maxToolOutputChars.unit') }}</span>
+            </div>
+          </div>
+
+          <!-- 并行工具调用 -->
+          <div class="setting-row compact">
+            <div class="setting-info">
+              <label>{{ $t('agentSettings.advancedParams.parallelToolCalls.label') }}</label>
+              <p class="desc">{{ $t('agentSettings.advancedParams.parallelToolCalls.desc') }}</p>
+            </div>
+            <div class="setting-control">
+              <t-switch v-model="localParallelToolCalls" @change="handleParallelToolCallsChange" />
+            </div>
+          </div>
+
+        </div>
+      </div>
+
       <!-- 允许的工具 -->
       <div class="setting-row vertical">
         <div class="setting-info">
@@ -660,6 +752,14 @@ const { t } = useI18n()
 
 // Tab 状态
 const activeTab = ref('agent')
+const showAdvancedParams = ref(false)
+
+// 高级推理参数
+const localTopP = ref(0)
+const localLLMCallTimeout = ref(0)
+const localMaxContextTokens = ref(0)
+const localMaxToolOutputChars = ref(0)
+const localParallelToolCalls = ref(false)
 
 const getDefaultConversationConfig = (): ConversationConfig => ({
   prompt: '',
@@ -801,6 +901,11 @@ const buildAgentConfigPayload = (overrides: Partial<AgentConfig> = {}): AgentCon
   reflection_enabled: false,
   allowed_tools: localAllowedTools.value,
   temperature: localTemperature.value,
+  top_p: localTopP.value || undefined,
+  llm_call_timeout: localLLMCallTimeout.value || undefined,
+  max_context_tokens: localMaxContextTokens.value || undefined,
+  max_tool_output_chars: localMaxToolOutputChars.value || undefined,
+  parallel_tool_calls: localParallelToolCalls.value || undefined,
   system_prompt: localSystemPrompt.value,
   ...overrides,
 })
@@ -1005,8 +1110,13 @@ onMounted(async () => {
     
     // 更新本地状态（在初始化期间，不会触发保存）
     localMaxIterations.value = config.max_iterations
-    lastSavedValue = config.max_iterations // 初始化时记录已保存的值
+    lastSavedValue = config.max_iterations
     localTemperature.value = config.temperature
+    localTopP.value = config.top_p ?? 0
+    localLLMCallTimeout.value = config.llm_call_timeout ?? 0
+    localMaxContextTokens.value = config.max_context_tokens ?? 0
+    localMaxToolOutputChars.value = config.max_tool_output_chars ?? 0
+    localParallelToolCalls.value = config.parallel_tool_calls ?? false
     localAllowedTools.value = config.allowed_tools || []
     const systemPrompt = config.system_prompt || ''
     localSystemPrompt.value = systemPrompt
@@ -1188,6 +1298,22 @@ const handleTemperatureChange = async (value: number) => {
     MessagePlugin.error(getErrorMessage(error))
   }
 }
+
+const saveAdvancedParam = async (partial: Partial<AgentConfig>) => {
+  if (isInitializing.value) return
+  try {
+    await updateAgentConfig(buildAgentConfigPayload(partial))
+    MessagePlugin.success(t('common.saved'))
+  } catch (error) {
+    MessagePlugin.error(getErrorMessage(error))
+  }
+}
+
+const handleTopPChange = (v: number) => saveAdvancedParam({ top_p: v || undefined })
+const handleLLMCallTimeoutChange = (v: number) => saveAdvancedParam({ llm_call_timeout: v || undefined })
+const handleMaxContextTokensChange = (v: number) => saveAdvancedParam({ max_context_tokens: v || undefined })
+const handleMaxToolOutputCharsChange = (v: number) => saveAdvancedParam({ max_tool_output_chars: v || undefined })
+const handleParallelToolCallsChange = (v: boolean) => saveAdvancedParam({ parallel_tool_calls: v || undefined })
 
 // 处理系统 Prompt 键盘事件（作为备用，主要逻辑在原生事件监听器中）
 const handlePromptKeydown = (e: KeyboardEvent) => {
@@ -2101,6 +2227,76 @@ const handleConversationRerankModelChange = async (value: string) => {
     color: var(--td-text-color-primary);
     min-width: 40px;
     text-align: right;
+  }
+}
+
+.slider-endpoint-label {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  white-space: nowrap;
+}
+
+.inline-unit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unit-label {
+  font-size: 13px;
+  color: var(--td-text-color-secondary);
+}
+
+.advanced-params-panel {
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.advanced-params-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  background: var(--td-bg-color-container);
+  user-select: none;
+
+  &:hover {
+    background: var(--td-bg-color-container-hover);
+  }
+}
+
+.advanced-params-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+
+.advanced-params-subtitle {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  flex: 1;
+}
+
+.advanced-params-chevron {
+  color: var(--td-text-color-secondary);
+  font-size: 16px;
+}
+
+.advanced-params-body {
+  padding: 8px 16px 4px;
+  border-top: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-page);
+
+  .setting-row.compact {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--td-component-stroke);
+
+    &:last-child {
+      border-bottom: none;
+    }
   }
 }
 

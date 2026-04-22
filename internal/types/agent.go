@@ -15,7 +15,8 @@ const DefaultMaxContextTokens = 200000
 type AgentConfig struct {
 	MaxIterations  int      `json:"max_iterations"`          // Maximum number of ReAct iterations
 	AllowedTools   []string `json:"allowed_tools"`           // List of allowed tool names
-	Temperature    float64  `json:"temperature"`             // LLM temperature for agent
+	Temperature    float64  `json:"temperature"`             // LLM temperature for agent (0–1, default 0.3)
+	TopP           float64  `json:"top_p,omitempty"`         // Nucleus sampling probability mass (0–1, 0 = disabled/use model default)
 	KnowledgeBases []string `json:"knowledge_bases"`         // Accessible knowledge base IDs
 	KnowledgeIDs   []string `json:"knowledge_ids"`           // Accessible knowledge IDs (individual documents)
 	SystemPrompt   string   `json:"system_prompt,omitempty"` // Unified system prompt (uses web_search_status placeholder for dynamic behavior)
@@ -44,6 +45,9 @@ type AgentConfig struct {
 
 	// Runtime-only fields (not persisted)
 	VLMModelID string `json:"-"` // VLM model ID for tool result image analysis (set from CustomAgent config)
+	// Runtime-only source metadata for debugging and execution snapshots.
+	AllowedToolsSource string `json:"-"`
+	SystemPromptSource string `json:"-"`
 	// LLM call timeout in seconds (default: 120). Controls the maximum time for a single LLM call.
 	LLMCallTimeout int `json:"llm_call_timeout,omitempty"`
 

@@ -3,28 +3,33 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/sashabaranov/go-openai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func newTestRemoteChat() *RemoteAPIChat {
-	chat, _ := NewRemoteAPIChat(&ChatConfig{
+func newTestRemoteChat(t *testing.T) *RemoteAPIChat {
+	t.Helper()
+
+	chat, err := NewRemoteAPIChat(&ChatConfig{
 		Source:    types.ModelSourceRemote,
-		BaseURL:   "https://api.example.com/v1",
+		BaseURL:   "https://api.openai.com/v1",
 		ModelName: "test-model",
 		APIKey:    "test-key",
 		ModelID:   "test-model",
 	})
+	require.NoError(t, err)
 	return chat
 }
 
 func TestBuildChatCompletionRequest_ParallelToolCalls(t *testing.T) {
-	chat := newTestRemoteChat()
+	chat := newTestRemoteChat(t)
 	messages := []Message{{Role: "user", Content: "hello"}}
 
 	t.Run("nil ParallelToolCalls leaves default", func(t *testing.T) {
@@ -65,7 +70,7 @@ func TestBuildChatCompletionRequest_ParallelToolCalls(t *testing.T) {
 }
 
 func TestBuildChatCompletionRequest_MCPToolsFormat(t *testing.T) {
-	chat := newTestRemoteChat()
+	chat := newTestRemoteChat(t)
 	messages := []Message{{Role: "user", Content: "查询乙醇的理化性质"}}
 
 	mcpTools := []Tool{
@@ -111,7 +116,7 @@ func TestBuildChatCompletionRequest_MCPToolsFormat(t *testing.T) {
 }
 
 func TestBuildChatCompletionRequest_ToolChoice(t *testing.T) {
-	chat := newTestRemoteChat()
+	chat := newTestRemoteChat(t)
 	messages := []Message{{Role: "user", Content: "test"}}
 
 	t.Run("auto tool choice", func(t *testing.T) {
@@ -265,4 +270,19 @@ func TestNewRemoteChat_MoonshotFixedTemperature(t *testing.T) {
 	assert.Nil(t, customReq)
 	assert.False(t, useRawHTTP)
 	assert.Equal(t, float32(1), req.Temperature)
+}
+
+func TestFixedTemperatureRetryDetection(t *testing.T) {
+	req := &openai.ChatCompletionRequest{Temperature: 0.3}
+
+	assert.True(t, shouldRetryWithTemperatureOne(req, errors.New(
+		`API request failed with status 400: {"error":{"message":"invalid temperature: only 1 is allowed for this model"}}`,
+	)))
+	assert.True(t, shouldRetryWithTemperatureOneBody(req, 400, []byte(
+		`{"error":{"message":"invalid temperature: only 1 is allowed for this model"}}`,
+	)))
+	assert.False(t, shouldRetryWithTemperatureOne(&openai.ChatCompletionRequest{Temperature: 1}, errors.New(
+		`invalid temperature: only 1 is allowed for this model`,
+	)))
+	assert.False(t, shouldRetryWithTemperatureOne(req, errors.New("some other 400 error")))
 }

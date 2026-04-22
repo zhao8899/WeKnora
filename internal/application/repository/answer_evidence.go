@@ -45,6 +45,24 @@ func (r *answerEvidenceRepository) AnswerMessageExists(ctx context.Context, tena
 	return count > 0, err
 }
 
+func (r *answerEvidenceRepository) GetAnswerMessage(
+	ctx context.Context, tenantID uint64, messageID string,
+) (*types.Message, error) {
+	var message types.Message
+	err := r.db.WithContext(ctx).
+		Model(&types.Message{}).
+		Joins("JOIN sessions ON sessions.id = messages.session_id AND sessions.deleted_at IS NULL").
+		Where("messages.id = ? AND messages.role = 'assistant' AND messages.deleted_at IS NULL AND sessions.tenant_id = ?", messageID, tenantID).
+		First(&message).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &message, nil
+}
+
 func (r *answerEvidenceRepository) ListAnswerEvidence(
 	ctx context.Context, tenantID uint64, messageID string,
 ) ([]*types.AnswerEvidence, error) {

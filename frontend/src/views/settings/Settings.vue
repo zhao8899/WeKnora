@@ -21,6 +21,7 @@
                       'nav-item',
                       {
                         active: currentSection === item.key,
+                        'section-active': isSectionActive(item),
                         'has-submenu': item.children && item.children.length > 0,
                         expanded: expandedMenus.includes(item.key)
                       }
@@ -33,6 +34,7 @@
                       v-if="item.children && item.children.length > 0"
                       :name="expandedMenus.includes(item.key) ? 'chevron-down' : 'chevron-right'"
                       class="expand-icon"
+                      @click.stop="toggleExpandedMenu(item.key)"
                     />
                   </div>
 
@@ -64,6 +66,10 @@
 
                 <div v-if="currentSection === 'ollama'" class="section">
                   <OllamaSettings />
+                </div>
+
+                <div v-if="currentSection === 'agent'" class="section">
+                  <AgentSettings />
                 </div>
 
                 <div v-if="currentSection === 'websearch'" class="section">
@@ -116,6 +122,7 @@ import StorageEngineSettings from './StorageEngineSettings.vue'
 import SystemInfo from './SystemInfo.vue'
 import TenantInfo from './TenantInfo.vue'
 import ApiInfo from './ApiInfo.vue'
+import AgentSettings from './AgentSettings.vue'
 import WebSearchSettings from './WebSearchSettings.vue'
 import KnowledgeHealthDashboard from './KnowledgeHealthDashboard.vue'
 import { getSettingsNavItems, type SettingsNavItem } from './nav'
@@ -186,19 +193,33 @@ const applySection = (section: string, subSection?: string) => {
 }
 
 const handleNavClick = (item: SettingsNavItem) => {
-  if (item.children && item.children.length > 0) {
-    const index = expandedMenus.value.indexOf(item.key)
-    if (index > -1) {
-      expandedMenus.value.splice(index, 1)
-    } else {
-      expandedMenus.value.push(item.key)
-    }
+  if (item.children && item.children.length > 0 && !expandedMenus.value.includes(item.key)) {
+    expandedMenus.value.push(item.key)
   }
 
   applySection(item.key)
 }
 
+const toggleExpandedMenu = (key: string) => {
+  const index = expandedMenus.value.indexOf(key)
+  if (index > -1) {
+    expandedMenus.value.splice(index, 1)
+    return
+  }
+  expandedMenus.value.push(key)
+}
+
+const isSectionActive = (item: SettingsNavItem) => {
+  if (currentSection.value !== item.key) {
+    return false
+  }
+  return !!(item.children && item.children.length > 0 && currentSubSection.value)
+}
+
 const handleSubMenuClick = (parentKey: string, childKey: string) => {
+  if (!expandedMenus.value.includes(parentKey)) {
+    expandedMenus.value.push(parentKey)
+  }
   currentSection.value = parentKey
   currentSubSection.value = childKey
 }
@@ -384,6 +405,12 @@ onUnmounted(() => {
     color: var(--td-brand-color);
     font-weight: 500;
   }
+
+  &.section-active:not(.expanded) {
+    background:
+      linear-gradient(90deg, rgba(7, 192, 95, 0.12), rgba(7, 192, 95, 0.04));
+    color: var(--td-brand-color);
+  }
 }
 
 .nav-icon {
@@ -404,6 +431,12 @@ onUnmounted(() => {
   margin-left: 4px;
   font-size: 14px;
   transition: transform 0.2s ease;
+  border-radius: 999px;
+  padding: 2px;
+
+  &:hover {
+    background: rgba(7, 192, 95, 0.08);
+  }
 }
 
 .submenu {

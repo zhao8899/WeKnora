@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
 	"github.com/Tencent/WeKnora/internal/config"
+	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/searchutil"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -32,7 +32,7 @@ func NewWebSearchService(
 	providerRepo interfaces.WebSearchProviderRepository,
 ) (interfaces.WebSearchService, error) {
 	timeout := 10 // default timeout in seconds
-	if cfg.WebSearch != nil && cfg.WebSearch.Timeout > 0 {
+	if cfg != nil && cfg.WebSearch != nil && cfg.WebSearch.Timeout > 0 {
 		timeout = cfg.WebSearch.Timeout
 	}
 
@@ -90,13 +90,13 @@ func (s *WebSearchService) resolveProvider(
 	providerID string,
 	cfg *types.WebSearchConfig,
 ) (interfaces.WebSearchProvider, error) {
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("tenant ID not found in context")
+	}
+
 	// New path: load provider entity from DB
 	if providerID != "" {
-		tenantID, ok := types.TenantIDFromContext(ctx)
-		if !ok {
-			return nil, fmt.Errorf("tenant ID not found in context")
-		}
-
 		entity, err := s.providerRepo.GetByID(ctx, tenantID, providerID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load web search provider %s: %w", providerID, err)
@@ -105,11 +105,19 @@ func (s *WebSearchService) resolveProvider(
 			return nil, fmt.Errorf("web search provider not found: %s", providerID)
 		}
 
-		provider, err := s.registry.CreateProvider(string(entity.Provider), entity.Parameters)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create provider %s (%s): %w", entity.Name, entity.Provider, err)
-		}
-		return provider, nil
+		return s.createProviderFromEntity(ctx, entity)
+	}
+
+	// Default path: prefer tenant default, then fall back to the platform default.
+	if entity, err := s.providerRepo.GetDefault(ctx, tenantID); err != nil {
+		return nil, fmt.Errorf("failed to resolve default web search provider: %w", err)
+	} else if entity != nil {
+		logger.Infof(
+			ctx,
+			"[WebSearch] using default provider: tenant=%d provider_id=%s platform=%t type=%s",
+			tenantID, entity.ID, entity.IsPlatform, entity.Provider,
+		)
+		return s.createProviderFromEntity(ctx, entity)
 	}
 
 	// Backward compatibility: use the deprecated config.Provider field
@@ -126,6 +134,22 @@ func (s *WebSearchService) resolveProvider(
 	}
 
 	return nil, fmt.Errorf("no web search provider configured")
+}
+
+func (s *WebSearchService) createProviderFromEntity(
+	ctx context.Context, entity *types.WebSearchProviderEntity,
+) (interfaces.WebSearchProvider, error) {
+	providerType := string(normalizeWebSearchProviderType(entity.Provider))
+	provider, err := s.registry.CreateProvider(providerType, entity.Parameters)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create provider %s (%s): %w", entity.Name, entity.Provider, err)
+	}
+	logger.Infof(
+		ctx,
+		"[WebSearch] provider resolved: id=%s tenant=%d platform=%t type=%s",
+		entity.ID, entity.TenantID, entity.IsPlatform, entity.Provider,
+	)
+	return provider, nil
 }
 
 // CompressWithRAG performs RAG-based compression using a temporary, hidden knowledge base.

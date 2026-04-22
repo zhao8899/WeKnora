@@ -194,9 +194,11 @@ func defaultAllowedCommands() []string {
 	return []string{
 		"python",
 		"python3",
+		"py",
 		"node",
 		"bash",
 		"sh",
+		"cmd",
 		"cat",
 		"echo",
 		"head",

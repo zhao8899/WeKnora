@@ -3,6 +3,7 @@ package chatpipeline
 import (
 	"context"
 
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -47,6 +48,8 @@ func (e *EventManager) Register(plugin Plugin) {
 	for _, eventType := range plugin.ActivationEvents() {
 		e.listeners[eventType] = append(e.listeners[eventType], plugin)
 		e.handlers[eventType] = e.buildHandler(e.listeners[eventType])
+		logger.Infof(context.Background(), "[Pipeline] Registered plugin %T for event=%s, total_listeners=%d",
+			plugin, eventType, len(e.listeners[eventType]))
 	}
 }
 
@@ -72,8 +75,17 @@ func (e *EventManager) Trigger(ctx context.Context,
 	eventType types.EventType, chatManage *types.ChatManage,
 ) *PluginError {
 	if handler, ok := e.handlers[eventType]; ok {
+		sessionID := ""
+		queryLen := 0
+		if chatManage != nil {
+			sessionID = chatManage.SessionID
+			queryLen = len(chatManage.Query)
+		}
+		logger.Infof(ctx, "[Pipeline] Trigger event=%s, session=%s, listeners=%d, query_len=%d",
+			eventType, sessionID, len(e.listeners[eventType]), queryLen)
 		return handler(ctx, eventType, chatManage)
 	}
+	logger.Warnf(ctx, "[Pipeline] No handler registered for event=%s", eventType)
 	return nil
 }
 

@@ -17,6 +17,7 @@ import (
 	"go.uber.org/dig"
 
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/database"
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/handler/session"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -91,7 +92,17 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 	// 健康检查（不需要认证）
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		response := gin.H{"status": "ok"}
+		if report, ok := database.CachedSchemaAuditReport(); ok {
+			response["db_schema_status"] = "ok"
+			response["db_schema_warnings"] = report.WarningCount()
+			response["db_schema_version"] = report.Version
+			if report.HasCritical() {
+				response["status"] = "degraded"
+				response["db_schema_status"] = "critical"
+			}
+		}
+		c.JSON(200, response)
 	})
 
 	// Swagger API 文档（仅在非生产环境下启用）

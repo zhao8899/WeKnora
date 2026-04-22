@@ -522,7 +522,7 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 		"success": true,
 		"data": gin.H{
 			"max_iterations":           tenant.AgentConfig.MaxIterations,
-			"allowed_tools":            agenttools.DefaultAllowedTools(),
+			"allowed_tools":            tenant.AgentConfig.AllowedTools,
 			"temperature":              tenant.AgentConfig.Temperature,
 			"system_prompt":            systemPrompt,
 			"use_custom_system_prompt": tenant.AgentConfig.UseCustomSystemPrompt,
@@ -569,11 +569,15 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 
 	agentConfig := &types.AgentConfig{
 		MaxIterations:         req.MaxIterations,
-		AllowedTools:          agenttools.DefaultAllowedTools(),
+		AllowedTools:          req.AllowedTools,
 		Temperature:           req.Temperature,
 		SystemPrompt:          systemPrompt,
 		UseCustomSystemPrompt: useCustomPrompt,
 	}
+	if len(agentConfig.AllowedTools) == 0 {
+		agentConfig.AllowedTools = agenttools.DefaultAllowedTools()
+	}
+	tenant.AgentConfig = agentConfig
 
 	_, err := h.service.UpdateTenant(ctx, tenant)
 	if err != nil {

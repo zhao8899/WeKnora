@@ -89,10 +89,16 @@ type AnswerConfidenceEvidenceItem struct {
 }
 
 type AnswerConfidenceResponse struct {
-	MessageID        string                          `json:"message_id"`
-	ConfidenceScore  float64                         `json:"confidence_score"`
-	ConfidenceLabel  string                          `json:"confidence_label"`
-	SourceCount      int                             `json:"source_count"`
-	SourceTypeCounts map[string]int                  `json:"source_type_counts"`
-	Evidences        []*AnswerConfidenceEvidenceItem `json:"evidences"`
+	MessageID             string                          `json:"message_id"`
+	ConfidenceScore       float64                         `json:"confidence_score"`
+	ConfidenceLabel       string                          `json:"confidence_label"`
+	EvidenceStrengthScore float64                         `json:"evidence_strength_score"`
+	EvidenceStrengthLabel string                          `json:"evidence_strength_label"`
+	SourceHealthScore     float64                         `json:"source_health_score"`
+	SourceHealthLabel     string                          `json:"source_health_label"`
+	SourceCount           int                             `json:"source_count"`
+	ReferenceCount        int                             `json:"reference_count"`
+	EvidenceStatus        string                          `json:"evidence_status"`
+	SourceTypeCounts      map[string]int                  `json:"source_type_counts"`
+	Evidences             []*AnswerConfidenceEvidenceItem `json:"evidences"`
 }

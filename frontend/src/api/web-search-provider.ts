@@ -5,7 +5,7 @@ export interface WebSearchProviderEntity {
   id?: string
   tenant_id?: number
   name: string
-  provider: 'bing' | 'google' | 'duckduckgo' | 'tavily'
+  provider: 'bing' | 'google' | 'duckduckgo' | 'tavily' | 'serpapi'
   description?: string
   parameters: {
     api_key?: string
@@ -13,6 +13,7 @@ export interface WebSearchProviderEntity {
     extra_config?: Record<string, string>
   }
   is_default?: boolean
+  is_platform?: boolean
   created_at?: string
   updated_at?: string
 }

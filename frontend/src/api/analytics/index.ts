@@ -16,6 +16,10 @@ export interface CoverageGap {
   question: string
   confidence_score: number
   confidence_label: string
+  evidence_strength_score: number
+  evidence_strength_label: string
+  source_health_score: number
+  source_health_label: string
   source_count: number
   answer_created_at: string
 }
@@ -25,7 +29,11 @@ export interface StaleDocument {
   title: string
   source_weight: number
   down_feedback_count: number
+  expired_feedback_count: number
   freshness_flag: boolean
+  source_health_score: number
+  source_health_label: string
+  health_status: string
   last_feedback_at: string
 }
 
@@ -35,6 +43,11 @@ export interface CitationHeat {
   cited_count: number
   reranked_count: number
   retrieved_count: number
+  source_weight: number
+  freshness_flag: boolean
+  source_health_score: number
+  source_health_label: string
+  health_status: string
 }
 
 export function getHotQuestions(limit = 10) {

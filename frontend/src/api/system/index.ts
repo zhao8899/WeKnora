@@ -30,10 +30,15 @@ export interface AgentConfig {
   reflection_enabled: boolean
   allowed_tools: string[]
   temperature: number
+  top_p?: number                    // Nucleus sampling 0–1，0=禁用
+  llm_call_timeout?: number         // LLM 单次调用超时（秒），默认 120
+  max_context_tokens?: number       // 上下文窗口最大 Token，默认 200000
+  max_tool_output_chars?: number    // 工具输出截断字符数，默认 16000
+  parallel_tool_calls?: boolean     // 并行工具调用，默认 false
   knowledge_bases?: string[]
-  system_prompt?: string  // Unified system prompt (uses {{web_search_status}} placeholder)
-  available_tools?: ToolDefinition[]  // GET 响应中包含，POST/PUT 不需要
-  available_placeholders?: PlaceholderDefinition[]  // GET 响应中包含，POST/PUT 不需要
+  system_prompt?: string
+  available_tools?: ToolDefinition[]
+  available_placeholders?: PlaceholderDefinition[]
 }
 
 export interface ConversationConfig {

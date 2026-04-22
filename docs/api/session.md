@@ -91,7 +91,6 @@ curl --location 'http://localhost:8080/api/v1/sessions' \
             "seed": 0,
             "max_completion_tokens": 2048
         },
-        "agent_config": null,
         "context_config": null,
         "created_at": "2025-08-12T12:26:19.611616669+08:00",
         "updated_at": "2025-08-12T12:26:19.611616919+08:00",
@@ -146,7 +145,6 @@ curl --location 'http://localhost:8080/api/v1/sessions/ceb9babb-1e30-41d7-817d-f
             "seed": 0,
             "max_completion_tokens": 2048
         },
-        "agent_config": null,
         "context_config": null,
         "created_at": "2025-08-12T10:24:38.308596+08:00",
         "updated_at": "2025-08-12T10:25:41.317761+08:00",

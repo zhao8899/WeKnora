@@ -244,6 +244,26 @@ func (c *RemoteAPIChat) BuildChatCompletionRequest(messages []Message, opts *Cha
 	return req
 }
 
+func isFixedTemperatureOneOnlyMessage(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "invalid temperature") &&
+		(strings.Contains(lower, "only 1 is allowed") || strings.Contains(lower, "must be 1"))
+}
+
+func shouldRetryWithTemperatureOne(req *openai.ChatCompletionRequest, err error) bool {
+	if req == nil || req.Temperature == 1 || err == nil {
+		return false
+	}
+	return isFixedTemperatureOneOnlyMessage(err.Error())
+}
+
+func shouldRetryWithTemperatureOneBody(req *openai.ChatCompletionRequest, statusCode int, body []byte) bool {
+	if req == nil || req.Temperature == 1 || statusCode != http.StatusBadRequest {
+		return false
+	}
+	return isFixedTemperatureOneOnlyMessage(string(body))
+}
+
 // logRequest 记录请求日志
 func (c *RemoteAPIChat) logRequest(ctx context.Context, req any, isStream bool) {
 	if jsonData, err := json.MarshalIndent(req, "", "  "); err == nil {
@@ -279,6 +299,11 @@ func (c *RemoteAPIChat) Chat(ctx context.Context, messages []Message, opts *Chat
 			logger.Warnf(ctx, "[LLM Request] Model %s does not support multimodal, retrying without images", c.modelName)
 			cleaned := stripImagesFromMessages(messages)
 			req = c.BuildChatCompletionRequest(cleaned, opts, false)
+			resp, err = c.client.CreateChatCompletion(ctx, req)
+		}
+		if err != nil && shouldRetryWithTemperatureOne(&req, err) {
+			logger.Warnf(ctx, "[LLM Request] Model %s requires temperature=1, retrying", c.modelName)
+			req.Temperature = 1
 			resp, err = c.client.CreateChatCompletion(ctx, req)
 		}
 		if err != nil {
@@ -317,7 +342,18 @@ func (c *RemoteAPIChat) chatWithRawHTTP(ctx context.Context, endpoint string, cu
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	resp, err := rawHTTPClient.Do(httpReq)
+	send := func(payload []byte) (*http.Response, error) {
+		reqBody := bytes.NewBuffer(payload)
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+		return rawHTTPClient.Do(httpReq)
+	}
+
+	resp, err := send(jsonData)
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}
@@ -325,7 +361,26 @@ func (c *RemoteAPIChat) chatWithRawHTTP(ctx context.Context, endpoint string, cu
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		if standardReqJSON, ok := customReq.(*openai.ChatCompletionRequest); ok && shouldRetryWithTemperatureOneBody(standardReqJSON, resp.StatusCode, body) {
+			logger.Warnf(ctx, "[LLM Request] Model %s requires temperature=1, retrying raw HTTP request", c.modelName)
+			standardReqJSON.Temperature = 1
+			retryJSON, err := json.Marshal(standardReqJSON)
+			if err != nil {
+				return nil, fmt.Errorf("marshal retry request: %w", err)
+			}
+			resp.Body.Close()
+			resp, err = send(retryJSON)
+			if err != nil {
+				return nil, fmt.Errorf("send retry request: %w", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+			}
+		} else {
+			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		}
 	}
 
 	var chatResp openai.ChatCompletionResponse
@@ -435,6 +490,11 @@ func (c *RemoteAPIChat) ChatStream(ctx context.Context, messages []Message, opts
 			req = c.BuildChatCompletionRequest(cleaned, opts, true)
 			stream, err = c.client.CreateChatCompletionStream(ctx, req)
 		}
+		if err != nil && shouldRetryWithTemperatureOne(&req, err) {
+			logger.Warnf(ctx, "[LLM Stream] Model %s requires temperature=1, retrying", c.modelName)
+			req.Temperature = 1
+			stream, err = c.client.CreateChatCompletionStream(ctx, req)
+		}
 		if err != nil {
 			close(streamChan)
 			return nil, fmt.Errorf("create chat completion stream: %w", err)
@@ -461,16 +521,18 @@ func (c *RemoteAPIChat) chatStreamWithRawHTTP(ctx context.Context, endpoint stri
 	if err := secutils.ValidateURLForSSRF(endpoint); err != nil {
 		return nil, fmt.Errorf("endpoint SSRF check failed: %w", err)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+	send := func(payload []byte) (*http.Response, error) {
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewBuffer(payload))
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+		httpReq.Header.Set("Accept", "text/event-stream")
+		return rawHTTPClient.Do(httpReq)
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	httpReq.Header.Set("Accept", "text/event-stream")
-
-	resp, err := rawHTTPClient.Do(httpReq)
+	resp, err := send(jsonData)
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}
@@ -478,7 +540,25 @@ func (c *RemoteAPIChat) chatStreamWithRawHTTP(ctx context.Context, endpoint stri
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		if standardReqJSON, ok := customReq.(*openai.ChatCompletionRequest); ok && shouldRetryWithTemperatureOneBody(standardReqJSON, resp.StatusCode, body) {
+			logger.Warnf(ctx, "[LLM Stream] Model %s requires temperature=1, retrying raw HTTP stream", c.modelName)
+			standardReqJSON.Temperature = 1
+			retryJSON, err := json.Marshal(standardReqJSON)
+			if err != nil {
+				return nil, fmt.Errorf("marshal retry request: %w", err)
+			}
+			resp, err = send(retryJSON)
+			if err != nil {
+				return nil, fmt.Errorf("send retry request: %w", err)
+			}
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+			}
+		} else {
+			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		}
 	}
 
 	streamChan := make(chan types.StreamResponse)

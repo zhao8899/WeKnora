@@ -5,14 +5,27 @@
         <span class="confidence-badge" :class="`confidence-${confidenceLabel}`">
           {{ confidenceTagText }}
         </span>
-        <span class="confidence-title">{{ $t('chat.answerConfidence') }}</span>
+        <span class="confidence-title">{{ evidenceStrengthText }}</span>
         <span class="confidence-score">{{ confidencePercent }}</span>
-        <span class="confidence-meta">{{ $t('chat.sourcesCount', { count: sourceCount }) }}</span>
+        <span class="confidence-meta">{{ confidenceMetaText }}</span>
       </div>
       <t-icon :name="expanded ? 'chevron-up' : 'chevron-down'" />
     </div>
 
     <div v-if="expanded" class="confidence-body">
+      <div class="confidence-metrics">
+        <div class="metric-card">
+          <span class="metric-label">{{ evidenceStrengthText }}</span>
+          <strong>{{ confidencePercent }}</strong>
+          <span class="metric-tag confidence-badge" :class="`confidence-${confidenceLabel}`">{{ confidenceTagText }}</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">{{ sourceHealthText }}</span>
+          <strong>{{ sourceHealthPercent }}</strong>
+          <span class="metric-tag confidence-badge" :class="`confidence-${sourceHealthLabel}`">{{ sourceHealthTagText }}</span>
+        </div>
+      </div>
+
       <div class="confidence-summary">
         <div
           v-for="(count, key) in sourceTypeCounts"
@@ -31,7 +44,7 @@
 
       <div v-else-if="items.length === 0" class="confidence-state">
         <t-icon name="info-circle" />
-        <span>{{ $t('chat.noConfidenceEvidence') }}</span>
+        <span>{{ noEvidenceText }}</span>
       </div>
 
       <div v-else class="confidence-list">
@@ -106,24 +119,82 @@ const props = defineProps({
   },
 });
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const expanded = ref(false);
 const loading = ref(false);
 const loaded = ref(false);
 const confidenceScore = ref(0);
 const confidenceLabel = ref('low');
+const sourceHealthScore = ref(0);
+const sourceHealthLabel = ref('low');
 const sourceCount = ref(0);
+const referenceCount = ref(0);
+const evidenceStatus = ref('missing');
 const sourceTypeCounts = ref<Record<string, number>>({});
 const items = ref<any[]>([]);
 const feedbackMap = reactive<Record<string, string>>({});
 
 const shouldRender = computed(() => props.isCompleted && !!props.messageId && props.referenceCount > 0);
 const confidencePercent = computed(() => `${Math.round((confidenceScore.value || 0) * 100)}%`);
+const sourceHealthPercent = computed(() => `${Math.round((sourceHealthScore.value || 0) * 100)}%`);
+const fallbackText = (key: string, params: Record<string, any>, zh: string, en: string) => {
+  const translated = t(key, params);
+  if (translated !== key) return translated;
+  return locale.value.startsWith('zh') ? zh : en;
+};
+const confidenceMetaText = computed(() => {
+  if (evidenceStatus.value === 'missing') {
+    const count = Math.max(referenceCount.value, props.referenceCount);
+    return fallbackText('chat.referencesCount', { count }, `${count} 个引用`, `${count} references`);
+  }
+  if (evidenceStatus.value === 'degraded') {
+    const count = sourceCount.value;
+    return fallbackText('chat.evidenceDegraded', { count }, `${count} 个临时来源`, `${count} transient sources`);
+  }
+  if (evidenceStatus.value === 'recovered') {
+    const count = sourceCount.value;
+    return fallbackText('chat.evidenceRecovered', { count }, `已从引用恢复 ${count} 个来源`, `${count} sources recovered from references`);
+  }
+  return t('chat.sourcesCount', { count: sourceCount.value });
+});
+const evidenceStrengthText = computed(() => fallbackText('chat.evidenceStrength', {}, '证据强度', 'Evidence strength'));
+const sourceHealthText = computed(() => fallbackText('chat.sourceHealth', {}, '来源健康度', 'Source health'));
+const noEvidenceText = computed(() => {
+  if (evidenceStatus.value === 'missing') {
+    return fallbackText(
+      'chat.noConfidenceEvidenceYet',
+      {},
+      '已生成引用，但证据明细仍在生成中',
+      'References are available, but evidence details are still being generated'
+    );
+  }
+  if (evidenceStatus.value === 'degraded') {
+    return fallbackText(
+      'chat.noConfidenceEvidenceDegraded',
+      {},
+      '证据明细暂不可用，当前展示为降级视图',
+      'Evidence details are temporarily unavailable; showing a degraded confidence view'
+    );
+  }
+  return t('chat.noConfidenceEvidence');
+});
 const confidenceTagText = computed(() => {
   if (confidenceLabel.value === 'high') return t('chat.confidenceHigh');
   if (confidenceLabel.value === 'medium') return t('chat.confidenceMedium');
   if (confidenceLabel.value === 'insufficient') return t('chat.confidenceInsufficient');
   return t('chat.confidenceLow');
+});
+const sourceHealthTagText = computed(() => {
+  if (sourceHealthLabel.value === 'high') {
+    return fallbackText('chat.sourceHealthHigh', {}, '来源健康', 'Healthy sources');
+  }
+  if (sourceHealthLabel.value === 'medium') {
+    return fallbackText('chat.sourceHealthMedium', {}, '来源一般', 'Mixed source health');
+  }
+  if (sourceHealthLabel.value === 'insufficient') {
+    return fallbackText('chat.sourceHealthInsufficient', {}, '来源未知', 'Source health unknown');
+  }
+  return fallbackText('chat.sourceHealthLow', {}, '来源偏弱', 'Weak source health');
 });
 
 const fetchConfidence = async () => {
@@ -132,9 +203,13 @@ const fetchConfidence = async () => {
   try {
     const res = await getAnswerConfidence(props.messageId);
     const data = res?.data || {};
-    confidenceScore.value = data.confidence_score || 0;
-    confidenceLabel.value = data.confidence_label || 'low';
+    confidenceScore.value = data.evidence_strength_score ?? data.confidence_score ?? 0;
+    confidenceLabel.value = data.evidence_strength_label || data.confidence_label || 'low';
+    sourceHealthScore.value = data.source_health_score ?? 0;
+    sourceHealthLabel.value = data.source_health_label || 'low';
     sourceCount.value = data.source_count || 0;
+    referenceCount.value = data.reference_count || 0;
+    evidenceStatus.value = data.evidence_status || 'missing';
     sourceTypeCounts.value = data.source_type_counts || {};
     items.value = data.evidences || [];
     items.value.forEach((item) => {
@@ -203,7 +278,11 @@ watch(
     items.value = [];
     confidenceScore.value = 0;
     confidenceLabel.value = 'low';
+    sourceHealthScore.value = 0;
+    sourceHealthLabel.value = 'low';
     sourceCount.value = 0;
+    referenceCount.value = 0;
+    evidenceStatus.value = 'missing';
     sourceTypeCounts.value = {};
     Object.keys(feedbackMap).forEach((key) => {
       delete feedbackMap[key];
@@ -298,6 +377,37 @@ watch(
   padding-top: 10px;
 }
 
+.confidence-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--td-bg-color-container);
+  border: 1px solid rgba(7, 192, 95, 0.08);
+}
+
+.metric-label {
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+}
+
+.metric-card strong {
+  font-size: 18px;
+  color: var(--td-text-color-primary);
+}
+
+.metric-tag {
+  width: fit-content;
+}
+
 .summary-chip {
   display: inline-flex;
   align-items: center;
@@ -386,5 +496,11 @@ watch(
   color: var(--td-error-color) !important;
   border-color: var(--td-error-color) !important;
   background: rgba(229, 75, 75, 0.06) !important;
+}
+
+@media (max-width: 768px) {
+  .confidence-metrics {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

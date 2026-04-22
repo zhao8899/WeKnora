@@ -33,12 +33,15 @@ func (s *sessionService) KnowledgeQA(
 
 	// Resolve knowledge bases using shared helper
 	knowledgeBaseIDs, knowledgeIDs := s.resolveKnowledgeBases(ctx, req)
+	logger.Infof(ctx, "KnowledgeQA resolved targets: kb_count=%d, knowledge_count=%d",
+		len(knowledgeBaseIDs), len(knowledgeIDs))
 
 	// Resolve chat model ID using shared helper
 	chatModelID, err := s.resolveChatModelID(ctx, req, knowledgeBaseIDs, knowledgeIDs)
 	if err != nil {
 		return err
 	}
+	logger.Infof(ctx, "KnowledgeQA selected chat model: model_id=%s", chatModelID)
 
 	// Initialize ChatManage defaults from config.yaml
 	summaryConfig := types.SummaryConfig{
@@ -75,6 +78,8 @@ func (s *sessionService) KnowledgeQA(
 	if err != nil {
 		logger.Warnf(ctx, "Failed to build search targets: %v", err)
 	}
+	logger.Infof(ctx, "KnowledgeQA retrieval scope: tenant_id=%d, search_targets=%d",
+		retrievalTenantID, len(searchTargets))
 
 	// Create chat management object with session settings
 	logger.Infof(
@@ -137,6 +142,9 @@ func (s *sessionService) KnowledgeQA(
 	// Apply custom agent overrides (system prompt, temperature, retrieval params,
 	// rewrite, fallback, FAQ strategy, history turns)
 	s.applyAgentOverridesToChatManage(ctx, req.CustomAgent, chatManage)
+	logger.Infof(ctx, "KnowledgeQA runtime config: max_rounds=%d, embedding_top_k=%d, rerank_top_k=%d, web_search=%v, memory=%v",
+		chatManage.MaxRounds, chatManage.EmbeddingTopK, chatManage.RerankTopK,
+		chatManage.WebSearchEnabled, chatManage.EnableMemory)
 
 	// Determine pipeline based on knowledge bases availability and web search setting
 	hasKB := len(knowledgeBaseIDs) > 0 || len(knowledgeIDs) > 0
@@ -158,6 +166,8 @@ func (s *sessionService) KnowledgeQA(
 			Add(types.CHAT_COMPLETION_STREAM).
 			AddIf(chatManage.EnableMemory, types.MEMORY_STORAGE).
 			Build()
+		logger.Infof(ctx, "KnowledgeQA chose pure chat pipeline: history=%v, memory=%v, vision=%v",
+			hasHistory, chatManage.EnableMemory, chatModelSupportsVision)
 	} else {
 		// RAG — dynamically assemble based on feature flags.
 		pipeline = types.NewPipelineBuilder().
@@ -170,8 +180,11 @@ func (s *sessionService) KnowledgeQA(
 			Add(types.FILTER_TOP_K).
 			Add(types.DATA_ANALYSIS).
 			Add(types.INTO_CHAT_MESSAGE).
+			Add(types.EVIDENCE_CAPTURE).
 			Add(types.CHAT_COMPLETION_STREAM).
 			Build()
+		logger.Infof(ctx, "KnowledgeQA chose RAG pipeline: has_kb=%v, web_search=%v, chat_model_vision=%v",
+			hasKB, req.WebSearchEnabled, chatModelSupportsVision)
 	}
 
 	logger.Infof(ctx, "Assembled pipeline (%d stages), hasKB=%v, webSearch=%v, history=%v",
@@ -493,6 +506,10 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 	pipelineStart := time.Now()
 	for _, eventType := range eventList {
 		stageStart := time.Now()
+		// Each event maps to one pipeline plugin stage. Keeping stage-level logs
+		// here makes it easier to trace the end-to-end RAG path without diving
+		// into every individual plugin implementation first.
+		logger.Infof(ctx, "Pipeline stage starting: event=%s, session=%s", eventType, chatManage.SessionID)
 		err := s.eventManager.Trigger(ctx, eventType, chatManage)
 		stageDuration := time.Since(stageStart)
 
@@ -508,6 +525,8 @@ func (s *sessionService) KnowledgeQAByEvent(ctx context.Context,
 		}
 
 		if err != nil {
+			logger.Errorf(ctx, "Pipeline stage failed: event=%s, duration_ms=%d, error_type=%s, description=%s, err=%v",
+				eventType, stageDuration.Milliseconds(), err.ErrorType, err.Description, err.Err)
 			common.PipelineError(ctx, "Pipeline", "stage_failed", map[string]interface{}{
 				"event":       string(eventType),
 				"duration_ms": stageDuration.Milliseconds(),
@@ -553,6 +572,7 @@ func (s *sessionService) SearchKnowledge(ctx context.Context,
 	if err != nil {
 		logger.Warnf(ctx, "Failed to build search targets: %v", err)
 	}
+	logger.Infof(ctx, "SearchKnowledge resolved %d search targets for tenant=%d", len(searchTargets), tenantID)
 
 	if len(searchTargets) == 0 {
 		logger.Warn(ctx, "No search targets available, returning empty results")
@@ -808,15 +828,10 @@ func (s *sessionService) emitFallbackAnswer(ctx context.Context, chatManage *typ
 func (s *sessionService) resolveWebSearchProviderID(ctx context.Context, req *types.QARequest, tenantID uint64) string {
 	// 1. Agent-level override
 	if req.CustomAgent != nil && req.CustomAgent.Config.WebSearchProviderID != "" {
-		return req.CustomAgent.Config.WebSearchProviderID
+		return s.resolveValidWebSearchProviderID(ctx, tenantID, req.CustomAgent.Config.WebSearchProviderID)
 	}
 	// 2. Tenant default
-	if s.webSearchProviderRepo != nil {
-		if defaultProvider, err := s.webSearchProviderRepo.GetDefault(ctx, tenantID); err == nil && defaultProvider != nil {
-			return defaultProvider.ID
-		}
-	}
-	return ""
+	return s.resolveValidWebSearchProviderID(ctx, tenantID, "")
 }
 
 // resolveWebFetchEnabled returns whether auto web fetch is enabled for this request.

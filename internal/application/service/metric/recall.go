@@ -14,20 +14,21 @@ func NewRecallMetric() *RecallMetric {
 
 // Compute calculates the recall score
 func (r *RecallMetric) Compute(metricInput *types.MetricInput) float64 {
-	// Get ground truth and predicted IDs
 	gts := metricInput.RetrievalGT
 	ids := metricInput.RetrievalIDs
 
-	// Convert ground truth to sets for efficient lookup
 	gtSets := SliceMap(gts, ToSet)
-	// Count total hits across all relevant documents
-	ahit := Fold(gtSets, 0, func(a int, b map[int]struct{}) int { return a + Hit(ids, b) })
-
-	// Handle case with no ground truth
 	if len(gtSets) == 0 {
 		return 0.0
 	}
 
-	// Recall = total hits / total relevant documents
-	return float64(ahit) / float64(len(gtSets))
+	total := 0.0
+	for _, gtSet := range gtSets {
+		if len(gtSet) == 0 {
+			continue
+		}
+		total += float64(Hit(ids, gtSet)) / float64(len(gtSet))
+	}
+
+	return total / float64(len(gtSets))
 }

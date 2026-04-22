@@ -71,6 +71,42 @@ func (s *sessionService) resolveChatModelID(
 	return s.selectChatModelID(ctx, session, knowledgeBaseIDs, knowledgeIDs)
 }
 
+// resolveValidWebSearchProviderID returns a usable web search provider ID.
+// Priority:
+//  1. Preferred provider ID if it exists and is accessible in the tenant scope
+//  2. Tenant default provider (is_default=true)
+func (s *sessionService) resolveValidWebSearchProviderID(
+	ctx context.Context,
+	tenantID uint64,
+	preferredProviderID string,
+) string {
+	if s.webSearchProviderRepo == nil {
+		return ""
+	}
+
+	if preferredProviderID != "" {
+		provider, err := s.webSearchProviderRepo.GetByID(ctx, tenantID, preferredProviderID)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to load preferred web search provider %s for tenant %d: %v",
+				preferredProviderID, tenantID, err)
+		} else if provider != nil {
+			return provider.ID
+		}
+		logger.Warnf(ctx, "Preferred web search provider %s not found for tenant %d, falling back to tenant default",
+			preferredProviderID, tenantID)
+	}
+
+	defaultProvider, err := s.webSearchProviderRepo.GetDefault(ctx, tenantID)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to load default web search provider for tenant %d: %v", tenantID, err)
+		return ""
+	}
+	if defaultProvider != nil {
+		return defaultProvider.ID
+	}
+	return ""
+}
+
 // resolveRetrievalTenantID determines the tenant ID to use for retrieval scope.
 // Priority: agent's tenant > context tenant > session tenant.
 func (s *sessionService) resolveRetrievalTenantID(

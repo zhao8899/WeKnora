@@ -74,6 +74,64 @@ definitions:
     - ErrAgentMissingAllowedTools
     - ErrAgentInvalidMaxIterations
     - ErrAgentInvalidTemperature
+  github_com_Tencent_WeKnora_internal_types.AnswerConfidenceEvidenceItem:
+    properties:
+      chunk_id:
+        type: string
+      current_feedback:
+        type: string
+      id:
+        type: string
+      knowledge_base_id:
+        type: string
+      knowledge_id:
+        type: string
+      match_type:
+        type: string
+      position:
+        type: integer
+      rerank_score:
+        type: number
+      retrieval_score:
+        type: number
+      source_channel:
+        type: string
+      source_type:
+        type: string
+      title:
+        type: string
+    type: object
+  github_com_Tencent_WeKnora_internal_types.AnswerConfidenceResponse:
+    properties:
+      confidence_label:
+        type: string
+      confidence_score:
+        type: number
+      evidence_status:
+        type: string
+      evidence_strength_label:
+        type: string
+      evidence_strength_score:
+        type: number
+      evidences:
+        items:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.AnswerConfidenceEvidenceItem'
+        type: array
+      message_id:
+        type: string
+      reference_count:
+        type: integer
+      source_count:
+        type: integer
+      source_health_label:
+        type: string
+      source_health_score:
+        type: number
+      source_type_counts:
+        additionalProperties:
+          type: integer
+        type: object
+    type: object
   github_com_Tencent_WeKnora_internal_types.AgentConfig:
     properties:
       allowed_skills:
@@ -2171,12 +2229,6 @@ definitions:
     type: object
   github_com_Tencent_WeKnora_internal_types.Tenant:
     properties:
-      agent_config:
-        allOf:
-        - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.AgentConfig'
-        description: |-
-          Deprecated: AgentConfig is deprecated, use CustomAgent (builtin-smart-reasoning) config instead.
-          This field is kept for backward compatibility and will be removed in future versions.
       api_key:
         description: API key
         type: string
@@ -2920,6 +2972,18 @@ definitions:
           type: string
         type: array
     type: object
+  internal_handler.SourceFeedbackRequest:
+    properties:
+      comment:
+        type: string
+      evidence_id:
+        type: string
+      feedback:
+        type: string
+    required:
+    - evidence_id
+    - feedback
+    type: object
 info:
   contact:
     name: WeKnora Github
@@ -2929,6 +2993,92 @@ info:
   title: WeKnora API
   version: "1.0"
 paths:
+  /chat/answer/{message_id}/confidence:
+    get:
+      consumes:
+      - application/json
+      description: Returns evidence strength, source health, and cited evidence details for an assistant answer
+      parameters:
+      - description: Assistant message ID
+        in: path
+        name: message_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Confidence details
+          schema:
+            properties:
+              data:
+                $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.AnswerConfidenceResponse'
+              success:
+                type: boolean
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+        "404":
+          description: Message not found
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+      security:
+      - Bearer: []
+      - ApiKeyAuth: []
+      summary: Get answer confidence details
+      tags:
+      - chat
+  /chat/answer/{message_id}/feedback:
+    post:
+      consumes:
+      - application/json
+      description: Submits up, down, or expired feedback for a cited source in an assistant answer
+      parameters:
+      - description: Assistant message ID
+        in: path
+        name: message_id
+        required: true
+        type: string
+      - description: Source feedback payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.SourceFeedbackRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Feedback accepted
+          schema:
+            properties:
+              success:
+                type: boolean
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+        "404":
+          description: Message or evidence not found
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+      security:
+      - Bearer: []
+      - ApiKeyAuth: []
+      summary: Submit source feedback
+      tags:
+      - chat
   /agents:
     get:
       consumes:

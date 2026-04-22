@@ -429,7 +429,7 @@ func (w *weaviateRepository) BatchUpdateChunkTagID(ctx context.Context, chunkTag
 	// Get all collections
 	collections, err := w.ListCollections(ctx)
 	if err != nil {
-		log.Errorf("[Weaviate] Failed to list collections: %w", err)
+		log.Errorf("[Weaviate] Failed to list collections: %v", err)
 		return fmt.Errorf("failed to list collections: %w", err)
 	}
 
@@ -568,7 +568,7 @@ func (w *weaviateRepository) VectorRetrieve(ctx context.Context,
 	}
 	if len(result.Errors) > 0 {
 		log.Errorf("[Weaviate] Vector search failed: %v", result.Errors)
-		return nil, fmt.Errorf("graphql search failed: %w", result.Errors[0].Message)
+		return nil, fmt.Errorf("graphql search failed: %s", result.Errors[0].Message)
 	}
 
 	data, ok := result.Data["Get"].(map[string]interface{})
@@ -637,7 +637,7 @@ func (w *weaviateRepository) KeywordsRetrieve(ctx context.Context,
 		}
 		if len(result.Errors) > 0 {
 			log.Errorf("[Weaviate] keywords search failed: %v", result.Errors)
-			return nil, fmt.Errorf("graphql search failed: %w", result.Errors[0].Message)
+			return nil, fmt.Errorf("graphql search failed: %s", result.Errors[0].Message)
 		}
 		data, ok := result.Data["Get"].(map[string]interface{})
 		if !ok || data[collectionName] == nil {

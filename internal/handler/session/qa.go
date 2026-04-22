@@ -454,11 +454,25 @@ const (
 	qaModeAgent                // Agent engine with tool calling
 )
 
+func qaModeName(mode qaMode) string {
+	if mode == qaModeAgent {
+		return "agent"
+	}
+	return "knowledge"
+}
+
 // executeQA is the unified execution flow for both KnowledgeQA and AgentQA modes.
 // It handles message creation, SSE setup, VLM analysis, service invocation, and error handling.
 func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle bool) {
 	ctx := reqCtx.ctx
 	sessionID := reqCtx.sessionID
+	modeName := "knowledge"
+	if mode == qaModeAgent {
+		modeName = "agent"
+	}
+	logger.Infof(ctx, "executeQA start: mode=%s, session=%s, generate_title=%v, kb_count=%d, knowledge_count=%d, images=%d, web_search=%v",
+		modeName, sessionID, generateTitle, len(reqCtx.knowledgeBaseIDs), len(reqCtx.knowledgeIDs),
+		len(reqCtx.images), reqCtx.webSearchEnabled)
 
 	// Agent mode: emit agent query event before message creation
 	if mode == qaModeAgent {
@@ -478,20 +492,31 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 	}
 
 	// Create user message
+	// Persist the user message first so downstream SSE events and async workers
+	// always have a stable message ID to correlate with.
 	userMsg, err := h.createUserMessage(ctx, sessionID, reqCtx.query, reqCtx.requestID, reqCtx.mentionedItems, convertImageAttachments(reqCtx.images), reqCtx.channel)
 	if err != nil {
 		reqCtx.c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
 	reqCtx.userMessageID = userMsg.ID
+	logger.Infof(ctx, "executeQA created user message: session=%s, user_message_id=%s", sessionID, userMsg.ID)
 
 	// Create assistant message
+	// The assistant placeholder is created before any async work starts so
+	// partial chunks, tool events, and completion updates all target one record.
 	assistantMessagePtr, err := h.createAssistantMessage(ctx, reqCtx.assistantMessage)
 	if err != nil {
 		reqCtx.c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
 	reqCtx.assistantMessage = assistantMessagePtr
+	reqCtx.assistantMessage.ExecutionMeta = buildExecutionMeta(reqCtx, mode)
+	if err := h.messageService.UpdateMessageExecutionMeta(ctx, reqCtx.assistantMessage.SessionID, reqCtx.assistantMessage.ID, reqCtx.assistantMessage.ExecutionMeta); err != nil {
+		logger.Warnf(ctx, "Failed to persist initial execution_meta for message %s: %v", reqCtx.assistantMessage.ID, err)
+	}
+	logger.Infof(ctx, "executeQA created assistant message: session=%s, assistant_message_id=%s",
+		sessionID, reqCtx.assistantMessage.ID)
 
 	if mode == qaModeNormal {
 		logger.Infof(ctx, "Using knowledge bases: %v", reqCtx.knowledgeBaseIDs)
@@ -501,6 +526,8 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 
 	// Setup SSE stream
 	streamCtx := h.setupSSEStream(reqCtx, generateTitle)
+	logger.Infof(ctx, "executeQA SSE stream ready: session=%s, assistant_message_id=%s",
+		sessionID, reqCtx.assistantMessage.ID)
 
 	// Normal mode: register completion handler on EventAgentFinalAnswer
 	// (Agent mode handles completion in the defer block instead)
@@ -536,6 +563,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 
 	// Execute QA asynchronously
 	go func() {
+		logger.Infof(streamCtx.asyncCtx, "executeQA async worker started: mode=%s, session=%s", modeName, sessionID)
 		defer func() {
 			if r := recover(); r != nil {
 				buf := make([]byte, 10240)
@@ -543,6 +571,13 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 				stageName := "Knowledge QA"
 				if mode == qaModeAgent {
 					stageName = "Agent QA"
+				}
+				patchAssistantExecutionMeta(streamCtx.assistantMessage, map[string]interface{}{
+					"error_stage": stageName + " panic",
+				})
+				updateCtx := context.WithValue(streamCtx.asyncCtx, types.TenantIDContextKey, reqCtx.session.TenantID)
+				if err := h.messageService.UpdateMessageExecutionMeta(updateCtx, streamCtx.assistantMessage.SessionID, streamCtx.assistantMessage.ID, streamCtx.assistantMessage.ExecutionMeta); err != nil {
+					logger.Warnf(streamCtx.asyncCtx, "Failed to persist panic execution_meta for message %s: %v", streamCtx.assistantMessage.ID, err)
 				}
 				logger.ErrorWithFields(streamCtx.asyncCtx,
 					errors.NewInternalServerError(fmt.Sprintf("%s service panicked: %v\n%s", stageName, r, string(buf))),
@@ -554,25 +589,37 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 				h.completeAssistantMessage(updateCtx, streamCtx.assistantMessage, reqCtx.query)
 				logger.Infof(streamCtx.asyncCtx, "Agent QA service completed for session: %s", sessionID)
 			}
+			logger.Infof(streamCtx.asyncCtx, "executeQA async worker finished: mode=%s, session=%s", modeName, sessionID)
 		}()
 
 		// Run VLM image analysis if applicable
 		h.runVLMAnalysisIfNeeded(streamCtx, reqCtx, mode)
 
 		// Build QA request and invoke the appropriate service
+		// The handler layer is responsible for stream lifecycle and persistence;
+		// service layer only drives the actual QA/agent execution and emits events.
 		qaReq := reqCtx.buildQARequest()
 
 		var serviceErr error
 		var stageName string
 		if mode == qaModeNormal {
 			stageName = "knowledge_qa_execution"
+			logger.Infof(streamCtx.asyncCtx, "Dispatching KnowledgeQA service: session=%s", sessionID)
 			serviceErr = h.sessionService.KnowledgeQA(streamCtx.asyncCtx, qaReq, streamCtx.eventBus)
 		} else {
 			stageName = "agent_execution"
+			logger.Infof(streamCtx.asyncCtx, "Dispatching AgentQA service: session=%s", sessionID)
 			serviceErr = h.sessionService.AgentQA(streamCtx.asyncCtx, qaReq, streamCtx.eventBus)
 		}
 
 		if serviceErr != nil {
+			patchAssistantExecutionMeta(streamCtx.assistantMessage, map[string]interface{}{
+				"error_stage": stageName,
+			})
+			updateCtx := context.WithValue(streamCtx.asyncCtx, types.TenantIDContextKey, reqCtx.session.TenantID)
+			if err := h.messageService.UpdateMessageExecutionMeta(updateCtx, streamCtx.assistantMessage.SessionID, streamCtx.assistantMessage.ID, streamCtx.assistantMessage.ExecutionMeta); err != nil {
+				logger.Warnf(streamCtx.asyncCtx, "Failed to persist error execution_meta for message %s: %v", streamCtx.assistantMessage.ID, err)
+			}
 			logger.ErrorWithFields(streamCtx.asyncCtx, serviceErr, nil)
 			streamCtx.eventBus.Emit(streamCtx.asyncCtx, event.Event{
 				Type:      event.EventError,
@@ -599,6 +646,9 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 // For agent mode, VLM always runs when images and a VLM model are present.
 func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qaRequestContext, mode qaMode) {
 	if len(reqCtx.images) == 0 || reqCtx.customAgent == nil || reqCtx.customAgent.Config.VLMModelID == "" {
+		logger.Infof(streamCtx.asyncCtx, "Skipping VLM analysis: images=%d, has_agent=%v, vlm_model_id_present=%v",
+			len(reqCtx.images), reqCtx.customAgent != nil,
+			reqCtx.customAgent != nil && reqCtx.customAgent.Config.VLMModelID != "")
 		return
 	}
 
@@ -621,6 +671,8 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 			}
 		}
 		if hasRequestKBs || agentWillResolveKBs || reqCtx.webSearchEnabled {
+			logger.Infof(streamCtx.asyncCtx, "Skipping pre-pipeline VLM analysis for normal mode: has_request_kbs=%v, agent_will_resolve_kbs=%v, web_search=%v",
+				hasRequestKBs, agentWillResolveKBs, reqCtx.webSearchEnabled)
 			return // VLM will be handled by the pipeline rewrite step
 		}
 	}
@@ -640,6 +692,8 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 	})
 
 	vlmStart := time.Now()
+	logger.Infof(streamCtx.asyncCtx, "Starting VLM image analysis: session=%s, image_count=%d, mode=%d, vlm_model=%s",
+		sessionID, len(reqCtx.images), mode, reqCtx.customAgent.Config.VLMModelID)
 	h.analyzeImageAttachments(streamCtx.asyncCtx, reqCtx.images,
 		reqCtx.customAgent.Config.VLMModelID, reqCtx.query)
 
@@ -666,10 +720,31 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 func (h *Handler) completeAssistantMessage(ctx context.Context, assistantMessage *types.Message, userQuery string) {
 	assistantMessage.UpdatedAt = time.Now()
 	assistantMessage.IsCompleted = true
+	if userQuery == "" {
+		assistantMessage.Content = "User stopped this response."
+		patchAssistantExecutionMeta(assistantMessage, map[string]interface{}{
+			"stop_reason": "user_requested",
+		})
+	}
+	patchAssistantExecutionMeta(assistantMessage, map[string]interface{}{
+		"completed_at": time.Now().UTC().Format(time.RFC3339),
+	})
+	logger.Infof(ctx, "Completing assistant message: message_id=%s, session=%s, content_len=%d",
+		assistantMessage.ID, assistantMessage.SessionID, len(assistantMessage.Content))
 	_ = h.messageService.UpdateMessage(ctx, assistantMessage)
 
 	// Asynchronously index the Q&A pair into the chat history knowledge base for vector search.
 	// Use WithoutCancel so the goroutine survives after the HTTP request context is done.
-	bgCtx := context.WithoutCancel(ctx)
-	go h.messageService.IndexMessageToKB(bgCtx, userQuery, assistantMessage.Content, assistantMessage.ID, assistantMessage.SessionID)
+	if userQuery != "" {
+		bgCtx := context.WithoutCancel(ctx)
+		logger.Infof(ctx, "Scheduling chat history indexing: message_id=%s, session=%s", assistantMessage.ID, assistantMessage.SessionID)
+		go h.messageService.IndexMessageToKB(bgCtx, userQuery, assistantMessage.Content, assistantMessage.ID, assistantMessage.SessionID)
+	}
+}
+
+func patchAssistantExecutionMeta(assistantMessage *types.Message, patch map[string]interface{}) {
+	if assistantMessage == nil {
+		return
+	}
+	assistantMessage.ExecutionMeta = updateExecutionMetaJSON(assistantMessage.ExecutionMeta, patch)
 }

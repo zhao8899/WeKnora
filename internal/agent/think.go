@@ -30,6 +30,8 @@ func (e *AgentEngine) streamLLMToEventBus(
 	emitFunc func(chunk *types.StreamResponse, fullContent string),
 ) (*streamLLMResult, error) {
 	logger.Debugf(ctx, "[Agent][Stream] Starting LLM stream with %d messages", len(messages))
+	logger.Debugf(ctx, "[Agent][Stream] Options: temperature=%.2f, top_p=%.2f, has_tools=%v, thinking=%v",
+		opts.Temperature, opts.TopP, len(opts.Tools) > 0, opts.Thinking)
 
 	llmCtx, llmCancel := context.WithTimeout(ctx, e.getLLMCallTimeout())
 	defer llmCancel()
@@ -97,15 +99,18 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	iteration int,
 	sessionID string,
 ) (*types.ChatResponse, error) {
-	logger.Debugf(ctx, "[Agent][Thinking] Iteration-%d: temp=%.2f, tools=%d, thinking=%v",
-		iteration+1, e.config.Temperature, len(tools), e.config.Thinking)
+	logger.Debugf(ctx, "[Agent][Thinking] Iteration-%d: temp=%.2f, top_p=%.2f, tools=%d, thinking=%v",
+		iteration+1, e.config.Temperature, e.config.TopP, len(tools), e.config.Thinking)
+	logger.Infof(ctx, "[Agent][Thinking] Iteration-%d start: session=%s, tool_candidates=%d, parallel_tools=%v",
+		iteration+1, sessionID, len(tools), e.config.ParallelToolCalls)
 
-	parallelToolCalls := true
+	useParallel := e.config.ParallelToolCalls
 	opts := &chat.ChatOptions{
 		Temperature:       e.config.Temperature,
+		TopP:              e.config.TopP,
 		Tools:             tools,
 		Thinking:          e.config.Thinking,
-		ParallelToolCalls: &parallelToolCalls,
+		ParallelToolCalls: &useParallel,
 	}
 
 	pendingToolCalls := make(map[string]bool)
@@ -217,6 +222,7 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	if finishReason == "" {
 		finishReason = "stop"
 	}
+	logger.Infof(ctx, "[Agent][Thinking] Iteration-%d normalized finish reason: %s", iteration+1, finishReason)
 
 	resp := &types.ChatResponse{
 		Content:      fullContent,
@@ -277,7 +283,10 @@ func (e *AgentEngine) callLLMWithRetry(
 	})
 
 	// Sanitize messages before sending to LLM (fix consecutive roles, orphaned tool results)
+	// The agent loop accumulates assistant/tool messages across rounds; sanitize
+	// before every LLM call so providers receive a valid alternating message sequence.
 	messages = agenttools.SanitizeMessages(messages)
+	logger.Debugf(ctx, "[Agent][Round-%d] Message list sanitized before LLM call", round)
 
 	response, err := e.streamThinkingToEventBus(ctx, messages, tools, iteration, sessionID)
 	if err != nil && isTransientError(err) {
@@ -290,6 +299,9 @@ func (e *AgentEngine) callLLMWithRetry(
 
 			response, err = e.streamThinkingToEventBus(ctx, messages, tools, iteration, sessionID)
 			if err == nil || !isTransientError(err) {
+				if err == nil {
+					logger.Infof(ctx, "[Agent][Round-%d] LLM retry succeeded on attempt %d", round, retry)
+				}
 				break
 			}
 		}

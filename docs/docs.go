@@ -19,6 +19,144 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/chat/answer/{message_id}/confidence": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns evidence strength, source health, and cited evidence details for an assistant answer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "Get answer confidence details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Assistant message ID",
+                        "name": "message_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Confidence details",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.AnswerConfidenceResponse"
+                                },
+                                "success": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Message not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/chat/answer/{message_id}/feedback": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Submits up, down, or expired feedback for a cited source in an assistant answer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "Submit source feedback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Assistant message ID",
+                        "name": "message_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Source feedback payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.SourceFeedbackRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Feedback accepted",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "success": {
+                                    "type": "boolean"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Message or evidence not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/agents": {
             "get": {
                 "security": [
@@ -8689,6 +8827,94 @@ const docTemplate = `{
                 "ErrAgentInvalidTemperature"
             ]
         },
+        "github_com_Tencent_WeKnora_internal_types.AnswerConfidenceEvidenceItem": {
+            "type": "object",
+            "properties": {
+                "chunk_id": {
+                    "type": "string"
+                },
+                "current_feedback": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "knowledge_base_id": {
+                    "type": "string"
+                },
+                "knowledge_id": {
+                    "type": "string"
+                },
+                "match_type": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "integer"
+                },
+                "rerank_score": {
+                    "type": "number"
+                },
+                "retrieval_score": {
+                    "type": "number"
+                },
+                "source_channel": {
+                    "type": "string"
+                },
+                "source_type": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.AnswerConfidenceResponse": {
+            "type": "object",
+            "properties": {
+                "confidence_label": {
+                    "type": "string"
+                },
+                "confidence_score": {
+                    "type": "number"
+                },
+                "evidence_status": {
+                    "type": "string"
+                },
+                "evidence_strength_label": {
+                    "type": "string"
+                },
+                "evidence_strength_score": {
+                    "type": "number"
+                },
+                "evidences": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.AnswerConfidenceEvidenceItem"
+                    }
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "reference_count": {
+                    "type": "integer"
+                },
+                "source_count": {
+                    "type": "integer"
+                },
+                "source_health_label": {
+                    "type": "string"
+                },
+                "source_health_score": {
+                    "type": "number"
+                },
+                "source_type_counts": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
         "github_com_Tencent_WeKnora_internal_types.AgentConfig": {
             "type": "object",
             "properties": {
@@ -11524,14 +11750,6 @@ const docTemplate = `{
         "github_com_Tencent_WeKnora_internal_types.Tenant": {
             "type": "object",
             "properties": {
-                "agent_config": {
-                    "description": "Deprecated: AgentConfig is deprecated, use CustomAgent (builtin-smart-reasoning) config instead.\nThis field is kept for backward compatibility and will be removed in future versions.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.AgentConfig"
-                        }
-                    ]
-                },
                 "api_key": {
                     "description": "API key",
                     "type": "string"
@@ -12619,6 +12837,24 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "internal_handler.SourceFeedbackRequest": {
+            "type": "object",
+            "required": [
+                "evidence_id",
+                "feedback"
+            ],
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "evidence_id": {
+                    "type": "string"
+                },
+                "feedback": {
+                    "type": "string"
                 }
             }
         }

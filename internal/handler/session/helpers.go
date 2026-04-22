@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -112,18 +113,18 @@ func buildStreamResponse(evt interfaces.StreamEvent, requestID string) *types.St
 			for _, ref := range refs {
 				if refMap, ok := ref.(map[string]interface{}); ok {
 					sr := &types.SearchResult{
-						ID:                getString(refMap, "id"),
-						Content:           getString(refMap, "content"),
-						KnowledgeID:       getString(refMap, "knowledge_id"),
-						ChunkIndex:        int(getFloat64(refMap, "chunk_index")),
-						KnowledgeTitle:    getString(refMap, "knowledge_title"),
-						StartAt:           int(getFloat64(refMap, "start_at")),
-						EndAt:             int(getFloat64(refMap, "end_at")),
-						Seq:               int(getFloat64(refMap, "seq")),
-						Score:             getFloat64(refMap, "score"),
-						ChunkType:         getString(refMap, "chunk_type"),
-						ParentChunkID:     getString(refMap, "parent_chunk_id"),
-						ImageInfo:         getString(refMap, "image_info"),
+						ID:                   getString(refMap, "id"),
+						Content:              getString(refMap, "content"),
+						KnowledgeID:          getString(refMap, "knowledge_id"),
+						ChunkIndex:           int(getFloat64(refMap, "chunk_index")),
+						KnowledgeTitle:       getString(refMap, "knowledge_title"),
+						StartAt:              int(getFloat64(refMap, "start_at")),
+						EndAt:                int(getFloat64(refMap, "end_at")),
+						Seq:                  int(getFloat64(refMap, "seq")),
+						Score:                getFloat64(refMap, "score"),
+						ChunkType:            getString(refMap, "chunk_type"),
+						ParentChunkID:        getString(refMap, "parent_chunk_id"),
+						ImageInfo:            getString(refMap, "image_info"),
 						KnowledgeFilename:    getString(refMap, "knowledge_filename"),
 						KnowledgeSource:      getString(refMap, "knowledge_source"),
 						KnowledgeDescription: getString(refMap, "knowledge_description"),
@@ -184,6 +185,49 @@ func (h *Handler) createUserMessage(ctx context.Context, sessionID, query, reque
 func (h *Handler) createAssistantMessage(ctx context.Context, assistantMessage *types.Message) (*types.Message, error) {
 	assistantMessage.CreatedAt = time.Now()
 	return h.messageService.CreateMessage(ctx, assistantMessage)
+}
+
+func buildExecutionMeta(reqCtx *qaRequestContext, mode qaMode) types.JSON {
+	meta := map[string]interface{}{
+		"requested_mode":      qaModeName(mode),
+		"final_mode":          qaModeName(mode),
+		"agent_id":            "",
+		"model_id":            "",
+		"kb_ids":              reqCtx.knowledgeBaseIDs,
+		"knowledge_ids":       reqCtx.knowledgeIDs,
+		"web_search_enabled":  reqCtx.webSearchEnabled,
+		"memory_enabled":      reqCtx.enableMemory,
+		"channel":             reqCtx.channel,
+		"has_images":          len(reqCtx.images) > 0,
+		"requested_at":        time.Now().UTC().Format(time.RFC3339),
+		"completed_at":        "",
+		"stop_reason":         "",
+		"error_stage":         "",
+		"effective_tenant_id": reqCtx.effectiveTenantID,
+	}
+	if reqCtx.customAgent != nil {
+		meta["agent_id"] = reqCtx.customAgent.ID
+	}
+	return mustMarshalJSON(meta)
+}
+
+func updateExecutionMetaJSON(current types.JSON, patch map[string]interface{}) types.JSON {
+	meta, err := current.Map()
+	if err != nil {
+		meta = map[string]interface{}{}
+	}
+	for k, v := range patch {
+		meta[k] = v
+	}
+	return mustMarshalJSON(meta)
+}
+
+func mustMarshalJSON(v any) types.JSON {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	return types.JSON(data)
 }
 
 // setupStreamHandler creates and subscribes a stream handler

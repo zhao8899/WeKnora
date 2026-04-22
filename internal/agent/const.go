@@ -9,8 +9,10 @@ import (
 )
 
 const (
-	// DefaultAgentTemperature is the default temperature for the agent
-	DefaultAgentTemperature = 0.7
+	// DefaultAgentTemperature is the default temperature for the agent.
+	// 0.3 is intentionally lower than typical chat defaults: RAG-based Q&A
+	// requires factual precision over creative variation.
+	DefaultAgentTemperature = 0.3
 	// DefaultAgentMaxIterations is the default maximum number of iterations for the agent
 	DefaultAgentMaxIterations = 20
 	// DefaultUseCustomSystemPrompt is the default whether to use custom system prompt for the agent

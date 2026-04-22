@@ -18,6 +18,7 @@ import { listAgents, type CustomAgent, BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_RE
 import { getTenantWebSearchConfig } from '@/api/web-search';
 import { getConversationConfig, updateConversationConfig, type ConversationConfig } from '@/api/system';
 import { useI18n } from 'vue-i18n';
+import { applyChatSurfaceMode, resolveChatSurfaceMode } from '@/utils/chatSurfaceMode';
 
 const route = useRoute();
 const router = useRouter();
@@ -280,6 +281,9 @@ const props = defineProps({
 
 const isAgentEnabled = computed(() => settingsStore.isAgentEnabled);
 const isWebSearchEnabled = computed(() => settingsStore.isWebSearchEnabled);
+const currentSurfaceMode = computed(() => resolveChatSurfaceMode(settingsStore));
+const showAdvancedControls = computed(() => currentSurfaceMode.value === 'deep-research' || isCustomAgent.value);
+const showQuickAnswerModelHint = computed(() => currentSurfaceMode.value === 'trusted-qa' && !isCustomAgent.value);
 const selectedKbIds = computed(() => settingsStore.settings.selectedKnowledgeBases || []);
 const selectedFileIds = computed(() => settingsStore.settings.selectedFiles || []);
 const isWebSearchConfigured = ref(false);
@@ -424,6 +428,29 @@ const inputPlaceholder = computed(() => {
     // 无知识库 + 无网络搜索（纯模型对话）
     return t('input.placeholder');
   }
+});
+
+const modeSummaryText = computed(() => {
+  if (isCustomAgent.value && selectedAgent.value?.name) {
+    return t('input.modeSummaryCustomAgent', { name: selectedAgent.value.name });
+  }
+  return currentSurfaceMode.value === 'deep-research'
+    ? t('input.modeSummaryDeepResearch')
+    : t('input.modeSummaryTrustedQa');
+});
+
+const capabilityBadges = computed(() => {
+  const hasKnowledge = allSelectedItems.value.length > 0;
+  const hasWebSearch = isWebSearchEnabled.value && isWebSearchConfigured.value;
+  const hasTools = currentSurfaceMode.value === 'deep-research' || isCustomAgent.value;
+  const hasMemory = hasTools && settingsStore.isMemoryEnabled;
+
+  return [
+    hasKnowledge ? t('input.capabilityKnowledgeOn') : t('input.capabilityKnowledgeOff'),
+    hasWebSearch ? t('input.capabilityWebOn') : t('input.capabilityWebOff'),
+    hasTools ? t('input.capabilityToolsOn') : t('input.capabilityToolsOff'),
+    hasMemory ? t('input.capabilityMemoryOn') : t('input.capabilityMemoryOff'),
+  ];
 });
 
 // 加载知识库列表（自己的 + 共享的，用于 @ 提及等）
@@ -682,6 +709,13 @@ const selectedModelDisplayName = computed(() => {
   const isSharedAgent = !!settingsStore.selectedAgentSourceTenantId;
   const modelFromAgent = agentModelId.value && agentModelId.value === selectedModelId.value;
   if (isSharedAgent && modelFromAgent) return t('input.sharedAgentModelLabel');
+  return t('input.notConfigured');
+});
+
+const quickAnswerModelDisplayName = computed(() => {
+  if (selectedModel.value?.name) {
+    return selectedModel.value.name;
+  }
   return t('input.notConfigured');
 });
 
@@ -1480,12 +1514,11 @@ const selectAgentMode = (mode: 'quick-answer' | 'smart-reasoning') => {
     }
   }
   
-  const shouldEnableAgent = mode === 'smart-reasoning';
-  if (shouldEnableAgent !== isAgentEnabled.value) {
-    settingsStore.toggleAgent(shouldEnableAgent);
+  const nextSurfaceMode = mode === 'smart-reasoning' ? 'deep-research' : 'trusted-qa';
+  if (nextSurfaceMode !== currentSurfaceMode.value) {
+    applyChatSurfaceMode(settingsStore, nextSurfaceMode);
     // 同时更新选中的问答助手
-    settingsStore.selectAgent(shouldEnableAgent ? BUILTIN_SMART_REASONING_ID : BUILTIN_QUICK_ANSWER_ID);
-    MessagePlugin.success(shouldEnableAgent ? t('input.messages.agentSwitchedOn') : t('input.messages.agentSwitchedOff'));
+    MessagePlugin.success(mode === 'smart-reasoning' ? t('input.messages.agentSwitchedOn') : t('input.messages.agentSwitchedOff'));
   }
   showAgentModeSelector.value = false;
 }
@@ -1883,6 +1916,12 @@ defineExpose({
     </Teleport>
     
     <!-- 控制栏 -->
+    <div class="mode-summary-bar">
+      <span class="mode-summary-text">{{ modeSummaryText }}</span>
+      <span v-for="badge in capabilityBadges" :key="badge" class="mode-summary-badge">
+        {{ badge }}
+      </span>
+    </div>
     <div class="control-bar">
       <!-- 左侧控制按钮 -->
       <div class="control-left">
@@ -1962,7 +2001,7 @@ defineExpose({
         </t-tooltip>
 
         <!-- 图片上传按钮 -->
-        <t-tooltip placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
+        <t-tooltip v-if="showAdvancedControls" placement="top" theme="light" :popupProps="{ overlayClassName: 'input-field-tooltip' }">
           <template #content>
             <div v-if="!isImageUploadEnabledByAgent" class="tooltip-with-link">
               <span>{{ $t('input.imageUploadDisabledByAgent') }}</span>
@@ -2015,7 +2054,7 @@ defineExpose({
         </t-tooltip>
 
         <!-- 模型显示 -->
-        <t-tooltip :content="isModelLockedByAgent ? $t('input.modelLockedByAgent') : ''" :disabled="!isModelLockedByAgent">
+        <t-tooltip v-if="showAdvancedControls" :content="isModelLockedByAgent ? $t('input.modelLockedByAgent') : ''" :disabled="!isModelLockedByAgent">
           <div class="model-display" :class="{ 'agent-controlled': isModelLockedByAgent }">
             <div
               ref="modelButtonRef"
@@ -2041,7 +2080,7 @@ defineExpose({
       </div>
 
       <Teleport to="body">
-        <div v-if="showModelSelector" class="model-selector-overlay" @click="closeModelSelector">
+        <div v-if="showAdvancedControls && showModelSelector" class="model-selector-overlay" @click="closeModelSelector">
             <div class="model-selector-dropdown" :style="modelDropdownStyle" @click.stop>
             <div class="model-selector-header">
               <span>{{ $t('conversationSettings.models.chatGroupLabel') }}</span>
@@ -2079,6 +2118,15 @@ defineExpose({
 
       <!-- 右侧控制按钮组 -->
       <div class="control-right">
+        <div
+          v-if="showQuickAnswerModelHint && !isReplying"
+          class="quick-model-hint"
+        >
+          <span class="quick-model-hint__name">{{ quickAnswerModelDisplayName }}</span>
+          <button type="button" class="quick-model-hint__link" @click="handleGoToConversationModels">
+            {{ $t('input.goToSettings') }}
+          </button>
+        </div>
         <!-- 停止按钮（仅在回复中时显示） -->
         <t-tooltip 
           v-if="isReplying"
@@ -2126,23 +2174,28 @@ const getImgSrc = (url: string) => {
 .answers-input {
   position: absolute;
   z-index: 99;
-  bottom: 60px;
+  bottom: 48px;
   left: 50%;
   transform: translateX(-400px);
+  width: 800px;
+  max-width: 100%;
+  background: var(--td-bg-color-container, #fff);
+  border-radius: 12px;
+  border: .5px solid var(--td-component-border, #E7E7E7);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.05);
+  overflow: hidden;
+
+  &:focus-within {
+    border-color: var(--td-brand-color, #07C05F);
+  }
 }
 
 /* 富文本输入框容器 */
 .rich-input-container {
   position: relative;
-  width: 800px;
-  background: var(--td-bg-color-container, #FFF);
-  border-radius: 12px;
-  border: .5px solid var(--td-component-border, #E7E7E7);
-  box-shadow: 0 6px 6px 0 rgba(0, 0, 0, 0.04), 0 12px 12px -1px rgba(0, 0, 0, 0.08);
-  
-  &:focus-within {
-    border-color: var(--td-brand-color, #07C05F);
-  }
+  width: 100%;
+  background: transparent;
+  border-radius: inherit;
 }
 
 /* 选中的知识库/文件标签（mention list 已选项） */
@@ -2151,7 +2204,7 @@ const getImgSrc = (url: string) => {
   flex-wrap: wrap;
   align-items: center;
   gap: 5px;
-  padding: 6px 12px 6px;
+  padding: 6px 12px 4px;
   border-bottom: .5px solid var(--td-component-stroke, #e7e7e7);
   background: var(--td-bg-color-container, #fff);
   border-radius: 11px 11px 0 0; /* 与 .rich-input-container 内缘上边圆角一致（12px - 1px 边框） */
@@ -2315,15 +2368,15 @@ const getImgSrc = (url: string) => {
 :deep(.t-textarea__inner) {
   width: 100%;
   max-height: 200px !important;
-  min-height: 120px !important;
+  min-height: 96px !important;
   resize: none;
   color: var(--td-text-color-primary, #000000e6);
   font-size: 16px;
   font-weight: 400;
   line-height: 24px;
   font-family: var(--td-font-family, "PingFang SC");
-  padding: 12px 16px 56px 16px;
-  border-radius: 0 0 12px 12px;
+  padding: 12px 14px 12px 14px;
+  border-radius: 0;
   border: none;
   box-sizing: border-box;
   background: transparent;
@@ -2345,32 +2398,57 @@ const getImgSrc = (url: string) => {
 
 /* 当没有选中标签时，textarea 样式 */
 .rich-input-container:not(:has(.selected-tags-inline)) :deep(.t-textarea__inner) {
-  border-radius: 12px;
-  padding-top: 16px;
+  border-radius: 12px 12px 0 0;
+  padding-top: 14px;
 }
 
 /* 控制栏 */
+.mode-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px 0;
+  margin-bottom: 0;
+  border-top: .5px solid var(--td-component-stroke, #e7e7e7);
+  background: linear-gradient(180deg, rgba(7, 192, 95, 0.03) 0%, rgba(7, 192, 95, 0) 100%);
+}
+
+.mode-summary-text {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--td-text-color-secondary, #666);
+  margin-right: 4px;
+}
+
+.mode-summary-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--td-bg-color-secondarycontainer, #f3f5f7);
+  border: .5px solid var(--td-component-stroke, #e7e7e7);
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--td-text-color-secondary, #666);
+}
+
 .control-bar {
-  position: absolute;
-  bottom: 12px;
-  left: 16px;
-  right: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
-  max-height: 56px;
   z-index: 10;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0) 0%, var(--td-bg-color-container, #fff) 40%, var(--td-bg-color-container, #fff) 100%);
+  background: var(--td-bg-color-container, #fff);
   pointer-events: auto;
-  padding-top: 8px;
+  padding: 6px 12px 10px;
 }
 
 .control-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
   flex-wrap: wrap;
   min-width: 0;
@@ -2381,8 +2459,8 @@ const getImgSrc = (url: string) => {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 6px 10px;
-  border-radius: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
   color: var(--td-text-color-secondary, #666);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
@@ -2679,6 +2757,42 @@ const getImgSrc = (url: string) => {
   gap: 8px;
 }
 
+.quick-model-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(7, 192, 95, 0.04);
+  border: .5px solid rgba(7, 192, 95, 0.12);
+}
+
+.quick-model-hint__name {
+  max-width: 132px;
+  color: var(--td-text-color-secondary, #666);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-model-hint__link {
+  border: none;
+  background: transparent;
+  color: var(--td-brand-color);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
 .stop-btn {
   width: 28px;
   height: 28px;
@@ -2727,8 +2841,8 @@ const getImgSrc = (url: string) => {
 }
 
 .send-btn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   background-color: var(--td-brand-color);
   
@@ -2743,6 +2857,47 @@ const getImgSrc = (url: string) => {
   img {
     width: 16px;
     height: 16px;
+  }
+}
+
+@media (max-width: 860px) {
+  .answers-input {
+    width: calc(100vw - 32px);
+    max-width: 800px;
+    transform: translateX(-50%);
+    bottom: 20px;
+  }
+}
+
+@media (max-width: 640px) {
+  .answers-input {
+    width: calc(100vw - 20px);
+    bottom: 12px;
+    border-radius: 10px;
+  }
+
+  :deep(.t-textarea__inner) {
+    min-height: 84px !important;
+    font-size: 15px;
+    line-height: 22px;
+  }
+
+  .mode-summary-bar,
+  .control-bar {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .mode-summary-text {
+    width: 100%;
+  }
+
+  .quick-model-hint {
+    max-width: calc(100vw - 132px);
+  }
+
+  .quick-model-hint__name {
+    max-width: 92px;
   }
 }
 

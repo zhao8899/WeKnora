@@ -209,6 +209,8 @@ func (e *AgentEngine) Execute(
 		)
 	}
 	logger.Debugf(ctx, "[Agent] SystemPrompt: %d chars", len(systemPrompt))
+	logger.Infof(ctx, "[Agent] Prompt context prepared: language=%s, kb_info=%d, selected_docs=%d, skills_enabled=%v",
+		language, len(e.knowledgeBasesInfo), len(e.selectedDocs), e.skillsManager != nil && e.skillsManager.IsEnabled())
 
 	// Initialize messages with history
 	var imgs []string
@@ -216,6 +218,8 @@ func (e *AgentEngine) Execute(
 		imgs = imageURLs[0]
 	}
 	messages := e.buildMessagesWithLLMContext(systemPrompt, query, sessionID, llmContext, imgs)
+	logger.Infof(ctx, "[Agent] Message context built: history_msgs=%d, request_images=%d, total_msgs=%d",
+		len(llmContext), len(imgs), len(messages))
 
 	// Get tool definitions for function calling
 	tools := e.buildToolsForLLM()
@@ -298,6 +302,8 @@ func (e *AgentEngine) executeLoop(
 		messages = e.manageContextWindow(ctx, messages, state.CurrentRound+1, currentTokens)
 		if len(messages) < beforeLen {
 			currentTokens = e.tokenEstimator.EstimateMessages(messages)
+			logger.Infof(ctx, "[Agent][Round-%d/%d] Context window trimmed: messages %d -> %d, est_tokens=%d",
+				state.CurrentRound+1, e.config.MaxIterations, beforeLen, len(messages), currentTokens)
 		}
 
 		logger.Infof(ctx, "[Agent][Round-%d/%d] Starting: %d messages, %d tools, est_tokens=%d",
@@ -347,21 +353,24 @@ func (e *AgentEngine) executeLoop(
 						state.CurrentRound+1, emptyRetries, maxEmptyResponseRetries)
 					messages = append(messages, chat.Message{
 						Role:    "user",
-						Content: "Please provide your answer by calling the final_answer tool.",
+						Content: types.LocalizedFallback(ctx, types.FallbackNudgeAnswer),
 					})
 					continue
 				}
 				// Retries exhausted — use fallback message rather than empty answer
 				logger.Warnf(ctx, "[Agent][Round-%d] Empty content after %d retries - using fallback",
 					state.CurrentRound+1, maxEmptyResponseRetries)
-				state.FinalAnswer = "I'm sorry, I was unable to generate a response. Please try again."
+				state.FinalAnswer = types.LocalizedFallback(ctx, types.FallbackEmptyAnswer)
 				state.IsComplete = true
 				state.RoundSteps = append(state.RoundSteps, verdict.step)
+				logger.Warnf(ctx, "[Agent][Round-%d] Forced fallback final answer due to repeated empty responses", state.CurrentRound+1)
 				break
 			}
 			state.FinalAnswer = verdict.finalAnswer
 			state.IsComplete = true
 			state.RoundSteps = append(state.RoundSteps, verdict.step)
+			logger.Infof(ctx, "[Agent][Round-%d] Loop finished: final_answer_len=%d, total_steps=%d",
+				state.CurrentRound+1, len(state.FinalAnswer), len(state.RoundSteps))
 			break
 		}
 
@@ -371,6 +380,8 @@ func (e *AgentEngine) executeLoop(
 		// 4. Observe: Add tool results to messages and write to context
 		state.RoundSteps = append(state.RoundSteps, step)
 		messages = e.appendToolResults(ctx, messages, step)
+		logger.Infof(ctx, "[Agent][Round-%d] Observation appended: step_tool_calls=%d, total_steps=%d, total_messages=%d",
+			state.CurrentRound+1, len(step.ToolCalls), len(state.RoundSteps), len(messages))
 		common.PipelineInfo(ctx, "Agent", "round_end", map[string]interface{}{
 			"iteration":   state.CurrentRound,
 			"round":       state.CurrentRound + 1,

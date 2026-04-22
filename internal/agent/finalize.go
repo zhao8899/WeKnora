@@ -30,6 +30,9 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	})
 
 	// Build messages with all context
+	// Final-answer synthesis intentionally rebuilds a compact context from the
+	// original question plus tool outputs, instead of replaying the full loop,
+	// so the closing answer stays grounded and token-efficient.
 	language := types.LanguageNameFromContext(ctx)
 	systemPrompt := BuildSystemPromptWithOptions(
 		e.knowledgeBasesInfo,
@@ -63,8 +66,10 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 
 	logger.Debugf(ctx, "[Agent][FinalAnswer] Built context: %d messages, %d tool results",
 		len(messages), toolResultCount)
+	logger.Infof(ctx, "[Agent][FinalAnswer] Synthesis context ready: language=%s, tool_results=%d, total_messages=%d",
+		language, toolResultCount, len(messages))
 
-	// Add final answer prompt
+	// Add final answer prompt — language already resolved above, reuse it
 	finalPrompt := fmt.Sprintf(`Based on the above tool call results, generate a complete answer for the user's question.
 
 User question: %s
@@ -74,9 +79,9 @@ Requirements:
 2. Clearly cite information sources (chunk_id, document name)
 3. Organize the answer in a structured format
 4. If information is insufficient, honestly state so
-5. IMPORTANT: Respond in the same language as the user's question
+5. IMPORTANT: You MUST respond in %s (the same language as the user's question)
 
-Now generate the final answer:`, query)
+Now generate the final answer:`, query, language)
 
 	messages = append(messages, chat.Message{
 		Role:    "user",
@@ -90,7 +95,7 @@ Now generate the final answer:`, query)
 	llmResult, err := e.streamLLMToEventBus(
 		ctx,
 		messages,
-		&chat.ChatOptions{Temperature: e.config.Temperature, Thinking: e.config.Thinking},
+		&chat.ChatOptions{Temperature: e.config.Temperature, TopP: e.config.TopP, Thinking: e.config.Thinking},
 		func(chunk *types.StreamResponse, fullContent string) {
 			if chunk.Content != "" {
 				logger.Debugf(ctx, "[Agent][FinalAnswer] Emitting answer chunk: %d chars", len(chunk.Content))
@@ -117,6 +122,8 @@ Now generate the final answer:`, query)
 
 	fullAnswer := llmResult.Content
 	logger.Infof(ctx, "[Agent][FinalAnswer] Final answer generated: %d characters", len(fullAnswer))
+	logger.Infof(ctx, "[Agent][FinalAnswer] Stream summary: finish_reason=%s, tool_calls=%d",
+		llmResult.FinishReason, len(llmResult.ToolCalls))
 	common.PipelineInfo(ctx, "Agent", "final_answer_done", map[string]interface{}{
 		"session_id": sessionID,
 		"answer_len": len(fullAnswer),
@@ -130,7 +137,8 @@ Now generate the final answer:`, query)
 func (e *AgentEngine) handleMaxIterations(
 	ctx context.Context, query string, state *types.AgentState, sessionID string,
 ) {
-	logger.Info(ctx, "Reached max iterations, generating final answer")
+	logger.Infof(ctx, "Reached max iterations, generating final answer: rounds=%d, max=%d, steps=%d",
+		state.CurrentRound, e.config.MaxIterations, len(state.RoundSteps))
 	common.PipelineWarn(ctx, "Agent", "max_iterations_reached", map[string]interface{}{
 		"iterations": state.CurrentRound,
 		"max":        e.config.MaxIterations,
@@ -142,7 +150,8 @@ func (e *AgentEngine) handleMaxIterations(
 		common.PipelineError(ctx, "Agent", "final_answer_failed", map[string]interface{}{
 			"error": err.Error(),
 		})
-		state.FinalAnswer = "Sorry, I was unable to generate a complete answer."
+		state.FinalAnswer = types.LocalizedFallback(ctx, types.FallbackMaxIterations)
+		logger.Warnf(ctx, "Using max-iterations fallback answer: answer_len=%d", len(state.FinalAnswer))
 	}
 	state.IsComplete = true
 }
@@ -171,5 +180,7 @@ func (e *AgentEngine) emitCompletionEvent(
 		},
 	})
 
-	logger.Infof(ctx, "Agent execution completed in %d rounds", state.CurrentRound)
+	logger.Infof(ctx, "Agent execution completed in %d rounds: steps=%d, refs=%d, answer_len=%d, duration_ms=%d",
+		state.CurrentRound, len(state.RoundSteps), len(state.KnowledgeRefs), len(state.FinalAnswer),
+		time.Since(startTime).Milliseconds())
 }

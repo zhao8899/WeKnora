@@ -39,6 +39,7 @@ type CreateProviderRequest struct {
 	Description string                            `json:"description"`
 	Parameters  types.WebSearchProviderParameters `json:"parameters"`
 	IsDefault   bool                              `json:"is_default"`
+	IsPlatform  bool                              `json:"is_platform"`
 }
 
 // UpdateProviderRequest defines the request body for updating a provider
@@ -47,6 +48,7 @@ type UpdateProviderRequest struct {
 	Description string                            `json:"description"`
 	Parameters  types.WebSearchProviderParameters `json:"parameters"`
 	IsDefault   bool                              `json:"is_default"`
+	IsPlatform  *bool                             `json:"is_platform"`
 }
 
 // --- helpers ---
@@ -56,9 +58,25 @@ func (h *WebSearchProviderHandler) getTenantID(c *gin.Context) uint64 {
 	return c.GetUint64(types.TenantIDContextKey.String())
 }
 
-// getOwnedProvider loads a provider and verifies it belongs to the given tenant.
+func (h *WebSearchProviderHandler) hideSensitiveInfo(provider *types.WebSearchProviderEntity, c *gin.Context) *types.WebSearchProviderEntity {
+	if provider == nil || !provider.IsPlatform || types.IsSuperAdmin(c.Request.Context()) {
+		return provider
+	}
+
+	copy := *provider
+	copy.Parameters = provider.Parameters
+	copy.Parameters.APIKey = ""
+	return &copy
+}
+
+func (h *WebSearchProviderHandler) canManagePlatformProviders(c *gin.Context) bool {
+	return types.IsSuperAdmin(c.Request.Context())
+}
+
+// getAccessibleProvider loads a provider visible to the given tenant.
+// Tenants can access their own providers and platform-shared providers.
 // Returns (nil, status, msg) on failure so callers can respond immediately.
-func (h *WebSearchProviderHandler) getOwnedProvider(
+func (h *WebSearchProviderHandler) getAccessibleProvider(
 	ctx context.Context, tenantID uint64, id string,
 ) (*types.WebSearchProviderEntity, int, string) {
 	provider, err := h.repo.GetByID(ctx, tenantID, id)
@@ -90,8 +108,16 @@ func (h *WebSearchProviderHandler) CreateProvider(c *gin.Context) {
 		return
 	}
 
-	logger.Infof(ctx, "Creating web search provider: tenant=%d, name=%s, type=%s",
-		tenantID, secutils.SanitizeForLog(req.Name), secutils.SanitizeForLog(string(req.Provider)))
+	if req.IsPlatform && !h.canManagePlatformProviders(c) {
+		c.Error(errors.NewForbiddenError("platform web search providers can only be managed by super admins"))
+		return
+	}
+
+	logger.Infof(
+		ctx,
+		"Creating web search provider: tenant=%d, platform=%t, name=%s, type=%s",
+		tenantID, req.IsPlatform, secutils.SanitizeForLog(req.Name), secutils.SanitizeForLog(string(req.Provider)),
+	)
 
 	provider := &types.WebSearchProviderEntity{
 		TenantID:    tenantID,
@@ -100,6 +126,7 @@ func (h *WebSearchProviderHandler) CreateProvider(c *gin.Context) {
 		Description: secutils.SanitizeForLog(req.Description),
 		Parameters:  req.Parameters,
 		IsDefault:   req.IsDefault,
+		IsPlatform:  req.IsPlatform,
 	}
 
 	if err := h.service.CreateProvider(ctx, provider); err != nil {
@@ -110,7 +137,7 @@ func (h *WebSearchProviderHandler) CreateProvider(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
-		"data":    provider,
+		"data":    h.hideSensitiveInfo(provider, c),
 	})
 }
 
@@ -131,9 +158,14 @@ func (h *WebSearchProviderHandler) ListProviders(c *gin.Context) {
 		return
 	}
 
+	result := make([]*types.WebSearchProviderEntity, 0, len(providers))
+	for _, provider := range providers {
+		result = append(result, h.hideSensitiveInfo(provider, c))
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    providers,
+		"data":    result,
 	})
 }
 
@@ -148,7 +180,7 @@ func (h *WebSearchProviderHandler) GetProvider(c *gin.Context) {
 	}
 
 	id := c.Param("id")
-	provider, status, msg := h.getOwnedProvider(ctx, tenantID, id)
+	provider, status, msg := h.getAccessibleProvider(ctx, tenantID, id)
 	if status != http.StatusOK {
 		c.JSON(status, gin.H{"success": false, "error": msg})
 		return
@@ -156,7 +188,7 @@ func (h *WebSearchProviderHandler) GetProvider(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data":    provider,
+		"data":    h.hideSensitiveInfo(provider, c),
 	})
 }
 
@@ -172,10 +204,13 @@ func (h *WebSearchProviderHandler) UpdateProvider(c *gin.Context) {
 
 	id := c.Param("id")
 
-	// Ownership check
-	existing, status, msg := h.getOwnedProvider(ctx, tenantID, id)
+	existing, status, msg := h.getAccessibleProvider(ctx, tenantID, id)
 	if status != http.StatusOK {
 		c.JSON(status, gin.H{"success": false, "error": msg})
+		return
+	}
+	if existing.IsPlatform && !h.canManagePlatformProviders(c) {
+		c.Error(errors.NewForbiddenError("platform web search providers are read-only for tenant admins"))
 		return
 	}
 
@@ -185,15 +220,41 @@ func (h *WebSearchProviderHandler) UpdateProvider(c *gin.Context) {
 		return
 	}
 
+	isPlatform := existing.IsPlatform
+	if req.IsPlatform != nil {
+		if !h.canManagePlatformProviders(c) {
+			c.Error(errors.NewForbiddenError("platform web search providers can only be managed by super admins"))
+			return
+		}
+		isPlatform = *req.IsPlatform
+	}
+
+	parameters := existing.Parameters
+	if req.Parameters.APIKey != "" {
+		parameters.APIKey = req.Parameters.APIKey
+	}
+	if req.Parameters.EngineID != "" || existing.Parameters.EngineID == "" {
+		parameters.EngineID = req.Parameters.EngineID
+	}
+	if req.Parameters.ExtraConfig != nil {
+		parameters.ExtraConfig = req.Parameters.ExtraConfig
+	}
+
+	name := existing.Name
+	if req.Name != "" {
+		name = secutils.SanitizeForLog(req.Name)
+	}
+
 	// Build updated entity, keeping immutable fields from existing
 	provider := &types.WebSearchProviderEntity{
 		ID:          id,
-		TenantID:    tenantID,
-		Name:        secutils.SanitizeForLog(req.Name),
+		TenantID:    existing.TenantID,
+		Name:        name,
 		Provider:    existing.Provider, // Provider type is immutable after creation
 		Description: secutils.SanitizeForLog(req.Description),
-		Parameters:  req.Parameters,
+		Parameters:  parameters,
 		IsDefault:   req.IsDefault,
+		IsPlatform:  isPlatform,
 	}
 
 	if err := h.service.UpdateProvider(ctx, provider); err != nil {
@@ -205,7 +266,7 @@ func (h *WebSearchProviderHandler) UpdateProvider(c *gin.Context) {
 	// Re-fetch to get the full stored state
 	updated, _ := h.repo.GetByID(ctx, tenantID, id)
 	if updated != nil {
-		c.JSON(http.StatusOK, gin.H{"success": true, "data": updated})
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": h.hideSensitiveInfo(updated, c)})
 	} else {
 		c.JSON(http.StatusOK, gin.H{"success": true})
 	}
@@ -223,13 +284,17 @@ func (h *WebSearchProviderHandler) DeleteProvider(c *gin.Context) {
 
 	id := c.Param("id")
 
-	// Ownership check
-	if _, status, msg := h.getOwnedProvider(ctx, tenantID, id); status != http.StatusOK {
+	existing, status, msg := h.getAccessibleProvider(ctx, tenantID, id)
+	if status != http.StatusOK {
 		c.JSON(status, gin.H{"success": false, "error": msg})
 		return
 	}
+	if existing.IsPlatform && !h.canManagePlatformProviders(c) {
+		c.Error(errors.NewForbiddenError("platform web search providers can only be deleted by super admins"))
+		return
+	}
 
-	if err := h.service.DeleteProvider(ctx, tenantID, id); err != nil {
+	if err := h.service.DeleteProvider(ctx, existing.TenantID, id); err != nil {
 		logger.Warnf(ctx, "Failed to delete web search provider %s: %v", id, err)
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
@@ -257,7 +322,7 @@ func (h *WebSearchProviderHandler) TestProviderByID(c *gin.Context) {
 	}
 
 	id := c.Param("id")
-	provider, status, msg := h.getOwnedProvider(ctx, tenantID, id)
+	provider, status, msg := h.getAccessibleProvider(ctx, tenantID, id)
 	if status != http.StatusOK {
 		c.JSON(status, gin.H{"success": false, "error": msg})
 		return

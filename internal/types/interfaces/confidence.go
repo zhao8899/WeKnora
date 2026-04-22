@@ -9,6 +9,7 @@ import (
 type AnswerEvidenceRepository interface {
 	ReplaceAnswerEvidence(ctx context.Context, tenantID uint64, sessionID, messageID string, evidences []*types.AnswerEvidence) error
 	AnswerMessageExists(ctx context.Context, tenantID uint64, messageID string) (bool, error)
+	GetAnswerMessage(ctx context.Context, tenantID uint64, messageID string) (*types.Message, error)
 	ListAnswerEvidence(ctx context.Context, tenantID uint64, messageID string) ([]*types.AnswerEvidence, error)
 	GetAnswerEvidence(ctx context.Context, tenantID uint64, messageID, evidenceID string) (*types.AnswerEvidence, error)
 	UpsertSourceFeedback(ctx context.Context, feedback *types.SourceFeedback) error

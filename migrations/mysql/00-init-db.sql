@@ -121,6 +121,7 @@ CREATE TABLE messages (
     content TEXT NOT NULL,
     knowledge_references JSON NOT NULL,
     agent_steps JSON DEFAULT NULL COMMENT 'Agent execution steps (reasoning process and tool calls)',
+    execution_meta JSON DEFAULT NULL COMMENT 'Assistant execution snapshot metadata for auditing',
     is_completed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

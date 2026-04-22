@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -25,6 +26,8 @@ func (s *webSearchProviderService) CreateProvider(ctx context.Context, provider 
 		return fmt.Errorf("tenant ID is required")
 	}
 
+	provider.Provider = normalizeWebSearchProviderType(provider.Provider)
+
 	if !isValidProviderType(provider.Provider) {
 		return fmt.Errorf("invalid provider type: %s", provider.Provider)
 	}
@@ -34,12 +37,16 @@ func (s *webSearchProviderService) CreateProvider(ctx context.Context, provider 
 	}
 
 	if provider.IsDefault {
-		if err := s.repo.ClearDefault(ctx, provider.TenantID, ""); err != nil {
+		if err := s.repo.ClearDefault(ctx, provider.TenantID, provider.IsPlatform, ""); err != nil {
 			logger.Warnf(ctx, "Failed to clear default providers: %v", err)
 		}
 	}
 
-	logger.Infof(ctx, "Creating web search provider: tenant=%d, name=%s, type=%s", provider.TenantID, provider.Name, provider.Provider)
+	logger.Infof(
+		ctx,
+		"Creating web search provider: tenant=%d, platform=%t, name=%s, type=%s",
+		provider.TenantID, provider.IsPlatform, provider.Name, provider.Provider,
+	)
 	return s.repo.Create(ctx, provider)
 }
 
@@ -49,18 +56,28 @@ func (s *webSearchProviderService) UpdateProvider(ctx context.Context, provider 
 		return fmt.Errorf("tenant ID is required")
 	}
 
+	provider.Provider = normalizeWebSearchProviderType(provider.Provider)
+
 	// Validate provider type if set
 	if provider.Provider != "" && !isValidProviderType(provider.Provider) {
 		return fmt.Errorf("invalid provider type: %s", provider.Provider)
 	}
 
+	if err := validateProviderParameters(provider.Provider, provider.Parameters); err != nil {
+		return err
+	}
+
 	if provider.IsDefault {
-		if err := s.repo.ClearDefault(ctx, provider.TenantID, provider.ID); err != nil {
+		if err := s.repo.ClearDefault(ctx, provider.TenantID, provider.IsPlatform, provider.ID); err != nil {
 			logger.Warnf(ctx, "Failed to clear default providers: %v", err)
 		}
 	}
 
-	logger.Infof(ctx, "Updating web search provider: tenant=%d, id=%s", provider.TenantID, provider.ID)
+	logger.Infof(
+		ctx,
+		"Updating web search provider: tenant=%d, platform=%t, id=%s",
+		provider.TenantID, provider.IsPlatform, provider.ID,
+	)
 	return s.repo.Update(ctx, provider)
 }
 
@@ -72,15 +89,21 @@ func (s *webSearchProviderService) DeleteProvider(ctx context.Context, tenantID 
 
 // isValidProviderType checks if the given provider type is supported
 func isValidProviderType(provider types.WebSearchProviderType) bool {
+	provider = normalizeWebSearchProviderType(provider)
 	switch provider {
 	case types.WebSearchProviderTypeBing,
 		types.WebSearchProviderTypeGoogle,
 		types.WebSearchProviderTypeDuckDuckGo,
-		types.WebSearchProviderTypeTavily:
+		types.WebSearchProviderTypeTavily,
+		types.WebSearchProviderTypeSerpAPI:
 		return true
 	default:
 		return false
 	}
+}
+
+func normalizeWebSearchProviderType(provider types.WebSearchProviderType) types.WebSearchProviderType {
+	return types.WebSearchProviderType(strings.ToLower(strings.TrimSpace(string(provider))))
 }
 
 // validateProviderParameters validates required parameters for each provider type
@@ -100,6 +123,10 @@ func validateProviderParameters(provider types.WebSearchProviderType, params typ
 	case types.WebSearchProviderTypeTavily:
 		if params.APIKey == "" {
 			return fmt.Errorf("API key is required for Tavily provider")
+		}
+	case types.WebSearchProviderTypeSerpAPI:
+		if params.APIKey == "" {
+			return fmt.Errorf("API key is required for SerpAPI provider")
 		}
 	case types.WebSearchProviderTypeDuckDuckGo:
 		// No API key required

@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT NOT NULL,
     knowledge_references JSONB NOT NULL DEFAULT '[]',
     agent_steps JSONB DEFAULT NULL,
+    execution_meta JSONB DEFAULT NULL,
     is_completed BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -154,6 +155,7 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 COMMENT ON COLUMN messages.agent_steps IS 'Agent execution steps (reasoning process and tool calls)';
+COMMENT ON COLUMN messages.execution_meta IS 'Assistant execution snapshot metadata for auditing';
 
 -- Create Index for messages
 CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id); 

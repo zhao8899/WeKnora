@@ -58,7 +58,8 @@
             <thead>
               <tr>
                 <th>{{ $t('settings.health.question') }}</th>
-                <th>{{ $t('settings.health.confidence') }}</th>
+                <th>{{ evidenceStrengthTitle }}</th>
+                <th>{{ sourceHealthTitle }}</th>
                 <th>{{ $t('settings.health.sources') }}</th>
               </tr>
             </thead>
@@ -67,10 +68,18 @@
                 <td class="question-cell">{{ item.question || item.message_id }}</td>
                 <td>
                   <t-tag
-                    :theme="['low', 'insufficient'].includes(item.confidence_label) ? 'danger' : 'warning'"
+                    :theme="['low', 'insufficient'].includes(item.evidence_strength_label || item.confidence_label) ? 'danger' : 'warning'"
                     variant="light"
                   >
-                    {{ formatPercent(item.confidence_score) }}
+                    {{ formatPercent(item.evidence_strength_score ?? item.confidence_score) }}
+                  </t-tag>
+                </td>
+                <td>
+                  <t-tag
+                    :theme="['low', 'insufficient'].includes(item.source_health_label) ? 'danger' : 'warning'"
+                    variant="light"
+                  >
+                    {{ formatPercent(item.source_health_score) }}
                   </t-tag>
                 </td>
                 <td>{{ item.source_count }}</td>
@@ -95,7 +104,7 @@
             <thead>
               <tr>
                 <th>{{ $t('settings.health.document') }}</th>
-                <th>{{ $t('settings.health.sourceWeight') }}</th>
+                <th>{{ sourceHealthTitle }}</th>
                 <th>{{ $t('settings.health.downFeedback') }}</th>
                 <th>{{ $t('settings.health.status') }}</th>
               </tr>
@@ -103,14 +112,11 @@
             <tbody>
               <tr v-for="item in staleDocuments" :key="item.knowledge_id">
                 <td class="question-cell">{{ item.title || item.knowledge_id }}</td>
-                <td>{{ formatPercent(item.source_weight) }}</td>
-                <td>{{ item.down_feedback_count }}</td>
+                <td>{{ formatPercent(item.source_health_score) }}</td>
+                <td>{{ item.down_feedback_count + (item.expired_feedback_count || 0) }}</td>
                 <td>
-                  <t-tag v-if="item.freshness_flag" theme="warning" variant="light">
-                    {{ $t('settings.health.needsReview') }}
-                  </t-tag>
-                  <t-tag v-else theme="success" variant="light">
-                    {{ $t('settings.health.healthy') }}
+                  <t-tag :theme="statusTheme(item.health_status)" variant="light">
+                    {{ statusText(item.health_status) }}
                   </t-tag>
                 </td>
               </tr>
@@ -137,6 +143,7 @@
                 <th>{{ $t('settings.health.retrievedCount') }}</th>
                 <th>{{ $t('settings.health.rerankedCount') }}</th>
                 <th>{{ $t('settings.health.citedCount') }}</th>
+                <th>{{ sourceHealthTitle }}</th>
               </tr>
             </thead>
             <tbody>
@@ -145,6 +152,11 @@
                 <td>{{ item.retrieved_count }}</td>
                 <td>{{ item.reranked_count }}</td>
                 <td>{{ item.cited_count }}</td>
+                <td>
+                  <t-tag :theme="statusTheme(item.health_status)" variant="light">
+                    {{ formatPercent(item.source_health_score) }}
+                  </t-tag>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -177,6 +189,22 @@ const staleDocuments = ref<StaleDocument[]>([])
 const citationHeatmap = ref<CitationHeat[]>([])
 
 const formatPercent = (value: number) => `${Math.round((value || 0) * 100)}%`
+const i18nText = (key: string, fallback: string) => {
+  const translated = t(key)
+  return translated === key ? fallback : translated
+}
+const evidenceStrengthTitle = i18nText('chat.evidenceStrength', 'Evidence strength')
+const sourceHealthTitle = i18nText('chat.sourceHealth', 'Source health')
+const statusTheme = (status?: string) => {
+  if (status === 'stale') return 'warning'
+  if (status === 'at_risk') return 'danger'
+  return 'success'
+}
+const statusText = (status?: string) => {
+  if (status === 'stale') return i18nText('settings.health.needsReview', 'Needs Review')
+  if (status === 'at_risk') return i18nText('settings.health.atRisk', 'At Risk')
+  return i18nText('settings.health.healthy', 'Healthy')
+}
 
 const loadAll = async () => {
   loading.value = true

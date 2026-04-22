@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -79,11 +80,16 @@ func TestLocalSandboxExecute(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Write a simple test script
-	scriptPath := filepath.Join(tmpDir, "test.sh")
+	scriptName := "test.sh"
 	scriptContent := `#!/bin/bash
 echo "Hello from sandbox"
 echo "Args: $@"
 `
+	if runtime.GOOS == "windows" {
+		scriptName = "test.cmd"
+		scriptContent = "@echo off\r\necho Hello from sandbox\r\necho Args: %*\r\n"
+	}
+	scriptPath := filepath.Join(tmpDir, scriptName)
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to write script: %v", err)
 	}
@@ -131,11 +137,16 @@ func TestLocalSandboxTimeout(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Write a script that sleeps
-	scriptPath := filepath.Join(tmpDir, "sleep.sh")
+	scriptName := "sleep.sh"
 	scriptContent := `#!/bin/bash
 sleep 10
 echo "Done"
 `
+	if runtime.GOOS == "windows" {
+		scriptName = "sleep.cmd"
+		scriptContent = "@echo off\r\nping -n 11 127.0.0.1 >nul\r\necho Done\r\n"
+	}
+	scriptPath := filepath.Join(tmpDir, scriptName)
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to write script: %v", err)
 	}

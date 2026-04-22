@@ -14,14 +14,17 @@ type WebSearchProviderRepository interface {
 	GetByID(ctx context.Context, tenantID uint64, id string) (*types.WebSearchProviderEntity, error)
 	// GetDefault retrieves the default provider (is_default=true) for a tenant, or nil if none.
 	GetDefault(ctx context.Context, tenantID uint64) (*types.WebSearchProviderEntity, error)
+	// GetPlatformDefault retrieves the platform-shared default provider, or nil if none.
+	GetPlatformDefault(ctx context.Context) (*types.WebSearchProviderEntity, error)
 	// List lists all web search providers for a tenant
 	List(ctx context.Context, tenantID uint64) ([]*types.WebSearchProviderEntity, error)
 	// Update updates a web search provider
 	Update(ctx context.Context, provider *types.WebSearchProviderEntity) error
 	// Delete deletes a web search provider (soft delete)
 	Delete(ctx context.Context, tenantID uint64, id string) error
-	// ClearDefault clears the default flag for all providers of a tenant, optionally excluding one
-	ClearDefault(ctx context.Context, tenantID uint64, excludeID string) error
+	// ClearDefault clears the default flag for all providers in the same scope, optionally excluding one.
+	// When isPlatform=true, clears platform-shared defaults; otherwise clears tenant-local defaults.
+	ClearDefault(ctx context.Context, tenantID uint64, isPlatform bool, excludeID string) error
 }
 
 // WebSearchProviderService defines the service interface for web search provider management.

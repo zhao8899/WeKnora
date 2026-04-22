@@ -3,6 +3,20 @@
         <div ref="scrollContainer" class="chat_scroll_box" @scroll="handleScroll">
             <div class="msg_list">
                 <!-- 推荐问题卡片，仅在新问答且无消息时展示 -->
+                <div v-if="messagesList.length === 0 && !loading" class="surface-mode-strip">
+                    <button type="button" class="surface-mode-card" @click="goToKnowledgeSearch">
+                        <span class="surface-mode-label">{{ t('chatSurface.searchLabel') }}</span>
+                        <span class="surface-mode-desc">{{ t('chatSurface.searchDesc') }}</span>
+                    </button>
+                    <button type="button" class="surface-mode-card" :class="{ active: currentSurfaceMode === 'trusted-qa' }" @click="switchChatMode('trusted-qa')">
+                        <span class="surface-mode-label">{{ t('chatSurface.trustedQaLabel') }}</span>
+                        <span class="surface-mode-desc">{{ t('chatSurface.trustedQaDesc') }}</span>
+                    </button>
+                    <button type="button" class="surface-mode-card" :class="{ active: currentSurfaceMode === 'deep-research' }" @click="switchChatMode('deep-research')">
+                        <span class="surface-mode-label">{{ t('chatSurface.deepResearchLabel') }}</span>
+                        <span class="surface-mode-desc">{{ t('chatSurface.deepResearchDesc') }}</span>
+                    </button>
+                </div>
                 <div v-if="messagesList.length === 0 && !loading" class="suggested-questions-container" :class="{ 'has-questions': suggestedQuestions.length > 0 }">
                     <transition name="sq-fade">
                         <div v-if="suggestedQuestions.length > 0" class="suggested-questions-inner">
@@ -26,8 +40,17 @@
                         <usermsg :content="session.content" :mentioned_items="session.mentioned_items" :images="session.images"></usermsg>
                     </div>
                     <div v-if="session.role == 'assistant'">
-                        <botmsg :content="session.content" :session="session" :user-query="getUserQuery(id)" @scroll-bottom="scrollToBottom"
-                            :isFirstEnter="isFirstEnter" :sessionId="session_id"></botmsg>
+                        <botmsg
+                            :content="session.content"
+                            :session="session"
+                            :user-query="getUserQuery(id)"
+                            :is-latest="id === messagesList.length - 1"
+                            @scroll-bottom="scrollToBottom"
+                            @regenerate="handleRegenerate"
+                            @send-question="handleFollowUpQuestion"
+                            :isFirstEnter="isFirstEnter"
+                            :sessionId="session_id"
+                        ></botmsg>
                     </div>
                 </div>
                 <div v-if="loading"
@@ -62,7 +85,7 @@
 </template>
 <script setup>
 import { storeToRefs } from 'pinia';
-import { ref, onMounted, onUnmounted, nextTick, watch, reactive, onBeforeUnmount } from 'vue';
+import { computed, ref, onMounted, onUnmounted, nextTick, watch, reactive, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import InputField from '../../components/Input-field.vue';
 import botmsg from './components/botmsg.vue';
@@ -78,11 +101,13 @@ import { useUIStore } from '@/stores/ui';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
 import { normalizeSuggestedQuestions } from '@/utils/suggestedQuestions';
+import { applyChatSurfaceMode, resolveChatSurfaceMode } from '@/utils/chatSurfaceMode';
 const usemenuStore = useMenuStore();
 const useSettingsStoreInstance = useSettingsStore();
 const uiStore = useUIStore();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 const { t } = useI18n();
+const currentSurfaceMode = computed(() => resolveChatSurfaceMode(useSettingsStoreInstance));
 const { menuArr, isFirstSession, firstQuery, firstMentionedItems, firstModelId, firstImageFiles } = storeToRefs(usemenuStore);
 const { output, onChunk, isStreaming, isLoading, error, startStream, stopStream } = useStream();
 const route = useRoute();
@@ -148,6 +173,14 @@ const handleSuggestedQuestionClick = (question) => {
 };
 
 // 防抖包装，切换知识库/文件时300ms内不重复请求
+const goToKnowledgeSearch = () => {
+    router.push('/platform/knowledge-search');
+};
+
+const switchChatMode = (mode) => {
+    applyChatSurfaceMode(useSettingsStoreInstance, mode);
+};
+
 const debouncedFetchSuggestions = () => {
     if (suggestedDebounceTimer) clearTimeout(suggestedDebounceTimer);
     suggestedDebounceTimer = setTimeout(() => { fetchSuggestedQuestions(); }, 300);
@@ -414,6 +447,17 @@ const handleStopGeneration = () => {
     // API 调用成功后，后端的 stop 事件会清空它
 };
 
+const handleRegenerate = (query) => {
+    if (!query || isReplying.value) return;
+    sendMsg(query);
+};
+
+const handleFollowUpQuestion = (question) => {
+    if (inputFieldRef.value?.triggerSend) {
+        inputFieldRef.value.triggerSend(question);
+    }
+};
+
 const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []) => {
     userquery.value = value;
     isReplying.value = true;
@@ -473,9 +517,6 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
     // Use agent-chat endpoint when agent is enabled, otherwise use knowledge-chat
     const endpoint = agentEnabled ? '/api/v1/agent-chat' : '/api/v1/knowledge-chat';
     
-    // Get selected MCP services from settings store (if available)
-    const mcpServiceIds = useSettingsStoreInstance.settings.selectedMCPServices || [];
-    
     await startStream({ 
         session_id: session_id.value, 
         knowledge_base_ids: kbIds,
@@ -485,7 +526,6 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         web_search_enabled: webSearchEnabled,
         enable_memory: enableMemory,
         summary_model_id: modelId,
-        mcp_service_ids: mcpServiceIds,
         mentioned_items: mentionedItems,
         images: imageAttachments.length > 0 ? imageAttachments : undefined,
         query: value, 
@@ -1001,7 +1041,7 @@ onMounted(async () => {
     loading.value = false;
     isReplying.value = false;
     
-    // Load session data to get agent_config
+    // Load session data for chat context restoration
     try {
         const sessionRes = await getSession(session_id.value);
         if (sessionRes?.data) {
@@ -1175,6 +1215,53 @@ onBeforeRouteUpdate((to, from, next) => {
     }
 }
 
+.surface-mode-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    max-width: 800px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 24px 16px 0;
+}
+
+.surface-mode-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid var(--td-component-stroke);
+    background: linear-gradient(180deg, var(--td-bg-color-container) 0%, var(--td-bg-color-container-hover) 100%);
+    cursor: pointer;
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+
+    &:hover {
+        border-color: var(--td-brand-color);
+        transform: translateY(-1px);
+        box-shadow: var(--td-shadow-1);
+    }
+
+    &.active {
+        border-color: var(--td-brand-color);
+        box-shadow: inset 0 0 0 1px rgba(7, 192, 95, 0.15);
+    }
+}
+
+.surface-mode-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+}
+
+.surface-mode-desc {
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: left;
+    color: var(--td-text-color-secondary);
+}
+
 .suggested-questions-inner {
     display: flex;
     flex-direction: column;
@@ -1239,5 +1326,11 @@ onBeforeRouteUpdate((to, from, next) => {
     color: var(--td-text-color-primary);
     line-height: 1.4;
     text-align: center;
+}
+
+@media (max-width: 750px) {
+    .surface-mode-strip {
+        grid-template-columns: 1fr;
+    }
 }
 </style>

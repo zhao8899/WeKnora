@@ -253,6 +253,14 @@ func (r *messageRepository) UpdateMessageRenderedContent(ctx context.Context, se
 		Update("rendered_content", renderedContent).Error
 }
 
+// UpdateMessageExecutionMeta updates only the execution_meta column for a message.
+func (r *messageRepository) UpdateMessageExecutionMeta(ctx context.Context, sessionID, messageID string, executionMeta types.JSON) error {
+	return r.db.WithContext(ctx).
+		Model(&types.Message{}).
+		Where("id = ? AND session_id = ?", messageID, sessionID).
+		Update("execution_meta", executionMeta).Error
+}
+
 // DeleteMessagesBySessionID deletes all messages belonging to a session (soft delete)
 func (r *messageRepository) DeleteMessagesBySessionID(ctx context.Context, sessionID string) error {
 	return r.db.WithContext(ctx).Where("session_id = ?", sessionID).Delete(&types.Message{}).Error

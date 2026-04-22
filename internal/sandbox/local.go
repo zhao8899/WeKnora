@@ -7,8 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -75,7 +75,7 @@ func (s *LocalSandbox) Execute(ctx context.Context, config *ExecuteConfig) (*Exe
 	defer cancel()
 
 	// Build command
-	args := append([]string{config.Script}, config.Args...)
+	args := s.buildCommandArgs(interpreter, config.Script, config.Args)
 	cmd := exec.CommandContext(execCtx, interpreter, args...)
 
 	// Set working directory
@@ -88,10 +88,9 @@ func (s *LocalSandbox) Execute(ctx context.Context, config *ExecuteConfig) (*Exe
 	// Setup minimal environment
 	cmd.Env = s.buildEnvironment(config.Env)
 
-	// Setup process group for cleanup
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	// Configure process attributes so timeout cleanup can terminate the spawned
+	// process tree on each supported platform.
+	applySandboxSysProcAttr(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -113,9 +112,11 @@ func (s *LocalSandbox) Execute(ctx context.Context, config *ExecuteConfig) (*Exe
 
 	if err != nil {
 		if execCtx.Err() == context.DeadlineExceeded {
-			// Kill the process group
-			if cmd.Process != nil {
-				syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			// Best-effort timeout cleanup. Platform-specific helpers handle
+			// process-group termination where available and fall back to killing
+			// the direct child process otherwise.
+			if killErr := killSandboxProcess(cmd); killErr != nil {
+				result.Stderr += fmt.Sprintf("\n[sandbox cleanup] %v", killErr)
 			}
 			result.Killed = true
 			result.Error = ErrTimeout.Error()
@@ -129,6 +130,15 @@ func (s *LocalSandbox) Execute(ctx context.Context, config *ExecuteConfig) (*Exe
 	}
 
 	return result, nil
+}
+
+func (s *LocalSandbox) buildCommandArgs(interpreter, script string, scriptArgs []string) []string {
+	ext := strings.ToLower(filepath.Ext(script))
+	if ext == ".cmd" || ext == ".bat" {
+		args := []string{"/c", script}
+		return append(args, scriptArgs...)
+	}
+	return append([]string{script}, scriptArgs...)
 }
 
 // validateScript checks if the script path is valid and safe
@@ -175,29 +185,63 @@ func (s *LocalSandbox) getInterpreter(scriptPath string) string {
 	ext := strings.ToLower(filepath.Ext(scriptPath))
 	switch ext {
 	case ".py":
-		return "python3"
+		return s.firstAvailableCommand("python3", "py", "python")
 	case ".sh", ".bash":
-		return "bash"
+		return s.firstAvailableCommand(
+			"bash",
+			"C:\\Program Files\\Git\\bin\\bash.exe",
+			"C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+			"C:\\Program Files\\Git\\bin\\sh.exe",
+			"C:\\Program Files\\Git\\usr\\bin\\sh.exe",
+			"sh",
+		)
 	case ".js":
-		return "node"
+		return s.firstAvailableCommand("node")
 	case ".rb":
-		return "ruby"
+		return s.firstAvailableCommand("ruby")
 	case ".pl":
-		return "perl"
+		return s.firstAvailableCommand("perl")
 	case ".php":
-		return "php"
+		return s.firstAvailableCommand("php")
+	case ".cmd", ".bat":
+		return s.firstAvailableCommand("cmd")
 	default:
-		return "sh"
+		return s.firstAvailableCommand("sh", "bash")
 	}
+}
+
+func (s *LocalSandbox) firstAvailableCommand(candidates ...string) string {
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if filepath.IsAbs(candidate) {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+			continue
+		}
+		if resolved, err := exec.LookPath(candidate); err == nil {
+			if strings.Contains(strings.ToLower(resolved), `\windowsapps\`) {
+				continue
+			}
+			return resolved
+		}
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+	return candidates[0]
 }
 
 // isAllowedCommand checks if a command is in the allowed list
 func (s *LocalSandbox) isAllowedCommand(cmd string) bool {
+	base := strings.ToLower(strings.TrimSuffix(filepath.Base(cmd), filepath.Ext(cmd)))
 	if len(s.config.AllowedCommands) == 0 {
 		// Use default allowed commands
 		defaults := defaultAllowedCommands()
 		for _, allowed := range defaults {
-			if cmd == allowed {
+			if base == strings.ToLower(allowed) {
 				return true
 			}
 		}
@@ -205,7 +249,7 @@ func (s *LocalSandbox) isAllowedCommand(cmd string) bool {
 	}
 
 	for _, allowed := range s.config.AllowedCommands {
-		if cmd == allowed {
+		if base == strings.ToLower(allowed) {
 			return true
 		}
 	}
@@ -214,6 +258,37 @@ func (s *LocalSandbox) isAllowedCommand(cmd string) bool {
 
 // buildEnvironment creates a safe environment for script execution
 func (s *LocalSandbox) buildEnvironment(extra map[string]string) []string {
+	if runtime.GOOS == "windows" {
+		env := []string{
+			"PATH=" + os.Getenv("PATH"),
+			"SystemRoot=" + os.Getenv("SystemRoot"),
+			"ComSpec=" + os.Getenv("ComSpec"),
+			"TEMP=" + os.Getenv("TEMP"),
+			"TMP=" + os.Getenv("TMP"),
+			"LANG=en_US.UTF-8",
+			"LC_ALL=en_US.UTF-8",
+		}
+		home := os.Getenv("USERPROFILE")
+		if home == "" {
+			home = os.Getenv("HOME")
+		}
+		if home != "" {
+			env = append(env, "HOME="+home, "USERPROFILE="+home)
+		}
+
+		dangerous := map[string]bool{
+			"PYTHONPATH":   true,
+			"NODE_OPTIONS": true,
+		}
+		for key, value := range extra {
+			if dangerous[strings.ToUpper(key)] {
+				continue
+			}
+			env = append(env, fmt.Sprintf("%s=%s", key, value))
+		}
+		return env
+	}
+
 	// Start with minimal environment
 	env := []string{
 		"PATH=/usr/local/bin:/usr/bin:/bin",

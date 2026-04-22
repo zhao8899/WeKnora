@@ -5,6 +5,20 @@
                 <span>{{ $t('createChat.title') }}</span>
             </div>
             <!-- 推荐问题 -->
+            <div class="surface-mode-strip">
+                <button type="button" class="surface-mode-card" @click="goToKnowledgeSearch">
+                    <span class="surface-mode-label">{{ $t('chatSurface.searchLabel') }}</span>
+                    <span class="surface-mode-desc">{{ $t('chatSurface.searchDesc') }}</span>
+                </button>
+                <button type="button" class="surface-mode-card" :class="{ active: currentSurfaceMode === 'trusted-qa' }" @click="switchChatMode('trusted-qa')">
+                    <span class="surface-mode-label">{{ $t('chatSurface.trustedQaLabel') }}</span>
+                    <span class="surface-mode-desc">{{ $t('chatSurface.trustedQaDesc') }}</span>
+                </button>
+                <button type="button" class="surface-mode-card" :class="{ active: currentSurfaceMode === 'deep-research' }" @click="switchChatMode('deep-research')">
+                    <span class="surface-mode-label">{{ $t('chatSurface.deepResearchLabel') }}</span>
+                    <span class="surface-mode-desc">{{ $t('chatSurface.deepResearchDesc') }}</span>
+                </button>
+            </div>
             <div ref="sqContainerRef" class="suggested-questions-container">
                 <transition name="sq-slide-fade" mode="out-in"
                     @before-leave="onBeforeLeave"
@@ -45,7 +59,7 @@
     />
 </template>
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue';
+import { computed, ref, watch, onMounted, nextTick } from 'vue';
 import InputField from '@/components/Input-field.vue';
 import { createSessions } from "@/api/chat/index";
 import { getSuggestedQuestions } from "@/api/agent/index";
@@ -59,6 +73,7 @@ import { useI18n } from 'vue-i18n';
 import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
 import { normalizeSuggestedQuestions } from '@/utils/suggestedQuestions';
+import { applyChatSurfaceMode, resolveChatSurfaceMode, type ChatSurfaceMode } from '@/utils/chatSurfaceMode';
 
 const router = useRouter();
 const route = useRoute();
@@ -67,6 +82,7 @@ const settingsStore = useSettingsStore();
 const uiStore = useUIStore();
 const { t } = useI18n();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
+const currentSurfaceMode = computed<ChatSurfaceMode>(() => resolveChatSurfaceMode(settingsStore));
 
 // ===== 推荐问题 =====
 const suggestedQuestions = ref<SuggestedQuestion[]>([]);
@@ -157,6 +173,14 @@ watch(() => settingsStore.settings.selectedFiles, debouncedFetch, { deep: true }
 
 onMounted(() => { fetchSuggestedQuestions(); });
 
+const goToKnowledgeSearch = () => {
+    router.push('/platform/knowledge-search');
+};
+
+const switchChatMode = (mode: ChatSurfaceMode) => {
+    applyChatSurfaceMode(settingsStore, mode);
+};
+
 const inputFieldRef = ref();
 
 const handleSuggestedQuestionClick = (question: string) => {
@@ -168,24 +192,8 @@ const sendMsg = (value: string, modelId: string, mentionedItems: any[], imageFil
 }
 
 async function createNewSession(value: string, modelId: string, mentionedItems: any[] = [], imageFiles: any[] = []) {
-    const selectedKbs = settingsStore.settings.selectedKnowledgeBases || [];
-    const selectedFiles = settingsStore.settings.selectedFiles || [];
-
-    // 构建 session 数据，包含 Agent 配置
-    const sessionData: any = {};
-    
-    // 添加 Agent 配置（知识库信息在 agent_config 中）
-    sessionData.agent_config = {
-        enabled: true,
-        max_iterations: settingsStore.agentConfig.maxIterations,
-        temperature: settingsStore.agentConfig.temperature,
-        knowledge_bases: selectedKbs,  // 所有选中的知识库
-        knowledge_ids: selectedFiles,  // 所有选中的普通知识/文件
-        allowed_tools: settingsStore.agentConfig.allowedTools
-    };
-
     try {
-        const res = await createSessions(sessionData);
+        const res = await createSessions();
         if (res.data && res.data.id) {
             await navigateToSession(res.data.id, value, modelId, mentionedItems, imageFiles);
         } else {
@@ -357,6 +365,52 @@ const handleKBEditorSuccess = (kbId: string) => {
     }
 }
 
+.surface-mode-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    width: 100%;
+    max-width: 800px;
+    margin-bottom: 18px;
+}
+
+.surface-mode-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid var(--td-component-stroke);
+    background: linear-gradient(180deg, var(--td-bg-color-container) 0%, var(--td-bg-color-container-hover) 100%);
+    cursor: pointer;
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+
+    &:hover {
+        border-color: var(--td-brand-color);
+        transform: translateY(-1px);
+        box-shadow: var(--td-shadow-1);
+    }
+
+    &.active {
+        border-color: var(--td-brand-color);
+        box-shadow: inset 0 0 0 1px rgba(7, 192, 95, 0.15);
+    }
+}
+
+.surface-mode-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+}
+
+.surface-mode-desc {
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: left;
+    color: var(--td-text-color-secondary);
+}
+
 .suggested-question-text {
     font-size: 13px;
     color: var(--td-text-color-primary);
@@ -384,6 +438,10 @@ const handleKBEditorSuccess = (kbId: string) => {
     }
 }
 @media (max-width: 750px) {
+    .surface-mode-strip {
+        grid-template-columns: 1fr;
+    }
+
     .answers-input {
         transform: translateX(-250px);
     }

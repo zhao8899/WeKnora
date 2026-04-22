@@ -86,8 +86,10 @@ type Model struct {
 	Parameters ModelParameters `yaml:"parameters"  json:"parameters"  gorm:"type:json"`
 	// Whether the model is the default model
 	IsDefault bool `yaml:"is_default"  json:"is_default"`
-	// Whether the model is a builtin model (visible to all tenants)
-	IsBuiltin bool `yaml:"is_builtin"  json:"is_builtin"  gorm:"default:false"`
+	// Legacy API compatibility flag.
+	// Runtime storage has converged on models.is_platform, but the API still exposes
+	// the field as is_builtin so the current frontend remains compatible.
+	IsBuiltin bool `yaml:"is_builtin"  json:"is_builtin"  gorm:"column:is_platform;default:false"`
 	// Model status, default: active, possible: downloading, download_failed
 	Status ModelStatus `yaml:"status"      json:"status"`
 	// Creation time of the model

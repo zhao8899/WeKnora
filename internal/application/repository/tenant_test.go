@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,9 +20,22 @@ const testAESKey = "01234567890123456789012345678901" // 32 bytes
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	skipIfSQLiteUnavailable(t, err)
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Tenant{}))
+	err = db.AutoMigrate(&types.Tenant{})
+	skipIfSQLiteUnavailable(t, err)
+	require.NoError(t, err)
 	return db
+}
+
+func skipIfSQLiteUnavailable(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		return
+	}
+	if strings.Contains(err.Error(), "go-sqlite3 requires cgo") {
+		t.Skip("sqlite test skipped because go-sqlite3 is unavailable with CGO_ENABLED=0")
+	}
 }
 
 // insertTenantRaw inserts a tenant row with the given api_key value directly,

@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -191,6 +192,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(infra_web_search.NewRegistry))
 	must(container.Invoke(registerWebSearchProviders))
 	must(container.Provide(repository.NewWebSearchProviderRepository))
+	must(container.Invoke(ensurePlatformDefaultWebSearchProvider))
 	must(container.Provide(service.NewWebSearchService))
 	must(container.Provide(service.NewWebSearchProviderService))
 
@@ -462,12 +464,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		// Run base migrations (all versioned migrations including embeddings)
 		// The embeddings migration will be conditionally executed based on skip_embedding parameter in DSN
 		if err := database.RunMigrationsWithOptions(migrateDSN, migrationOpts); err != nil {
-			// Log warning but don't fail startup - migrations might be handled externally
-			logger.Warnf(context.Background(), "Database migration failed: %v", err)
-			logger.Warnf(
-				context.Background(),
-				"Continuing with application startup. Please run migrations manually if needed.",
-			)
+			return nil, fmt.Errorf("database migration failed: %w", err)
 		}
 
 		// Post-migration: resolve __pending_env__ storage provider markers for historical KBs.
@@ -476,6 +473,33 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		resolveStorageProviderPending(db)
 	} else {
 		logger.Infof(context.Background(), "Auto-migration is disabled (AUTO_MIGRATE=false)")
+	}
+
+	// Historical deployments have shown that schema_migrations can drift away from the live
+	// schema. Repair additive drift first, then audit the final shape before serving traffic.
+	if err := database.RepairKnownSchemaDrift(db); err != nil {
+		return nil, fmt.Errorf("failed to repair known schema drift: %w", err)
+	}
+	auditReport, err := database.AuditSchemaIntegrity(db)
+	if err != nil {
+		return nil, fmt.Errorf("database schema audit failed: %w", err)
+	}
+	if auditReport.HasCritical() {
+		return nil, fmt.Errorf("database schema audit found critical issues: %s", auditReport.Summary())
+	}
+	if warnings := auditReport.WarningCount(); warnings > 0 {
+		logger.Warnf(
+			context.Background(),
+			"Database schema audit completed with %d warning(s): %s",
+			warnings,
+			auditReport.Summary(),
+		)
+	} else {
+		logger.Infof(
+			context.Background(),
+			"Database schema audit passed at version %d",
+			auditReport.Version,
+		)
 	}
 
 	// Get underlying SQL DB object
@@ -1343,4 +1367,74 @@ func startSourceWeightUpdater(updater *service.SourceWeightUpdater, cleaner inte
 		ticker.Stop()
 		return nil
 	})
+}
+
+// ensurePlatformDefaultWebSearchProvider bootstraps a platform-shared default web search provider.
+// This keeps tenant web search usable out of the box: when a tenant has no custom provider,
+// runtime resolution can still fall back to a platform-level default.
+func ensurePlatformDefaultWebSearchProvider(
+	db *gorm.DB,
+	repo interfaces.WebSearchProviderRepository,
+) {
+	ctx := context.Background()
+
+	// Startup must not fail if migrations are managed externally or not yet applied.
+	if !db.Migrator().HasTable((&types.WebSearchProviderEntity{}).TableName()) {
+		logger.Warnf(ctx, "[Container] skip web search bootstrap: table %s not found", (&types.WebSearchProviderEntity{}).TableName())
+		return
+	}
+	if !db.Migrator().HasColumn(&types.WebSearchProviderEntity{}, "is_platform") {
+		logger.Warnf(ctx, "[Container] skip web search bootstrap: web_search_providers.is_platform not found")
+		return
+	}
+	if !db.Migrator().HasTable("users") {
+		logger.Warnf(ctx, "[Container] skip web search bootstrap: users table not found")
+		return
+	}
+
+	existing, err := repo.GetPlatformDefault(ctx)
+	if err != nil {
+		logger.Warnf(ctx, "[Container] load platform default web search provider failed: %v", err)
+		return
+	}
+	if existing != nil {
+		logger.Infof(
+			ctx,
+			"[Container] platform default web search provider already exists: id=%s type=%s",
+			existing.ID, existing.Provider,
+		)
+		return
+	}
+
+	var superAdmin types.User
+	if err := db.WithContext(ctx).
+		Where("can_access_all_tenants = ? AND deleted_at IS NULL", true).
+		Order("created_at ASC").
+		First(&superAdmin).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Warnf(ctx, "[Container] skip web search bootstrap: no super admin found")
+			return
+		}
+		logger.Warnf(ctx, "[Container] resolve super admin for web search bootstrap failed: %v", err)
+		return
+	}
+
+	provider := &types.WebSearchProviderEntity{
+		TenantID:    superAdmin.TenantID,
+		Name:        "Platform Default DuckDuckGo",
+		Provider:    types.WebSearchProviderTypeDuckDuckGo,
+		Description: "Bootstrap platform default web search provider",
+		IsDefault:   true,
+		IsPlatform:  true,
+	}
+	if err := repo.Create(ctx, provider); err != nil {
+		logger.Warnf(ctx, "[Container] create platform default web search provider failed: %v", err)
+		return
+	}
+
+	logger.Infof(
+		ctx,
+		"[Container] platform default web search provider created: id=%s tenant=%d type=%s",
+		provider.ID, provider.TenantID, provider.Provider,
+	)
 }

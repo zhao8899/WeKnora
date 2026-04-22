@@ -11,6 +11,10 @@ const (
 	DocumentAccessTypeRetrieved = "retrieved"
 	DocumentAccessTypeReranked  = "reranked"
 	DocumentAccessTypeCited     = "cited"
+
+	SourceHealthStatusHealthy = "healthy"
+	SourceHealthStatusAtRisk  = "at_risk"
+	SourceHealthStatusStale   = "stale"
 )
 
 type DocumentAccessLog struct {
@@ -46,30 +50,63 @@ type HotQuestion struct {
 }
 
 type CoverageGap struct {
-	MessageID       string    `json:"message_id"`
-	SessionID       string    `json:"session_id"`
-	Question        string    `json:"question"`
-	ConfidenceScore float64   `json:"confidence_score"`
-	ConfidenceLabel string    `json:"confidence_label"`
-	SourceCount     int64     `json:"source_count"`
-	AnswerCreatedAt time.Time `json:"answer_created_at"`
+	MessageID             string    `json:"message_id"`
+	SessionID             string    `json:"session_id"`
+	Question              string    `json:"question"`
+	ConfidenceScore       float64   `json:"confidence_score"`
+	ConfidenceLabel       string    `json:"confidence_label"`
+	EvidenceStrengthScore float64   `json:"evidence_strength_score"`
+	EvidenceStrengthLabel string    `json:"evidence_strength_label"`
+	SourceHealthScore     float64   `json:"source_health_score"`
+	SourceHealthLabel     string    `json:"source_health_label"`
+	SourceCount           int64     `json:"source_count"`
+	AnswerCreatedAt       time.Time `json:"answer_created_at"`
 }
 
 type StaleDocument struct {
-	KnowledgeID       string     `json:"knowledge_id"`
-	Title             string     `json:"title"`
-	SourceWeight      float64    `json:"source_weight"`
-	FreshnessFlag     bool       `json:"freshness_flag"`
-	DownFeedbackCount int64      `json:"down_feedback_count"`
-	LastFeedbackAt    *time.Time `json:"last_feedback_at,omitempty"`
+	KnowledgeID          string     `json:"knowledge_id"`
+	Title                string     `json:"title"`
+	SourceWeight         float64    `json:"source_weight"`
+	FreshnessFlag        bool       `json:"freshness_flag"`
+	DownFeedbackCount    int64      `json:"down_feedback_count"`
+	ExpiredFeedbackCount int64      `json:"expired_feedback_count"`
+	SourceHealthScore    float64    `json:"source_health_score"`
+	SourceHealthLabel    string     `json:"source_health_label"`
+	HealthStatus         string     `json:"health_status"`
+	LastFeedbackAt       *time.Time `json:"last_feedback_at,omitempty"`
 }
 
 type CitationHeat struct {
-	KnowledgeID    string  `json:"knowledge_id"`
-	Title          string  `json:"title"`
-	CitedCount     int64   `json:"cited_count"`
-	RerankedCount  int64   `json:"reranked_count"`
-	RetrievedCount int64   `json:"retrieved_count"`
-	SourceWeight   float64 `json:"source_weight"`
-	FreshnessFlag  bool    `json:"freshness_flag"`
+	KnowledgeID       string  `json:"knowledge_id"`
+	Title             string  `json:"title"`
+	CitedCount        int64   `json:"cited_count"`
+	RerankedCount     int64   `json:"reranked_count"`
+	RetrievedCount    int64   `json:"retrieved_count"`
+	SourceWeight      float64 `json:"source_weight"`
+	FreshnessFlag     bool    `json:"freshness_flag"`
+	SourceHealthScore float64 `json:"source_health_score"`
+	SourceHealthLabel string  `json:"source_health_label"`
+	HealthStatus      string  `json:"health_status"`
+}
+
+func SourceHealthLabel(score float64) string {
+	switch {
+	case score >= 0.75:
+		return "high"
+	case score >= 0.45:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func SourceHealthStatus(score float64, freshnessFlag bool, downFeedbackCount, expiredFeedbackCount int64) string {
+	switch {
+	case freshnessFlag || expiredFeedbackCount > 0:
+		return SourceHealthStatusStale
+	case score < 0.45 || downFeedbackCount > 0:
+		return SourceHealthStatusAtRisk
+	default:
+		return SourceHealthStatusHealthy
+	}
 }

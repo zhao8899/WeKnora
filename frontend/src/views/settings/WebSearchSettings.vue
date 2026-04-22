@@ -23,6 +23,9 @@
               <t-tag v-if="entity.is_default" theme="primary" size="small" variant="light">
                 {{ t('webSearchSettings.default') }}
               </t-tag>
+              <t-tag v-if="entity.is_platform" theme="warning" size="small" variant="light">
+                {{ t('webSearchSettings.platformSharedTag') }}
+              </t-tag>
               <t-tag size="small" variant="outline">{{ entity.provider }}</t-tag>
             </div>
             <div class="item-desc">{{ entity.description || t('webSearchSettings.noDescription') }}</div>
@@ -31,11 +34,22 @@
             <t-button theme="default" variant="text" size="small" @click="testExistingConnection(entity)" :loading="testingId === entity.id">
               {{ t('webSearchSettings.testConnection') }}
             </t-button>
-            <t-button theme="primary" variant="text" size="small" @click="editProvider(entity)">
+            <t-button
+              theme="primary"
+              variant="text"
+              size="small"
+              :disabled="isPlatformProvider(entity) && !canManagePlatformProviders"
+              @click="editProvider(entity)"
+            >
               {{ t('common.edit') }}
             </t-button>
             <t-popconfirm :content="t('webSearchSettings.deleteConfirm')" @confirm="deleteProvider(entity.id!)">
-              <t-button theme="danger" variant="text" size="small">
+              <t-button
+                theme="danger"
+                variant="text"
+                size="small"
+                :disabled="isPlatformProvider(entity) && !canManagePlatformProviders"
+              >
                 {{ t('common.delete') }}
               </t-button>
             </t-popconfirm>
@@ -110,6 +124,15 @@
             <t-switch v-model="providerForm.is_default" />
           </t-form-item>
 
+          <t-form-item v-if="canManagePlatformProviders" :label="t('webSearchSettings.platformSharedLabel')" name="is_platform">
+            <template #help>
+              <div class="switch-help">
+                {{ t('webSearchSettings.platformSharedDesc') }}
+              </div>
+            </template>
+            <t-switch v-model="providerForm.is_platform" />
+          </t-form-item>
+
           <div class="dialog-footer">
             <div class="footer-left">
               <t-button
@@ -138,6 +161,7 @@ import { ref, computed, onMounted } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useI18n } from 'vue-i18n'
 import { AddIcon } from 'tdesign-icons-vue-next'
+import { useAuthStore } from '@/stores/auth'
 import {
   listWebSearchProviders,
   listWebSearchProviderTypes,
@@ -150,6 +174,7 @@ import {
 } from '@/api/web-search-provider'
 
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 // ===== State =====
 const providerEntities = ref<WebSearchProviderEntity[]>([])
@@ -166,18 +191,23 @@ const providerForm = ref<{
   description: string
   parameters: { api_key?: string; engine_id?: string }
   is_default: boolean
+  is_platform: boolean
 }>({
   name: '',
   provider: 'duckduckgo',
   description: '',
   parameters: {},
   is_default: false,
+  is_platform: false,
 })
 
 // ===== Computed =====
 const selectedProviderType = computed(() => {
   return providerTypes.value.find(pt => pt.id === providerForm.value.provider)
 })
+
+const canManagePlatformProviders = computed(() => authStore.canAccessAllTenants)
+const isPlatformProvider = (entity: WebSearchProviderEntity) => !!entity.is_platform
 
 // ===== Methods =====
 const onProviderTypeChange = () => {
@@ -210,7 +240,8 @@ const openAddDialog = () => {
     provider: providerTypes.value[0]?.id || 'duckduckgo', 
     description: '', 
     parameters: {}, 
-    is_default: providerEntities.value.length === 0 
+    is_default: providerEntities.value.length === 0,
+    is_platform: false,
   }
   showAddProviderDialog.value = true
 }
@@ -226,6 +257,7 @@ const editProvider = (entity: WebSearchProviderEntity) => {
       engine_id: entity.parameters?.engine_id || '',
     },
     is_default: entity.is_default || false,
+    is_platform: entity.is_platform || false,
   }
   showAddProviderDialog.value = true
 }
@@ -244,6 +276,7 @@ const saveProvider = async ({ validateResult, firstError }: any) => {
       description: providerForm.value.description,
       parameters: { ...providerForm.value.parameters },
       is_default: providerForm.value.is_default,
+      is_platform: providerForm.value.is_platform,
     }
     
     if (editingProvider.value && !data.parameters!.api_key) {

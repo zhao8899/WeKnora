@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	llmcontext "github.com/Tencent/WeKnora/internal/application/service/llmcontext"
 	"github.com/Tencent/WeKnora/internal/event"
@@ -61,14 +62,16 @@ func (s *sessionService) AgentQA(
 		tenantInfo = &types.Tenant{ID: agentTenantID}
 	}
 
-	// Ensure defaults are set
-	req.CustomAgent.EnsureDefaults()
-
 	// Build AgentConfig from custom agent and tenant info
+	// This is the runtime snapshot used for the current request after tenant,
+	// shared-agent scope, and request-level switches are merged together.
 	agentConfig, err := s.buildAgentConfig(ctx, req, tenantInfo, agentTenantID)
 	if err != nil {
 		return err
 	}
+	logger.Infof(ctx, "AgentQA runtime config prepared: max_iterations=%d, kb_count=%d, knowledge_count=%d, web_search=%v, multi_turn=%v",
+		agentConfig.MaxIterations, len(agentConfig.KnowledgeBases), len(agentConfig.KnowledgeIDs),
+		agentConfig.WebSearchEnabled, agentConfig.MultiTurnEnabled)
 
 	// Set VLM model ID for tool result image analysis (runtime-only field)
 	if req.CustomAgent != nil && req.CustomAgent.Config.VLMModelID != "" {
@@ -90,6 +93,7 @@ func (s *sessionService) AgentQA(
 		logger.Warnf(ctx, "Failed to get chat model: %v", err)
 		return fmt.Errorf("failed to get chat model: %w", err)
 	}
+	logger.Infof(ctx, "AgentQA selected summary model: model_id=%s", effectiveModelID)
 
 	// Get rerank model from custom agent config (only required when knowledge bases are configured)
 	var rerankModel rerank.Reranker
@@ -106,11 +110,14 @@ func (s *sessionService) AgentQA(
 			logger.Warnf(ctx, "Failed to get rerank model: %v", err)
 			return fmt.Errorf("failed to get rerank model: %w", err)
 		}
+		logger.Infof(ctx, "AgentQA selected rerank model: model_id=%s", rerankModelID)
 	} else {
 		logger.Infof(ctx, "No knowledge bases configured, skipping rerank model initialization")
 	}
 
 	// Get or create contextManager for this session
+	// Agent mode always goes through the context manager so history compression
+	// and agent-specific system prompt switching happen in one place.
 	contextManager := s.getContextManagerForSession()
 
 	// Set system prompt for the current agent in context manager
@@ -156,8 +163,12 @@ func (s *sessionService) AgentQA(
 		logger.Errorf(ctx, "Failed to create agent engine: %v", err)
 		return err
 	}
+	logger.Infof(ctx, "Agent engine created successfully: session=%s, allowed_tools=%d, search_targets=%d",
+		sessionID, len(agentConfig.AllowedTools), len(agentConfig.SearchTargets))
 
 	// Route image data based on agent model's vision capability
+	// Vision-capable models receive raw image URLs directly; text-only models
+	// get the precomputed image description appended to the user query.
 	var agentModelSupportsVision bool
 	if effectiveModelID != "" {
 		if modelInfo, err := s.modelService.GetModelByID(ctx, effectiveModelID); err == nil && modelInfo != nil {
@@ -174,6 +185,9 @@ func (s *sessionService) AgentQA(
 		agentQuery = req.Query + "\n\n[用户上传图片内容]\n" + req.ImageDescription
 		logger.Infof(ctx, "Agent model does not support vision, appending image description (%d chars)", len(req.ImageDescription))
 	}
+
+	logger.Infof(ctx, "AgentQA execution input ready: query_len=%d, llm_context_msgs=%d, image_count=%d",
+		len(agentQuery), len(llmContext), len(agentImageURLs))
 
 	// Execute agent with streaming (asynchronously)
 	// Events will be emitted to EventBus and handled by the Handler layer
@@ -204,19 +218,7 @@ func (s *sessionService) buildAgentConfig(
 	agentTenantID uint64,
 ) (*types.AgentConfig, error) {
 	customAgent := req.CustomAgent
-	agentConfig := &types.AgentConfig{
-		MaxIterations:               customAgent.Config.MaxIterations,
-		Temperature:                 customAgent.Config.Temperature,
-		WebSearchEnabled:            customAgent.Config.WebSearchEnabled && req.WebSearchEnabled,
-		WebSearchMaxResults:         customAgent.Config.WebSearchMaxResults,
-		WebSearchProviderID:         customAgent.Config.WebSearchProviderID,
-		MultiTurnEnabled:            customAgent.Config.MultiTurnEnabled,
-		HistoryTurns:                customAgent.Config.HistoryTurns,
-		MCPSelectionMode:            customAgent.Config.MCPSelectionMode,
-		MCPServices:                 customAgent.Config.MCPServices,
-		Thinking:                    customAgent.Config.Thinking,
-		RetrieveKBOnlyWhenMentioned: customAgent.Config.RetrieveKBOnlyWhenMentioned,
-	}
+	agentConfig := mergeAgentRuntimeConfig(customAgent.Config, tenantInfo.AgentConfig, req.WebSearchEnabled)
 
 	// Configure skills based on CustomAgentConfig
 	s.configureSkillsFromAgent(ctx, agentConfig, customAgent)
@@ -224,21 +226,9 @@ func (s *sessionService) buildAgentConfig(
 	// Resolve knowledge bases using shared helper
 	agentConfig.KnowledgeBases, agentConfig.KnowledgeIDs = s.resolveKnowledgeBases(ctx, req)
 
-	// Use custom agent's allowed tools if specified, otherwise use defaults
-	if len(customAgent.Config.AllowedTools) > 0 {
-		agentConfig.AllowedTools = customAgent.Config.AllowedTools
-	} else {
-		agentConfig.AllowedTools = tools.DefaultAllowedTools()
-	}
-
-	// Use custom agent's system prompt if specified
-	if customAgent.Config.SystemPrompt != "" {
-		agentConfig.UseCustomSystemPrompt = true
-		agentConfig.SystemPrompt = customAgent.Config.SystemPrompt
-	}
-
-	logger.Infof(ctx, "Custom agent config applied: MaxIterations=%d, Temperature=%.2f, AllowedTools=%v, WebSearchEnabled=%v",
-		agentConfig.MaxIterations, agentConfig.Temperature, agentConfig.AllowedTools, agentConfig.WebSearchEnabled)
+	logger.Infof(ctx, "Agent runtime config merged: max_iterations=%d, temperature=%.2f, allowed_tools=%v, web_search=%v, tools_source=%s, prompt_source=%s",
+		agentConfig.MaxIterations, agentConfig.Temperature, agentConfig.AllowedTools, agentConfig.WebSearchEnabled,
+		agentConfig.AllowedToolsSource, agentConfig.SystemPromptSource)
 
 	// Set web search max results from tenant config if not set (default: 5)
 	if agentConfig.WebSearchMaxResults == 0 {
@@ -248,12 +238,8 @@ func (s *sessionService) buildAgentConfig(
 		}
 	}
 
-	// Resolve web search provider ID: agent-level > tenant default (is_default=true)
-	if agentConfig.WebSearchProviderID == "" {
-		if defaultProvider, err := s.webSearchProviderRepo.GetDefault(ctx, tenantInfo.ID); err == nil && defaultProvider != nil {
-			agentConfig.WebSearchProviderID = defaultProvider.ID
-		}
-	}
+	// Resolve web search provider ID: valid agent-level override > tenant default (is_default=true)
+	agentConfig.WebSearchProviderID = s.resolveValidWebSearchProviderID(ctx, tenantInfo.ID, agentConfig.WebSearchProviderID)
 
 	logger.Infof(ctx, "Merged agent config from tenant %d and session %s", tenantInfo.ID, req.Session.ID)
 
@@ -278,6 +264,77 @@ func (s *sessionService) buildAgentConfig(
 	}
 
 	return agentConfig, nil
+}
+
+func mergeAgentRuntimeConfig(
+	customCfg types.CustomAgentConfig,
+	tenantCfg *types.AgentConfig,
+	requestWebSearchEnabled bool,
+) *types.AgentConfig {
+	agentConfig := &types.AgentConfig{
+		WebSearchEnabled:            customCfg.WebSearchEnabled && requestWebSearchEnabled,
+		WebSearchMaxResults:         customCfg.WebSearchMaxResults,
+		WebSearchProviderID:         customCfg.WebSearchProviderID,
+		MultiTurnEnabled:            customCfg.MultiTurnEnabled,
+		HistoryTurns:                customCfg.HistoryTurns,
+		MCPSelectionMode:            customCfg.MCPSelectionMode,
+		MCPServices:                 customCfg.MCPServices,
+		Thinking:                    customCfg.Thinking,
+		RetrieveKBOnlyWhenMentioned: customCfg.RetrieveKBOnlyWhenMentioned,
+		AllowedToolsSource:          "default",
+		SystemPromptSource:          "default",
+	}
+
+	if customCfg.AgentMode == types.AgentModeSmartReasoning {
+		agentConfig.MultiTurnEnabled = true
+	}
+
+	if customCfg.MaxIterations > 0 {
+		agentConfig.MaxIterations = customCfg.MaxIterations
+	} else if tenantCfg != nil && tenantCfg.MaxIterations > 0 {
+		agentConfig.MaxIterations = tenantCfg.MaxIterations
+	} else {
+		agentConfig.MaxIterations = agent.DefaultAgentMaxIterations
+	}
+
+	if customCfg.Temperature > 0 {
+		agentConfig.Temperature = customCfg.Temperature
+	} else if tenantCfg != nil && tenantCfg.Temperature >= 0 {
+		agentConfig.Temperature = tenantCfg.Temperature
+	} else {
+		agentConfig.Temperature = agent.DefaultAgentTemperature
+	}
+
+	if agentConfig.WebSearchMaxResults == 0 {
+		agentConfig.WebSearchMaxResults = 5
+	}
+	if agentConfig.HistoryTurns == 0 {
+		agentConfig.HistoryTurns = 5
+	}
+
+	switch {
+	case len(customCfg.AllowedTools) > 0:
+		agentConfig.AllowedTools = customCfg.AllowedTools
+		agentConfig.AllowedToolsSource = "custom_agent"
+	case tenantCfg != nil && len(tenantCfg.AllowedTools) > 0:
+		agentConfig.AllowedTools = tenantCfg.AllowedTools
+		agentConfig.AllowedToolsSource = "tenant_agent_config"
+	default:
+		agentConfig.AllowedTools = tools.DefaultAllowedTools()
+	}
+
+	switch {
+	case customCfg.SystemPrompt != "":
+		agentConfig.UseCustomSystemPrompt = true
+		agentConfig.SystemPrompt = customCfg.SystemPrompt
+		agentConfig.SystemPromptSource = "custom_agent"
+	case tenantCfg != nil && tenantCfg.ResolveSystemPrompt(agentConfig.WebSearchEnabled) != "":
+		agentConfig.UseCustomSystemPrompt = true
+		agentConfig.SystemPrompt = tenantCfg.ResolveSystemPrompt(agentConfig.WebSearchEnabled)
+		agentConfig.SystemPromptSource = "tenant_agent_config"
+	}
+
+	return agentConfig
 }
 
 // configureSkillsFromAgent configures skills settings in AgentConfig based on CustomAgentConfig

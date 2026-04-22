@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS messages (
     rendered_content TEXT NOT NULL DEFAULT '',
     knowledge_references TEXT NOT NULL DEFAULT '[]',
     agent_steps TEXT DEFAULT NULL,
+    execution_meta TEXT DEFAULT NULL,
     mentioned_items TEXT DEFAULT '[]',
     is_completed BOOLEAN NOT NULL DEFAULT 0,
     is_fallback BOOLEAN NOT NULL DEFAULT 0,
