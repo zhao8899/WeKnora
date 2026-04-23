@@ -277,6 +277,8 @@ func mergeAgentRuntimeConfig(
 		WebSearchProviderID:         customCfg.WebSearchProviderID,
 		MultiTurnEnabled:            customCfg.MultiTurnEnabled,
 		HistoryTurns:                customCfg.HistoryTurns,
+		ParallelToolCalls:           customCfg.ParallelToolCalls,
+		MaxParallelToolCalls:        customCfg.MaxParallelToolCalls,
 		MCPSelectionMode:            customCfg.MCPSelectionMode,
 		MCPServices:                 customCfg.MCPServices,
 		Thinking:                    customCfg.Thinking,
@@ -310,6 +312,12 @@ func mergeAgentRuntimeConfig(
 	}
 	if agentConfig.HistoryTurns == 0 {
 		agentConfig.HistoryTurns = 5
+	}
+	if agentConfig.MaxParallelToolCalls == 0 && tenantCfg != nil && tenantCfg.MaxParallelToolCalls > 0 {
+		agentConfig.MaxParallelToolCalls = tenantCfg.MaxParallelToolCalls
+	}
+	if !agentConfig.ParallelToolCalls && tenantCfg != nil && tenantCfg.ParallelToolCalls {
+		agentConfig.ParallelToolCalls = true
 	}
 
 	switch {

@@ -93,6 +93,10 @@ type CustomAgentConfig struct {
 	MaxIterations int `yaml:"max_iterations" json:"max_iterations"`
 	// Allowed tools (only for agent type)
 	AllowedTools []string `yaml:"allowed_tools" json:"allowed_tools"`
+	// Whether independent safe tool calls can run in parallel
+	ParallelToolCalls bool `yaml:"parallel_tool_calls" json:"parallel_tool_calls"`
+	// Maximum number of tool calls that may execute concurrently
+	MaxParallelToolCalls int `yaml:"max_parallel_tool_calls" json:"max_parallel_tool_calls"`
 	// MCP service selection mode: "all" = all enabled MCP services, "selected" = specific services, "none" = no MCP
 	MCPSelectionMode string `yaml:"mcp_selection_mode" json:"mcp_selection_mode"`
 	// Selected MCP service IDs (only used when MCPSelectionMode is "selected")

@@ -9,19 +9,22 @@ import (
 
 func TestMergeAgentRuntimeConfig_PrefersCustomAgentValues(t *testing.T) {
 	customCfg := types.CustomAgentConfig{
-		AgentMode:         types.AgentModeSmartReasoning,
-		MaxIterations:     12,
-		Temperature:       0.6,
-		SystemPrompt:      "custom prompt",
-		AllowedTools:      []string{"thinking", "todo_write"},
-		WebSearchEnabled:  true,
-		WebSearchMaxResults: 8,
+		AgentMode:            types.AgentModeSmartReasoning,
+		MaxIterations:        12,
+		Temperature:          0.6,
+		SystemPrompt:         "custom prompt",
+		AllowedTools:         []string{"thinking", "todo_write"},
+		WebSearchEnabled:     true,
+		WebSearchMaxResults:  8,
+		ParallelToolCalls:    true,
+		MaxParallelToolCalls: 3,
 	}
 	tenantCfg := &types.AgentConfig{
-		MaxIterations: 20,
-		Temperature:   0.3,
-		SystemPrompt:  "tenant prompt",
-		AllowedTools:  []string{"knowledge_search"},
+		MaxIterations:        20,
+		Temperature:          0.3,
+		SystemPrompt:         "tenant prompt",
+		AllowedTools:         []string{"knowledge_search"},
+		MaxParallelToolCalls: 6,
 	}
 
 	merged := mergeAgentRuntimeConfig(customCfg, tenantCfg, true)
@@ -44,6 +47,9 @@ func TestMergeAgentRuntimeConfig_PrefersCustomAgentValues(t *testing.T) {
 	if !merged.WebSearchEnabled || merged.WebSearchMaxResults != 8 {
 		t.Fatalf("expected custom web search config, got enabled=%v max=%d", merged.WebSearchEnabled, merged.WebSearchMaxResults)
 	}
+	if !merged.ParallelToolCalls || merged.MaxParallelToolCalls != 3 {
+		t.Fatalf("expected custom parallel tool config, got enabled=%v max=%d", merged.ParallelToolCalls, merged.MaxParallelToolCalls)
+	}
 }
 
 func TestMergeAgentRuntimeConfig_FallsBackToTenantAgentConfig(t *testing.T) {
@@ -51,10 +57,12 @@ func TestMergeAgentRuntimeConfig_FallsBackToTenantAgentConfig(t *testing.T) {
 		AgentMode: types.AgentModeSmartReasoning,
 	}
 	tenantCfg := &types.AgentConfig{
-		MaxIterations: 25,
-		Temperature:   0.4,
-		SystemPrompt:  "tenant prompt",
-		AllowedTools:  []string{"query_knowledge_graph"},
+		MaxIterations:        25,
+		Temperature:          0.4,
+		SystemPrompt:         "tenant prompt",
+		AllowedTools:         []string{"query_knowledge_graph"},
+		ParallelToolCalls:    true,
+		MaxParallelToolCalls: 2,
 	}
 
 	merged := mergeAgentRuntimeConfig(customCfg, tenantCfg, false)
@@ -73,6 +81,9 @@ func TestMergeAgentRuntimeConfig_FallsBackToTenantAgentConfig(t *testing.T) {
 	}
 	if merged.AllowedToolsSource != "tenant_agent_config" {
 		t.Fatalf("expected tenant allowed tools source, got %s", merged.AllowedToolsSource)
+	}
+	if !merged.ParallelToolCalls || merged.MaxParallelToolCalls != 2 {
+		t.Fatalf("expected tenant parallel tool config, got enabled=%v max=%d", merged.ParallelToolCalls, merged.MaxParallelToolCalls)
 	}
 }
 

@@ -63,6 +63,10 @@ type AgentConfig struct {
 	// Whether to execute independent tool calls in parallel (default: false).
 	// When enabled and the LLM returns multiple tool calls, they run concurrently via errgroup.
 	ParallelToolCalls bool `json:"parallel_tool_calls,omitempty"`
+
+	// Maximum number of tool calls to execute concurrently when parallel execution is enabled.
+	// Values <= 0 fall back to the engine default.
+	MaxParallelToolCalls int `json:"max_parallel_tool_calls,omitempty"`
 }
 
 // SessionAgentConfig represents session-level agent configuration

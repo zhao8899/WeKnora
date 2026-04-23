@@ -15,6 +15,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const defaultMaxParallelToolCalls = 4
+
 // toolDisplayNames maps internal tool names to user-friendly display labels.
 var toolDisplayNames = map[string]string{
 	agenttools.ToolThinking:            "深度思考",
@@ -38,6 +40,20 @@ var toolDisplayNames = map[string]string{
 // (e.g., database_query exposes raw SQL which leaks implementation details).
 var toolHintSensitiveArgs = map[string]bool{
 	agenttools.ToolDatabaseQuery: true,
+}
+
+// parallelSafeTools enumerates tools that are read-only and safe to run concurrently.
+// Stateful or side-effecting tools stay sequential to avoid unstable plans and races.
+var parallelSafeTools = map[string]bool{
+	agenttools.ToolGrepChunks:          true,
+	agenttools.ToolKnowledgeSearch:     true,
+	agenttools.ToolListKnowledgeChunks: true,
+	agenttools.ToolQueryKnowledgeGraph: true,
+	agenttools.ToolGetDocumentInfo:     true,
+	agenttools.ToolDataSchema:          true,
+	agenttools.ToolWebSearch:           true,
+	agenttools.ToolWebFetch:            true,
+	agenttools.ToolReadSkill:           true,
 }
 
 // formatToolHint returns a concise human-readable hint for a tool call, e.g. `搜索网页("query text")`.
@@ -77,35 +93,53 @@ func (e *AgentEngine) executeToolCalls(
 	n := len(response.ToolCalls)
 	logger.Infof(ctx, "[Agent][Round-%d] Executing %d tool call(s)", round, n)
 
-	// Use parallel execution when enabled and there are multiple tool calls
-	if e.config.ParallelToolCalls && n >= 2 {
-		e.executeToolCallsParallel(ctx, response, step, iteration, sessionID)
+	if !e.config.ParallelToolCalls || n < 2 {
+		for i, tc := range response.ToolCalls {
+			e.executeSingleToolCall(ctx, tc, i, step, iteration, round, sessionID)
+		}
 		return
 	}
 
-	for i, tc := range response.ToolCalls {
-		e.executeSingleToolCall(ctx, tc, i, step, iteration, round, sessionID)
+	logger.Infof(ctx, "[Agent][Round-%d] Parallel mode enabled: max_parallel=%d", round, e.maxParallelToolCalls())
+	for i := 0; i < n; {
+		if !isParallelSafeToolCall(response.ToolCalls[i]) {
+			e.executeSingleToolCall(ctx, response.ToolCalls[i], i, step, iteration, round, sessionID)
+			i++
+			continue
+		}
+
+		batchStart := i
+		for i < n && isParallelSafeToolCall(response.ToolCalls[i]) {
+			i++
+		}
+		if i-batchStart >= 2 {
+			e.executeToolCallsParallel(ctx, response.ToolCalls[batchStart:i], batchStart, step, iteration, sessionID)
+			continue
+		}
+		e.executeSingleToolCall(ctx, response.ToolCalls[batchStart], batchStart, step, iteration, round, sessionID)
 	}
 }
 
 // executeToolCallsParallel runs all tool calls concurrently using errgroup,
 // collecting results in original order.
 func (e *AgentEngine) executeToolCallsParallel(
-	ctx context.Context, response *types.ChatResponse,
+	ctx context.Context, toolCalls []types.LLMToolCall, offset int,
 	step *types.AgentStep, iteration int, sessionID string,
 ) {
 	round := iteration + 1
-	n := len(response.ToolCalls)
-	logger.Infof(ctx, "[Agent][Round-%d] Parallel execution of %d tool calls", round, n)
+	n := len(toolCalls)
+	logger.Infof(ctx, "[Agent][Round-%d] Parallel execution of %d safe tool calls (offset=%d, max_parallel=%d)",
+		round, n, offset, e.maxParallelToolCalls())
 
 	results := make([]types.ToolCall, n)
 	var mu sync.Mutex
 	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(e.maxParallelToolCalls())
 
-	for i, tc := range response.ToolCalls {
+	for i, tc := range toolCalls {
 		i, tc := i, tc // capture loop vars
 		g.Go(func() error {
-			toolCall := e.runToolCall(gCtx, tc, i, iteration, round, sessionID)
+			toolCall := e.runToolCall(gCtx, tc, offset+i, iteration, round, sessionID)
 			mu.Lock()
 			results[i] = toolCall
 			mu.Unlock()
@@ -155,6 +189,17 @@ func (e *AgentEngine) executeToolCallsParallel(
 			},
 		})
 	}
+}
+
+func isParallelSafeToolCall(tc types.LLMToolCall) bool {
+	return parallelSafeTools[tc.Function.Name]
+}
+
+func (e *AgentEngine) maxParallelToolCalls() int {
+	if e != nil && e.config != nil && e.config.MaxParallelToolCalls > 0 {
+		return e.config.MaxParallelToolCalls
+	}
+	return defaultMaxParallelToolCalls
 }
 
 // executeSingleToolCall runs one tool call sequentially (original behavior).

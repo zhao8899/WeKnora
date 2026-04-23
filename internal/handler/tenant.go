@@ -448,10 +448,12 @@ func (h *TenantHandler) SearchTenants(c *gin.Context) {
 
 // AgentConfigRequest represents the request body for updating agent configuration
 type AgentConfigRequest struct {
-	MaxIterations int      `json:"max_iterations"`
-	AllowedTools  []string `json:"allowed_tools"`
-	Temperature   float64  `json:"temperature"`
-	SystemPrompt  string   `json:"system_prompt,omitempty"` // Unified system prompt (uses {{web_search_status}} placeholder)
+	MaxIterations        int      `json:"max_iterations"`
+	AllowedTools         []string `json:"allowed_tools"`
+	Temperature          float64  `json:"temperature"`
+	SystemPrompt         string   `json:"system_prompt,omitempty"` // Unified system prompt (uses {{web_search_status}} placeholder)
+	ParallelToolCalls    bool     `json:"parallel_tool_calls"`
+	MaxParallelToolCalls int      `json:"max_parallel_tool_calls,omitempty"`
 }
 
 // GetTenantAgentConfig godoc
@@ -504,6 +506,8 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 				"temperature":              agent.DefaultAgentTemperature,
 				"system_prompt":            agent.GetProgressiveRAGSystemPrompt(h.config),
 				"use_custom_system_prompt": false,
+				"parallel_tool_calls":      false,
+				"max_parallel_tool_calls":  4,
 				"available_tools":          availableTools,
 				"available_placeholders":   availablePlaceholders,
 			},
@@ -526,6 +530,8 @@ func (h *TenantHandler) GetTenantAgentConfig(c *gin.Context) {
 			"temperature":              tenant.AgentConfig.Temperature,
 			"system_prompt":            systemPrompt,
 			"use_custom_system_prompt": tenant.AgentConfig.UseCustomSystemPrompt,
+			"parallel_tool_calls":      tenant.AgentConfig.ParallelToolCalls,
+			"max_parallel_tool_calls":  tenant.AgentConfig.MaxParallelToolCalls,
 			"available_tools":          availableTools,
 			"available_placeholders":   availablePlaceholders,
 		},
@@ -553,6 +559,10 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 		c.Error(errors.NewAgentInvalidTemperatureError())
 		return
 	}
+	if req.MaxParallelToolCalls < 0 || req.MaxParallelToolCalls > 16 {
+		c.Error(errors.NewBadRequestError("max_parallel_tool_calls must be between 0 and 16"))
+		return
+	}
 
 	// Get existing tenant
 	tenant, _ := types.TenantInfoFromContext(ctx)
@@ -573,6 +583,8 @@ func (h *TenantHandler) updateTenantAgentConfigInternal(c *gin.Context) {
 		Temperature:           req.Temperature,
 		SystemPrompt:          systemPrompt,
 		UseCustomSystemPrompt: useCustomPrompt,
+		ParallelToolCalls:     req.ParallelToolCalls,
+		MaxParallelToolCalls:  req.MaxParallelToolCalls,
 	}
 	if len(agentConfig.AllowedTools) == 0 {
 		agentConfig.AllowedTools = agenttools.DefaultAllowedTools()

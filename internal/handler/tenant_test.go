@@ -66,10 +66,12 @@ func TestUpdateTenantAgentConfigInternal_PersistsTenantAgentConfig(t *testing.T)
 	tenant := &types.Tenant{ID: 7}
 
 	body := map[string]interface{}{
-		"max_iterations": 18,
-		"allowed_tools":  []string{"thinking", "query_knowledge_graph"},
-		"temperature":    0.5,
-		"system_prompt":  "tenant prompt",
+		"max_iterations":          18,
+		"allowed_tools":           []string{"thinking", "query_knowledge_graph"},
+		"temperature":             0.5,
+		"system_prompt":           "tenant prompt",
+		"parallel_tool_calls":     true,
+		"max_parallel_tool_calls": 3,
 	}
 	payload, _ := json.Marshal(body)
 
@@ -97,6 +99,10 @@ func TestUpdateTenantAgentConfigInternal_PersistsTenantAgentConfig(t *testing.T)
 	if service.lastUpdated.AgentConfig.SystemPrompt != "tenant prompt" {
 		t.Fatalf("expected system prompt to be persisted, got %q", service.lastUpdated.AgentConfig.SystemPrompt)
 	}
+	if !service.lastUpdated.AgentConfig.ParallelToolCalls || service.lastUpdated.AgentConfig.MaxParallelToolCalls != 3 {
+		t.Fatalf("expected parallel tool config to be persisted, got enabled=%v max=%d",
+			service.lastUpdated.AgentConfig.ParallelToolCalls, service.lastUpdated.AgentConfig.MaxParallelToolCalls)
+	}
 }
 
 func TestGetTenantAgentConfig_ReturnsPersistedAllowedTools(t *testing.T) {
@@ -106,11 +112,13 @@ func TestGetTenantAgentConfig_ReturnsPersistedAllowedTools(t *testing.T) {
 	tenant := &types.Tenant{
 		ID: 7,
 		AgentConfig: &types.AgentConfig{
-			MaxIterations: 22,
-			AllowedTools:  []string{"thinking", "todo_write"},
-			Temperature:   0.4,
-			SystemPrompt:  "tenant prompt",
+			MaxIterations:         22,
+			AllowedTools:          []string{"thinking", "todo_write"},
+			Temperature:           0.4,
+			SystemPrompt:          "tenant prompt",
 			UseCustomSystemPrompt: true,
+			ParallelToolCalls:     true,
+			MaxParallelToolCalls:  2,
 		},
 	}
 
@@ -128,7 +136,9 @@ func TestGetTenantAgentConfig_ReturnsPersistedAllowedTools(t *testing.T) {
 
 	var response struct {
 		Data struct {
-			AllowedTools []string `json:"allowed_tools"`
+			AllowedTools         []string `json:"allowed_tools"`
+			ParallelToolCalls    bool     `json:"parallel_tool_calls"`
+			MaxParallelToolCalls int      `json:"max_parallel_tool_calls"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
@@ -136,5 +146,9 @@ func TestGetTenantAgentConfig_ReturnsPersistedAllowedTools(t *testing.T) {
 	}
 	if len(response.Data.AllowedTools) != 2 || response.Data.AllowedTools[1] != "todo_write" {
 		t.Fatalf("expected persisted allowed tools, got %v", response.Data.AllowedTools)
+	}
+	if !response.Data.ParallelToolCalls || response.Data.MaxParallelToolCalls != 2 {
+		t.Fatalf("expected persisted parallel tool config, got enabled=%v max=%d",
+			response.Data.ParallelToolCalls, response.Data.MaxParallelToolCalls)
 	}
 }

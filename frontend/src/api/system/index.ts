@@ -35,6 +35,7 @@ export interface AgentConfig {
   max_context_tokens?: number       // 上下文窗口最大 Token，默认 200000
   max_tool_output_chars?: number    // 工具输出截断字符数，默认 16000
   parallel_tool_calls?: boolean     // 并行工具调用，默认 false
+  max_parallel_tool_calls?: number  // 并行工具调用最大并发数
   knowledge_bases?: string[]
   system_prompt?: string
   available_tools?: ToolDefinition[]
