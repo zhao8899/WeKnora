@@ -17,8 +17,6 @@ import (
 	"strings"
 	"time"
 
-	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
-	_ "github.com/duckdb/duckdb-go/v2"
 	esv7 "github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
@@ -423,7 +421,7 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 				return nil, fmt.Errorf("failed to create SQLite data directory %s: %w", dir, err)
 			}
 		}
-		sqlite_vec.Auto()
+		ensureSQLiteVecAuto()
 		dsn := dbPath + "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on"
 		dialector = sqlite.Open(dsn)
 		migrateDSN = "sqlite3://" + dbPath
@@ -973,7 +971,7 @@ func initNeo4jClient() (neo4j.Driver, error) {
 }
 
 func NewDuckDB() (*sql.DB, error) {
-	sqlDB, err := sql.Open("duckdb", ":memory:")
+	sqlDB, err := openDuckDB(":memory:")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open duckdb: %w", err)
 	}

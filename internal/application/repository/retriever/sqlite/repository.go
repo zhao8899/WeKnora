@@ -11,7 +11,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
-	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -107,6 +106,9 @@ func (r *sqliteRepository) EngineType() types.RetrieverEngineType {
 }
 
 func (r *sqliteRepository) Support() []types.RetrieverType {
+	if !sqliteVecEnabled() {
+		return []types.RetrieverType{types.KeywordsRetrieverType}
+	}
 	return []types.RetrieverType{types.KeywordsRetrieverType, types.VectorRetrieverType}
 }
 
@@ -349,7 +351,7 @@ func (r *sqliteRepository) vectorRetrieve(ctx context.Context, params types.Retr
 	dim := len(params.Embedding)
 	r.ensureVecTable(dim)
 
-	queryBlob, err := sqlite_vec.SerializeFloat32(params.Embedding)
+	queryBlob, err := serializeSQLiteVecFloat32(params.Embedding)
 	if err != nil {
 		return nil, fmt.Errorf("serialize query vector failed: %w", err)
 	}
@@ -464,7 +466,7 @@ func extractEmbedding(params map[string]any, sourceID string) []float32 {
 
 func (r *sqliteRepository) insertVec(_ context.Context, rowID uint, dim int, emb []float32) {
 	r.ensureVecTable(dim)
-	blob, err := sqlite_vec.SerializeFloat32(emb)
+	blob, err := serializeSQLiteVecFloat32(emb)
 	if err != nil {
 		return
 	}

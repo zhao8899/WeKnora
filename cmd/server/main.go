@@ -40,8 +40,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/runtime"
 	"github.com/Tencent/WeKnora/internal/tracing"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
-
-	"golang.org/x/sys/unix"
 )
 
 func main() {
@@ -132,7 +130,7 @@ func listenWithRetry(addr string, maxRetries int, baseDelay time.Duration) (net.
 	lc := net.ListenConfig{
 		Control: func(network, address string, c syscall.RawConn) error {
 			return c.Control(func(fd uintptr) {
-				_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, unix.SO_REUSEPORT, 1)
+				_ = setReusePort(fd)
 			})
 		},
 	}
