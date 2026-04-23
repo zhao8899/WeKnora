@@ -7,9 +7,18 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
+func allowLoopbackRSS(t *testing.T) {
+	t.Helper()
+	secutils.ResetSSRFWhitelistForTest()
+	t.Setenv("SSRF_WHITELIST", "127.0.0.1")
+	t.Cleanup(secutils.ResetSSRFWhitelistForTest)
+}
+
 func TestValidateReachableFeed(t *testing.T) {
+	allowLoopbackRSS(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/rss+xml")
 		_, _ = w.Write([]byte(sampleRSS))
@@ -29,6 +38,7 @@ func TestValidateReachableFeed(t *testing.T) {
 }
 
 func TestFetchAllParsesRSSItems(t *testing.T) {
+	allowLoopbackRSS(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/rss+xml")
 		_, _ = w.Write([]byte(sampleRSS))
@@ -58,6 +68,7 @@ func TestFetchAllParsesRSSItems(t *testing.T) {
 }
 
 func TestFetchIncrementalReturnsOnlyChangedEntries(t *testing.T) {
+	allowLoopbackRSS(t)
 	var response = sampleRSS
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodHead {

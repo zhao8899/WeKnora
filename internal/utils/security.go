@@ -962,6 +962,12 @@ func resetSSRFWhitelistForTest() {
 	ssrfWhitelist = nil
 }
 
+// ResetSSRFWhitelistForTest resets the SSRF whitelist singleton so tests in
+// other packages can re-read the SSRF_WHITELIST environment variable.
+func ResetSSRFWhitelistForTest() {
+	resetSSRFWhitelistForTest()
+}
+
 // ValidateURLForSSRF is the centralised entry-point that all handlers should
 // call to validate a user-supplied URL. It first checks the SSRF_WHITELIST;
 // whitelisted hosts skip the full isSSRFSafeURL check.

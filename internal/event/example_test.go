@@ -14,7 +14,8 @@ func ExampleEventBus_basic() {
 
 	// Register a handler
 	bus.On(EventQueryReceived, func(ctx context.Context, event Event) error {
-		fmt.Printf("Query received: %v\n", event.Data)
+		data := event.Data.(QueryData)
+		fmt.Printf("Query received: %s (%s)\n", data.OriginalQuery, data.SessionID)
 		return nil
 	})
 
@@ -25,7 +26,7 @@ func ExampleEventBus_basic() {
 	})
 
 	_ = bus.Emit(ctx, event)
-	// Output: Query received: {What is RAG?   session-123  map[]}
+	// Output: Query received: What is RAG? (session-123)
 }
 
 // Example: Using middleware
@@ -43,7 +44,6 @@ func ExampleEventBus_middleware() {
 	// Apply middleware
 	handlerWithMiddleware := ApplyMiddleware(
 		handler,
-		WithTiming(),
 		WithRecovery(),
 	)
 

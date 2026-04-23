@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 // mockFileService is a minimal FileService implementation for testing.
@@ -38,7 +40,15 @@ func (m *mockFileService) GetFileURL(ctx context.Context, filePath string) (stri
 }
 func (m *mockFileService) DeleteFile(ctx context.Context, filePath string) error { return nil }
 
+func setSSRFWhitelistForDocparserTest(t *testing.T, whitelist string) {
+	t.Helper()
+	secutils.ResetSSRFWhitelistForTest()
+	t.Setenv("SSRF_WHITELIST", whitelist)
+	t.Cleanup(secutils.ResetSSRFWhitelistForTest)
+}
+
 func TestResolveRemoteImages_NormalDownload(t *testing.T) {
+	setSSRFWhitelistForDocparserTest(t, "127.0.0.1")
 	// Create a test HTTP server that serves a real PNG image.
 	pngData := createTestPNG(200, 200)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +90,7 @@ func TestResolveRemoteImages_NormalDownload(t *testing.T) {
 }
 
 func TestResolveRemoteImages_SSRFBlocked(t *testing.T) {
+	setSSRFWhitelistForDocparserTest(t, "")
 	// URLs pointing to private IPs should be blocked by SSRF check.
 	markdown := "![evil](http://127.0.0.1:8080/secret.png)\n\n![also-evil](http://169.254.169.254/metadata)"
 
@@ -101,6 +112,7 @@ func TestResolveRemoteImages_SSRFBlocked(t *testing.T) {
 }
 
 func TestResolveRemoteImages_NonImageContentType(t *testing.T) {
+	setSSRFWhitelistForDocparserTest(t, "127.0.0.1")
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
@@ -147,6 +159,7 @@ func TestResolveRemoteImages_ProviderSchemeSkipped(t *testing.T) {
 }
 
 func TestResolveRemoteImages_MultipleImages(t *testing.T) {
+	setSSRFWhitelistForDocparserTest(t, "127.0.0.1")
 	pngData := createTestPNG(256, 256)
 	callCount := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -199,6 +212,7 @@ func TestResolveRemoteImages_NoImages(t *testing.T) {
 }
 
 func TestResolveRemoteImages_Server404(t *testing.T) {
+	setSSRFWhitelistForDocparserTest(t, "127.0.0.1")
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -230,7 +244,7 @@ func TestExtFromURLPath(t *testing.T) {
 	}{
 		{"https://example.com/photo.jpg", ".jpg"},
 		{"https://example.com/photo.JPEG", ".jpeg"},
-		{"https://example.com/photo.png?v=2", ""},  // query param — path.Ext won't catch it cleanly but that's ok
+		{"https://example.com/photo.png?v=2", ""}, // query param — path.Ext won't catch it cleanly but that's ok
 		{"https://example.com/photo.gif", ".gif"},
 		{"https://example.com/photo.webp", ".webp"},
 		{"https://example.com/photo.bmp", ".bmp"},

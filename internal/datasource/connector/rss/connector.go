@@ -458,6 +458,10 @@ func parseCursorState(cursor *types.SyncCursor) (map[string]string, map[string]m
 				headers[k] = s
 			}
 		}
+	} else if rawHeaders, ok := cursor.ConnectorCursor["feed_headers"].(map[string]string); ok {
+		for k, v := range rawHeaders {
+			headers[k] = v
+		}
 	}
 	if rawEntries, ok := cursor.ConnectorCursor["feed_entries"].(map[string]interface{}); ok {
 		for feedID, rawMap := range rawEntries {
@@ -468,8 +472,20 @@ func parseCursorState(cursor *types.SyncCursor) (map[string]string, map[string]m
 						stateMap[k] = s
 					}
 				}
+			} else if concrete, ok := rawMap.(map[string]string); ok {
+				for k, v := range concrete {
+					stateMap[k] = v
+				}
 			}
 			entries[feedID] = stateMap
+		}
+	} else if rawEntries, ok := cursor.ConnectorCursor["feed_entries"].(map[string]map[string]string); ok {
+		for feedID, stateMap := range rawEntries {
+			copied := make(map[string]string, len(stateMap))
+			for k, v := range stateMap {
+				copied[k] = v
+			}
+			entries[feedID] = copied
 		}
 	}
 

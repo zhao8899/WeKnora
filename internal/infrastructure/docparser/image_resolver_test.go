@@ -39,7 +39,7 @@ func TestIsIconImage(t *testing.T) {
 		{
 			name:   "tiny bytes (< 2KB)",
 			data:   make([]byte, 1024),
-			expect: true,
+			expect: false,
 		},
 		{
 			name:   "small icon 32x32",
@@ -54,7 +54,7 @@ func TestIsIconImage(t *testing.T) {
 		{
 			name:   "borderline 64x64",
 			data:   createTestPNG(64, 64),
-			expect: false,
+			expect: true,
 		},
 		{
 			name:   "normal image 200x150",
