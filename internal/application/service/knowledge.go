@@ -1402,7 +1402,13 @@ func buildParentChildConfigs(cc types.ChunkingConfig, base chunker.SplitterConfi
 		ChunkSize:    childSize,
 		ChunkOverlap: childSize / 5, // ~20% overlap for child chunks
 		Separators:   base.Separators,
+		Strategy:     base.Strategy,
+		TokenLimit:   base.TokenLimit,
+		Languages:    base.Languages,
 	}
+	parent.Strategy = base.Strategy
+	parent.TokenLimit = base.TokenLimit
+	parent.Languages = base.Languages
 	return
 }
 
@@ -1587,6 +1593,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 			KnowledgeID:     knowledge.ID,
 			KnowledgeBaseID: knowledge.KnowledgeBaseID,
 			Content:         chunkData.Content,
+			ContextHeader:   chunkData.ContextHeader,
 			ChunkIndex:      int(chunkData.Seq),
 			IsEnabled:       true,
 			CreatedAt:       time.Now(),
@@ -1644,7 +1651,7 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		titlePrefix = t + "\n"
 	}
 	for _, chunk := range textChunks {
-		indexContent := titlePrefix + chunk.Content
+		indexContent := titlePrefix + chunk.EmbeddingContent()
 		indexInfoList = append(indexInfoList, &types.IndexInfo{
 			Content:         indexContent,
 			SourceID:        chunk.ID,
@@ -7104,6 +7111,9 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 		ChunkSize:    kb.ChunkingConfig.ChunkSize,
 		ChunkOverlap: kb.ChunkingConfig.ChunkOverlap,
 		Separators:   kb.ChunkingConfig.Separators,
+		Strategy:     kb.ChunkingConfig.Strategy,
+		TokenLimit:   kb.ChunkingConfig.TokenLimit,
+		Languages:    kb.ChunkingConfig.Languages,
 	}
 	if chunkCfg.ChunkSize <= 0 {
 		chunkCfg.ChunkSize = 512
@@ -7132,15 +7142,16 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 
 	if kb.ChunkingConfig.EnableParentChild {
 		parentCfg, childCfg := buildParentChildConfigs(kb.ChunkingConfig, chunkCfg)
-		pcResult := chunker.SplitTextParentChild(clean, parentCfg, childCfg)
+		pcResult := chunker.SplitParentChild(clean, parentCfg, childCfg)
 		parsed = make([]types.ParsedChunk, len(pcResult.Children))
 		for i, c := range pcResult.Children {
 			parsed[i] = types.ParsedChunk{
-				Content:     c.Content,
-				Seq:         c.Seq,
-				Start:       c.Start,
-				End:         c.End,
-				ParentIndex: c.ParentIndex,
+				Content:       c.Content,
+				ContextHeader: c.ContextHeader,
+				Seq:           c.Seq,
+				Start:         c.Start,
+				End:           c.End,
+				ParentIndex:   c.ParentIndex,
 			}
 		}
 		parentChunks := make([]types.ParsedParentChunk, len(pcResult.Parents))
@@ -7149,14 +7160,15 @@ func (s *knowledgeService) triggerManualProcessing(ctx context.Context,
 		}
 		opts.ParentChunks = parentChunks
 	} else {
-		splitChunks := chunker.SplitText(clean, chunkCfg)
+		splitChunks := chunker.Split(clean, chunkCfg)
 		parsed = make([]types.ParsedChunk, len(splitChunks))
 		for i, c := range splitChunks {
 			parsed[i] = types.ParsedChunk{
-				Content: c.Content,
-				Seq:     c.Seq,
-				Start:   c.Start,
-				End:     c.End,
+				Content:       c.Content,
+				ContextHeader: c.ContextHeader,
+				Seq:           c.Seq,
+				Start:         c.Start,
+				End:           c.End,
 			}
 		}
 	}
@@ -7818,6 +7830,9 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		ChunkSize:    kb.ChunkingConfig.ChunkSize,
 		ChunkOverlap: kb.ChunkingConfig.ChunkOverlap,
 		Separators:   kb.ChunkingConfig.Separators,
+		Strategy:     kb.ChunkingConfig.Strategy,
+		TokenLimit:   kb.ChunkingConfig.TokenLimit,
+		Languages:    kb.ChunkingConfig.Languages,
 	}
 	if chunkCfg.ChunkSize <= 0 {
 		chunkCfg.ChunkSize = 512
@@ -7838,15 +7853,16 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 
 	if kb.ChunkingConfig.EnableParentChild {
 		parentCfg, childCfg := buildParentChildConfigs(kb.ChunkingConfig, chunkCfg)
-		pcResult := chunker.SplitTextParentChild(convertResult.MarkdownContent, parentCfg, childCfg)
+		pcResult := chunker.SplitParentChild(convertResult.MarkdownContent, parentCfg, childCfg)
 		chunks = make([]types.ParsedChunk, len(pcResult.Children))
 		for i, c := range pcResult.Children {
 			chunks[i] = types.ParsedChunk{
-				Content:     c.Content,
-				Seq:         c.Seq,
-				Start:       c.Start,
-				End:         c.End,
-				ParentIndex: c.ParentIndex,
+				Content:       c.Content,
+				ContextHeader: c.ContextHeader,
+				Seq:           c.Seq,
+				Start:         c.Start,
+				End:           c.End,
+				ParentIndex:   c.ParentIndex,
 			}
 		}
 		parentChunks := make([]types.ParsedParentChunk, len(pcResult.Parents))
@@ -7857,14 +7873,15 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 		logger.Infof(ctx, "Split document into %d parent + %d child chunks for knowledge %s",
 			len(pcResult.Parents), len(pcResult.Children), knowledge.ID)
 	} else {
-		splitChunks := chunker.SplitText(convertResult.MarkdownContent, chunkCfg)
+		splitChunks := chunker.Split(convertResult.MarkdownContent, chunkCfg)
 		chunks = make([]types.ParsedChunk, len(splitChunks))
 		for i, c := range splitChunks {
 			chunks[i] = types.ParsedChunk{
-				Content: c.Content,
-				Seq:     c.Seq,
-				Start:   c.Start,
-				End:     c.End,
+				Content:       c.Content,
+				ContextHeader: c.ContextHeader,
+				Seq:           c.Seq,
+				Start:         c.Start,
+				End:           c.End,
 			}
 		}
 		logger.Infof(ctx, "Split document into %d chunks for knowledge %s", len(chunks), knowledge.ID)

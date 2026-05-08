@@ -70,6 +70,42 @@
         </div>
       </div>
 
+      <!-- Adaptive Strategy -->
+      <div class="setting-row">
+        <div class="setting-info">
+          <label>分块策略</label>
+          <p class="desc">选择自适应分块层级，自动模式会根据文档结构选择标题、启发式或递归分块。</p>
+        </div>
+        <div class="setting-control strategy-control">
+          <t-select
+            v-model="localStrategy"
+            :options="strategyOptions"
+            @change="handleStrategyChange"
+            style="width: 200px;"
+          />
+          <KBChunkingDebug :config="previewConfig" />
+        </div>
+      </div>
+
+      <!-- Token Limit -->
+      <div class="setting-row">
+        <div class="setting-info">
+          <label>Token 上限</label>
+          <p class="desc">可选。设置后会按近似 token 数收缩分块大小，避免超过向量模型限制。</p>
+        </div>
+        <div class="setting-control">
+          <t-input-number
+            v-model="localTokenLimit"
+            :min="0"
+            :max="32000"
+            :step="128"
+            :decimal-places="0"
+            @change="handleTokenLimitChange"
+            style="width: 200px;"
+          />
+        </div>
+      </div>
+
       <!-- Parent-Child Chunking -->
       <div class="setting-row">
         <div class="setting-info">
@@ -134,6 +170,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import KBChunkingDebug from './KBChunkingDebug.vue'
 
 interface ParserEngineRule {
   file_types: string[]
@@ -148,6 +185,9 @@ interface ChunkingConfig {
   enableParentChild: boolean
   parentChunkSize: number
   childChunkSize: number
+  strategy?: string
+  tokenLimit?: number
+  languages?: string[]
 }
 
 interface Props {
@@ -166,6 +206,8 @@ const localSeparators = ref([...props.config.separators])
 const localEnableParentChild = ref(props.config.enableParentChild ?? false)
 const localParentChunkSize = ref(props.config.parentChunkSize || 4096)
 const localChildChunkSize = ref(props.config.childChunkSize || 384)
+const localStrategy = ref(props.config.strategy || 'legacy')
+const localTokenLimit = ref(props.config.tokenLimit || 0)
 const { t } = useI18n()
 
 const separatorOptions = computed(() => [
@@ -179,6 +221,23 @@ const separatorOptions = computed(() => [
   { label: t('knowledgeEditor.chunking.separators.space'), value: ' ' }
 ])
 
+const strategyOptions = [
+  { label: '保持兼容', value: 'legacy' },
+  { label: '自动选择', value: 'auto' },
+  { label: '标题层级', value: 'heading' },
+  { label: '启发式', value: 'heuristic' },
+  { label: '递归分隔', value: 'recursive' }
+]
+
+const previewConfig = computed(() => ({
+  chunkSize: localChunkSize.value,
+  chunkOverlap: localChunkOverlap.value,
+  separators: localSeparators.value,
+  strategy: localStrategy.value,
+  tokenLimit: localTokenLimit.value || undefined,
+  languages: props.config.languages || []
+}))
+
 watch(() => props.config, (newConfig) => {
   localChunkSize.value = newConfig.chunkSize
   localChunkOverlap.value = newConfig.chunkOverlap
@@ -186,6 +245,8 @@ watch(() => props.config, (newConfig) => {
   localEnableParentChild.value = newConfig.enableParentChild ?? false
   localParentChunkSize.value = newConfig.parentChunkSize || 4096
   localChildChunkSize.value = newConfig.childChunkSize || 384
+  localStrategy.value = newConfig.strategy || 'legacy'
+  localTokenLimit.value = newConfig.tokenLimit || 0
 }, { deep: true })
 
 const handleChunkSizeChange = () => { emitUpdate() }
@@ -194,6 +255,8 @@ const handleSeparatorsChange = () => { emitUpdate() }
 const handleParentChildChange = () => { emitUpdate() }
 const handleParentChunkSizeChange = () => { emitUpdate() }
 const handleChildChunkSizeChange = () => { emitUpdate() }
+const handleStrategyChange = () => { emitUpdate() }
+const handleTokenLimitChange = () => { emitUpdate() }
 
 const emitUpdate = () => {
   emit('update:config', {
@@ -203,7 +266,10 @@ const emitUpdate = () => {
     parserEngineRules: props.config.parserEngineRules,
     enableParentChild: localEnableParentChild.value,
     parentChunkSize: localParentChunkSize.value,
-    childChunkSize: localChildChunkSize.value
+    childChunkSize: localChildChunkSize.value,
+    strategy: localStrategy.value,
+    tokenLimit: localTokenLimit.value || undefined,
+    languages: props.config.languages
   })
 }
 </script>
@@ -276,6 +342,10 @@ const emitUpdate = () => {
   display: flex;
   justify-content: flex-end;
   align-items: center;
+}
+
+.strategy-control {
+  gap: 12px;
 }
 
 .slider-container {

@@ -92,6 +92,7 @@
 
     <!-- Add/Edit Dialog -->
     <McpServiceDialog
+      v-if="dialogVisible"
       v-model:visible="dialogVisible"
       :service="currentService"
       :mode="dialogMode"
@@ -100,6 +101,7 @@
 
     <!-- Test Result Dialog -->
     <McpTestResult
+      v-if="testDialogVisible"
       v-model:visible="testDialogVisible"
       :result="testResult"
       :service-name="testingServiceName"
@@ -108,8 +110,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
+import { defineAsyncComponent, ref, onMounted } from 'vue'
+import { DialogPlugin } from 'tdesign-vue-next/es/dialog'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 import {
   listMCPServices,
@@ -119,8 +122,8 @@ import {
   type MCPService,
   type MCPTestResult
 } from '@/api/mcp-service'
-import McpServiceDialog from './components/McpServiceDialog.vue'
-import McpTestResult from './components/McpTestResult.vue'
+const McpServiceDialog = defineAsyncComponent(() => import('./components/McpServiceDialog.vue'))
+const McpTestResult = defineAsyncComponent(() => import('./components/McpTestResult.vue'))
 
 const { t } = useI18n()
 

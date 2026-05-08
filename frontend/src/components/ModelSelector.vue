@@ -19,7 +19,7 @@
         <div class="model-option">
           <t-icon name="check-circle-filled" class="model-icon" />
           <span class="model-name">{{ model.name }}</span>
-          <t-tag v-if="model.is_builtin" size="small" theme="primary">{{ $t('model.builtinTag') }}</t-tag>
+          <t-tag v-if="model.is_platform || model.is_builtin" size="small" theme="primary">{{ $t('model.builtinTag') }}</t-tag>
           <t-tag v-if="model.is_default" size="small" theme="success">{{ $t('model.defaultTag') }}</t-tag>
         </div>
       </t-option>
@@ -42,7 +42,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { listModels, type ModelConfig } from '@/api/model'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 
 interface Props {

@@ -50,18 +50,53 @@ export interface CitationHeat {
   health_status: string
 }
 
-export function getHotQuestions(limit = 10) {
-  return get(`/api/v1/analytics/hot-questions?limit=${limit}`)
+export interface AnalyticsQuery {
+  limit?: number
+  knowledge_base_id?: string
+  session_id?: string
+  message_id?: string
 }
 
-export function getCoverageGaps(limit = 10) {
-  return get(`/api/v1/analytics/coverage-gaps?limit=${limit}`)
+const toLimit = (query?: AnalyticsQuery) => query?.limit || 10
+
+const analyticsPath = (path: string, query?: AnalyticsQuery) => {
+  const params = new URLSearchParams()
+  params.set('limit', String(toLimit(query)))
+  if (query?.knowledge_base_id) params.set('knowledge_base_id', query.knowledge_base_id)
+  if (query?.session_id) params.set('session_id', query.session_id)
+  if (query?.message_id) params.set('message_id', query.message_id)
+  return `/api/v1/analytics/${path}?${params.toString()}`
 }
 
-export function getStaleDocuments(limit = 10) {
-  return get(`/api/v1/analytics/stale-documents?limit=${limit}`)
+export function getHotQuestions(query?: AnalyticsQuery) {
+  return get(analyticsPath('hot-questions', query))
 }
 
-export function getCitationHeatmap(limit = 10) {
-  return get(`/api/v1/analytics/citation-heatmap?limit=${limit}`)
+export function getCoverageGaps(query?: AnalyticsQuery) {
+  return get(analyticsPath('coverage-gaps', query))
+}
+
+export function getStaleDocuments(query?: AnalyticsQuery) {
+  return get(analyticsPath('stale-documents', query))
+}
+
+export function getCitationHeatmap(query?: AnalyticsQuery) {
+  return get(analyticsPath('citation-heatmap', query))
+}
+
+export interface PendingKnowledgeQuestion {
+  message_id: string
+  session_id: string
+  question: string
+  answer_created_at?: string
+  source_count?: number
+  question_freq?: number
+  last_question_at?: string
+  reason?: string
+  priority?: string
+  created_at?: string
+}
+
+export function getPendingKnowledgeQuestions(query?: AnalyticsQuery) {
+  return get(analyticsPath('unanswered-questions', query))
 }

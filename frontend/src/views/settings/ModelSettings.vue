@@ -223,6 +223,7 @@
 
     <!-- 模型编辑器弹窗 -->
     <ModelEditorDialog
+      v-if="showDialog"
       v-model:visible="showDialog"
       :model-type="currentModelType"
       :model-data="editingModel"
@@ -233,12 +234,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { defineAsyncComponent, ref, computed, onMounted } from 'vue'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
-import ModelEditorDialog from '@/components/ModelEditorDialog.vue'
 import { listModels, createModel, updateModel as updateModelAPI, deleteModel as deleteModelAPI, type ModelConfig } from '@/api/model'
 import { useAuthStore } from '@/stores/auth'
+const ModelEditorDialog = defineAsyncComponent(() => import('@/components/ModelEditorDialog.vue'))
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -295,7 +296,7 @@ function convertToLegacyFormat(model: ModelConfig) {
     apiKey: model.parameters.api_key || '',
     provider: model.parameters.provider || '', // 添加 provider 字段
     dimension: model.parameters.embedding_parameters?.dimension,
-    isBuiltin: model.is_builtin || false,
+    isBuiltin: model.is_platform || model.is_builtin || false,
     supportsVision: model.parameters.supports_vision || false
   }
 }
@@ -419,7 +420,7 @@ const handleModelSave = async (modelData: any) => {
 const deleteModel = async (type: 'chat' | 'embedding' | 'rerank' | 'vllm', modelId: string) => {
   // 非超级管理员不能删除内置模型
   const model = allModels.value.find(m => m.id === modelId)
-  if (model?.is_builtin && !isSuperAdmin.value) {
+  if ((model?.is_platform || model?.is_builtin) && !isSuperAdmin.value) {
     MessagePlugin.warning(t('modelSettings.toasts.builtinCannotDelete'))
     return
   }

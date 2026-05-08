@@ -235,7 +235,7 @@
             <p class="hint-title">{{ $t('agentSettings.systemPrompt.availablePlaceholders') }}</p>
             <ul class="placeholder-list">
               <li v-for="placeholder in availablePlaceholders" :key="placeholder.name">
-                <code v-html="`{{${placeholder.name}}}`"></code> - {{ placeholder.label }}（{{ placeholder.description }}）
+                <code>{{ formatPlaceholderName(placeholder.name) }}</code> - {{ placeholder.label }}（{{ placeholder.description }}）
               </li>
             </ul>
             <p class="hint-tip">{{ $t('agentSettings.systemPrompt.hintPrefix') }} <code>&#123;&#123;</code> {{ $t('agentSettings.systemPrompt.hintSuffix') }}</p>
@@ -283,7 +283,7 @@
                 @mouseenter="selectedPlaceholderIndex = index"
               >
                   <div class="placeholder-name">
-                    <code v-html="`{{${placeholder.name}}}`"></code>
+                    <code>{{ formatPlaceholderName(placeholder.name) }}</code>
                   </div>
                   <div class="placeholder-desc">{{ placeholder.description }}</div>
                 </div>
@@ -731,7 +731,8 @@ import { ref, onMounted, watch, computed, nextTick } from 'vue'
 import type { Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
-import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
+import { DialogPlugin } from 'tdesign-vue-next/es/dialog'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 import { listModels, type ModelConfig } from '@/api/model'
 import { getAgentConfig, updateAgentConfig, getConversationConfig, updateConversationConfig, type AgentConfig, type ConversationConfig, type ToolDefinition, type PlaceholderDefinition, type PromptTemplate } from '@/api/system'
@@ -971,6 +972,7 @@ const fixedTemperatureValue = computed(() => getFixedTemperatureForModel(selecte
 const availableTools = ref<ToolDefinition[]>([])
 // 可用占位符列表
 const availablePlaceholders = ref<PlaceholderDefinition[]>([])
+const formatPlaceholderName = (name: string) => `{{${name}}}`
 const displayAllowedTools = computed(() => {
   return localAllowedTools.value.map(name => {
     const detail = availableTools.value.find(tool => tool.name === name)

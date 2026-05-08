@@ -26,6 +26,7 @@ export interface ModelConfig {
   };
   is_default?: boolean;
   is_builtin?: boolean;
+  is_platform?: boolean;
   status?: string;
   created_at?: string;
   updated_at?: string;
@@ -57,10 +58,16 @@ export function listModels(type?: string): Promise<ModelConfig[]> {
     get(url)
       .then((response: any) => {
         if (response.success && response.data) {
+          const data = response.data.map((item: ModelConfig) => ({
+            ...item,
+            is_platform: item.is_platform ?? item.is_builtin ?? false,
+            is_builtin: item.is_builtin ?? item.is_platform ?? false,
+          }));
           if (type) {
-            response.data = response.data.filter((item: ModelConfig) => item.type === type);
+            resolve(data.filter((item: ModelConfig) => item.type === type));
+          } else {
+            resolve(data);
           }
-          resolve(response.data);
         } else {
           resolve([]);
         }

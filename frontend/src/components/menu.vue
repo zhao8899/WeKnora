@@ -2,7 +2,7 @@
     <div class="aside_box" :class="{ 'aside_box--collapsed': uiStore.sidebarCollapsed }">
         <!-- 展开时：Logo + 折叠按钮同行 -->
         <div class="logo_row" v-if="!uiStore.sidebarCollapsed">
-            <div class="logo_box" @click="router.push('/platform/home')" style="cursor: pointer;">
+            <div class="logo_box" @click="router.push(homePath)" style="cursor: pointer;">
                 <img class="logo" src="@/assets/img/weknora.png" alt="">
             </div>
             <div class="sidebar-toggle"
@@ -134,10 +134,27 @@ import { useMenuStore } from '@/stores/menu';
 import { useAuthStore } from '@/stores/auth';
 import { useOrganizationStore } from '@/stores/organization';
 import { useUIStore } from '@/stores/ui';
-import { MessagePlugin, DialogPlugin, Icon as TIcon } from "tdesign-vue-next";
+import { DialogPlugin } from "tdesign-vue-next/es/dialog";
+import { Icon as TIcon } from "tdesign-vue-next/es/icon";
+import { MessagePlugin } from "tdesign-vue-next/es/message";
 import UserMenu from '@/components/UserMenu.vue';
 import TenantSelector from '@/components/TenantSelector.vue';
 import { useI18n } from 'vue-i18n';
+import agentSvg from '@/assets/img/agent.svg';
+import agentGreenSvg from '@/assets/img/agent-green.svg';
+import logoutSvg from '@/assets/img/logout.svg';
+import organizationSvg from '@/assets/img/organization.svg';
+import organizationGreenSvg from '@/assets/img/organization-green.svg';
+import prefixIconSvg from '@/assets/img/prefixIcon.svg';
+import prefixIconGreenSvg from '@/assets/img/prefixIcon-green.svg';
+import searchSvg from '@/assets/img/search.svg';
+import searchGreenSvg from '@/assets/img/search-green.svg';
+import settingSvg from '@/assets/img/setting.svg';
+import settingGreenSvg from '@/assets/img/setting-green.svg';
+import zhishikuSvg from '@/assets/img/zhishiku.svg';
+import zhishikuGreenSvg from '@/assets/img/zhishiku-green.svg';
+import zhishikuThinSvg from '@/assets/img/zhishiku-thin.svg';
+import ziliaoSvg from '@/assets/img/ziliao.svg';
 
 const { t } = useI18n();
 const usemenuStore = useMenuStore();
@@ -184,6 +201,7 @@ const batchDisplayCount = computed(() =>
 
 // 是否可以访问所有租户
 const canAccessAllTenants = computed(() => authStore.canAccessAllTenants);
+const homePath = computed(() => canAccessAllTenants.value ? '/platform/dashboard' : '/platform/home');
 
 // 是否处于知识库详情页（不包括全局聊天）
 const isInKnowledgeBase = computed<boolean>(() => {
@@ -208,7 +226,7 @@ const isInChatDetail = computed<boolean>(() => route.name === 'chat');
 // 是否在智能体列表页面
 const isInAgentList = computed<boolean>(() => route.name === 'agentList');
 
-// 是否在组织列表页面
+// 是否在共享空间列表页面
 const isInOrganizationList = computed<boolean>(() => route.name === 'organizationList');
 
 // 统一的菜单项激活状态判断
@@ -217,7 +235,7 @@ const isMenuItemActive = (itemPath: string): boolean => {
     
     switch (itemPath) {
         case 'home':
-            return currentRoute === 'homeView' || currentRoute === 'home';
+            return currentRoute === 'homeView' || currentRoute === 'home' || currentRoute === 'platformDashboard';
         case 'knowledge-bases':
             return currentRoute === 'knowledgeBaseList' || 
                    currentRoute === 'knowledgeBaseDetail' || 
@@ -244,7 +262,7 @@ const getIconActiveState = (itemPath: string) => {
     const currentRoute = route.name;
     
     return {
-        isHomeActive: itemPath === 'home' && (currentRoute === 'homeView' || currentRoute === 'home'),
+        isHomeActive: itemPath === 'home' && (currentRoute === 'homeView' || currentRoute === 'home' || currentRoute === 'platformDashboard'),
         isKbActive: itemPath === 'knowledge-bases' && (
             currentRoute === 'knowledgeBaseList' || 
             currentRoute === 'knowledgeBaseDetail' || 
@@ -258,17 +276,15 @@ const getIconActiveState = (itemPath: string) => {
 
 // 分离上下两部分菜单
 const topMenuItems = computed<MenuItem[]>(() => {
-    return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) =>
-        item.path === 'home' || item.path === 'knowledge-bases' || item.path === 'faq' || item.path === 'knowledge-search' || item.path === 'organizations' || item.path === 'usage-audit' || item.path === 'creatChat'
-    );
+    const allowedPaths = canAccessAllTenants.value
+        ? new Set(['home', 'usage-audit'])
+        : new Set(['home', 'knowledge-bases', 'faq', 'knowledge-search', 'agents', 'organizations', 'creatChat'])
+    return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => allowedPaths.has(item.path));
 });
 
 const bottomMenuItems = computed<MenuItem[]>(() => {
     return (menuArr.value as unknown as MenuItem[]).filter((item: MenuItem) => {
         if (item.path === 'home' || item.path === 'knowledge-bases' || item.path === 'faq' || item.path === 'knowledge-search' || item.path === 'organizations' || item.path === 'usage-audit' || item.path === 'creatChat' || item.path === 'agents') {
-            return false;
-        }
-        if (item.path === 'settings' && !authStore.canAccessAllTenants) {
             return false;
         }
         return true;
@@ -565,7 +581,7 @@ onMounted(async () => {
     
     // 加载对话列表
     getMessageList();
-    // 若组织列表未加载则拉取一次，用于侧栏「待审批」角标
+    // 若共享空间列表未加载则拉取一次，用于侧栏「待审批」角标
     if (orgStore.organizations.length === 0) {
         orgStore.fetchOrganizations();
     }
@@ -624,6 +640,23 @@ let logoutIcon = ref('logout.svg');
 let organizationIcon = ref('organization.svg');
 let settingIcon = ref('setting.svg');
 let pathPrefix = ref(route.name)
+const menuIconSrcMap: Record<string, string> = {
+    'agent.svg': agentSvg,
+    'agent-green.svg': agentGreenSvg,
+    'logout.svg': logoutSvg,
+    'organization.svg': organizationSvg,
+    'organization-green.svg': organizationGreenSvg,
+    'prefixIcon.svg': prefixIconSvg,
+    'prefixIcon-green.svg': prefixIconGreenSvg,
+    'search.svg': searchSvg,
+    'search-green.svg': searchGreenSvg,
+    'setting.svg': settingSvg,
+    'setting-green.svg': settingGreenSvg,
+    'zhishiku.svg': zhishikuSvg,
+    'zhishiku-green.svg': zhishikuGreenSvg,
+    'zhishiku-thin.svg': zhishikuThinSvg,
+    'ziliao.svg': ziliaoSvg
+}
 const getIcon = (path: string) => {
       const homeActiveState = getIconActiveState('home');
       const kbActiveState = getIconActiveState('knowledge-bases');
@@ -645,7 +678,7 @@ const getIcon = (path: string) => {
 getIcon(typeof route.name === 'string' ? route.name as string : (route.name ? String(route.name) : ''))
 const handleMenuClick = async (path: string) => {
     if (path === 'home') {
-        router.push('/platform/home')
+        router.push(homePath.value)
     } else if (path === 'knowledge-bases') {
         // 知识库菜单项：如果在知识库内部，跳转到当前知识库文件页；否则跳转到知识库列表
         const kbId = await getCurrentKbId()
@@ -661,14 +694,11 @@ const handleMenuClick = async (path: string) => {
     } else if (path === 'agents') {
         router.push('/platform/agents')
     } else if (path === 'organizations') {
-        // 组织菜单项：跳转到组织列表
+        // 共享空间菜单项：跳转到共享空间列表
         router.push('/platform/organizations')
     } else if (path === 'usage-audit') {
         router.push('/platform/usage-audit')
     } else if (path === 'settings') {
-        if (!authStore.canAccessAllTenants) {
-            return
-        }
         uiStore.setSettingsTarget(uiStore.settingsInitialSection || 'general', uiStore.settingsInitialSubSection || undefined)
         router.push('/platform/settings')
     } else {
@@ -715,14 +745,18 @@ const gotopage = async (path: string) => {
                 router.push(`/platform/creatChat`)
             }
         } else {
-            router.push(`/platform/${path}`);
+            if (path === 'home') {
+                router.push(homePath.value)
+            } else {
+                router.push(`/platform/${path}`);
+            }
         }
     }
     getIcon(path)
 }
 
 const getImgSrc = (url: string) => {
-    return new URL(`/src/assets/img/${url}`, import.meta.url).href;
+    return menuIconSrcMap[url] || prefixIconSvg;
 }
 
 const mouseenteMenu = (path: string) => {
@@ -855,10 +889,10 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
     .logo_txt {
         transform: rotate(0.049deg);
         color: var(--td-text-color-primary);
-        font-family: "TencentSans";
+        font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
         font-size: 24.12px;
         font-style: normal;
-        font-weight: W7;
+        font-weight: 700;
         line-height: 21.7px;
     }
 

@@ -217,13 +217,13 @@ func (s *kbShareService) ListSharedKnowledgeBases(ctx context.Context, userID st
 
 		kbID := share.KnowledgeBase.ID
 
-		// Get user's role in the organization
+		// Get user's shared-space permission.
 		member, err := s.orgRepo.GetMember(ctx, share.OrganizationID, userID)
 		if err != nil {
 			continue // Skip if user is not a member anymore
 		}
 
-		// Effective permission is the lower of share permission and user's org role
+		// Effective permission is the lower of share permission and user's shared-space permission.
 		effectivePermission := share.Permission
 		if !member.Role.HasPermission(share.Permission) {
 			effectivePermission = member.Role
@@ -414,7 +414,7 @@ func (s *kbShareService) CheckUserKBPermission(ctx context.Context, kbID string,
 	isShared := false
 
 	for _, share := range shares {
-		// Check if user is a member of the organization
+		// Check if user is a member of the shared space.
 		member, err := s.orgRepo.GetMember(ctx, share.OrganizationID, userID)
 		if err != nil {
 			continue // User is not a member of this org
@@ -422,7 +422,7 @@ func (s *kbShareService) CheckUserKBPermission(ctx context.Context, kbID string,
 
 		isShared = true
 
-		// Effective permission is the lower of share permission and user's org role
+		// Effective permission is the lower of share permission and user's shared-space permission.
 		effectivePermission := share.Permission
 		if !member.Role.HasPermission(share.Permission) {
 			effectivePermission = member.Role

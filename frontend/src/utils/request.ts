@@ -65,6 +65,39 @@ let isRefreshing = false;
 let failedQueue: Array<{ resolve: Function; reject: Function }> = [];
 let hasRedirectedOn401 = false;
 
+async function refreshAccessToken(refreshToken: string): Promise<{ success: boolean; data?: { token: string; refreshToken: string }; message?: string }> {
+  try {
+    const response = await axios.post(`${BASE_URL}/api/v1/auth/refresh`, { refreshToken }, {
+      headers: {
+        "Content-Type": "application/json",
+        "Accept-Language": getCurrentLanguage(),
+        "X-Request-ID": `${generateRandomString(12)}`,
+      },
+    });
+    const data = response?.data;
+
+    if (data?.success && (data.access_token || data.refresh_token)) {
+      return {
+        success: true,
+        data: {
+          token: data.access_token,
+          refreshToken: data.refresh_token,
+        },
+      };
+    }
+
+    return {
+      success: false,
+      message: data?.message || t('error.tokenRefreshFailed'),
+    };
+  } catch (refreshError: any) {
+    return {
+      success: false,
+      message: refreshError?.response?.data?.message || refreshError?.message || t('error.tokenRefreshFailed'),
+    };
+  }
+}
+
 // 处理队列中的请求
 const processQueue = (error: any, token: string | null = null) => {
   failedQueue.forEach(({ resolve, reject }) => {
@@ -122,9 +155,7 @@ instance.interceptors.response.use(
       
       if (refreshToken) {
         try {
-          // 动态导入refresh token API
-          const { refreshToken: refreshTokenAPI } = await import('../api/auth/index');
-          const response = await refreshTokenAPI(refreshToken);
+          const response = await refreshAccessToken(refreshToken);
           
           if (response.success && response.data) {
             const { token, refreshToken: newRefreshToken } = response.data;

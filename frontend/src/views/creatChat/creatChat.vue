@@ -4,6 +4,9 @@
             <div class="dialogue-title">
                 <span>{{ $t('createChat.title') }}</span>
             </div>
+            <div class="dialogue-subtitle">
+                <span>默认先用可信问答完成知识验证；高级研究模式不再作为普通租户首屏入口。</span>
+            </div>
             <!-- 推荐问题 -->
             <div class="surface-mode-strip">
                 <button type="button" class="surface-mode-card" @click="goToKnowledgeSearch">
@@ -14,10 +17,15 @@
                     <span class="surface-mode-label">{{ $t('chatSurface.trustedQaLabel') }}</span>
                     <span class="surface-mode-desc">{{ $t('chatSurface.trustedQaDesc') }}</span>
                 </button>
-                <button type="button" class="surface-mode-card" :class="{ active: currentSurfaceMode === 'deep-research' }" @click="switchChatMode('deep-research')">
-                    <span class="surface-mode-label">{{ $t('chatSurface.deepResearchLabel') }}</span>
-                    <span class="surface-mode-desc">{{ $t('chatSurface.deepResearchDesc') }}</span>
-                </button>
+            </div>
+            <div v-if="showAdvancedModeNotice" class="advanced-mode-notice">
+                <div class="advanced-mode-copy">
+                    <span class="advanced-mode-title">当前已启用高级模式</span>
+                    <span class="advanced-mode-desc">普通租户默认只保留可信问答。你仍可继续当前高级模式，或切回可信问答。</span>
+                </div>
+                <t-button size="small" theme="primary" variant="outline" @click="switchChatMode('trusted-qa')">
+                    切回可信问答
+                </t-button>
             </div>
             <div ref="sqContainerRef" class="suggested-questions-container">
                 <transition name="sq-slide-fade" mode="out-in"
@@ -49,7 +57,8 @@
     </div>
     
     <!-- 知识库编辑器（创建/编辑统一组件） -->
-    <KnowledgeBaseEditorModal 
+    <KnowledgeBaseEditorModal
+      v-if="uiStore.showKBEditorModal"
       :visible="uiStore.showKBEditorModal"
       :mode="uiStore.kbEditorMode"
       :kb-id="uiStore.currentKBId || undefined"
@@ -59,7 +68,7 @@
     />
 </template>
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, nextTick } from 'vue';
+import { computed, defineAsyncComponent, ref, watch, onMounted, nextTick } from 'vue';
 import InputField from '@/components/Input-field.vue';
 import { createSessions } from "@/api/chat/index";
 import { getSuggestedQuestions } from "@/api/agent/index";
@@ -68,12 +77,12 @@ import { useMenuStore } from '@/stores/menu';
 import { useSettingsStore } from '@/stores/settings';
 import { useUIStore } from '@/stores/ui';
 import { useRoute, useRouter } from 'vue-router';
-import { MessagePlugin } from 'tdesign-vue-next';
+import { MessagePlugin } from 'tdesign-vue-next/es/message';
 import { useI18n } from 'vue-i18n';
-import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
 import { normalizeSuggestedQuestions } from '@/utils/suggestedQuestions';
 import { applyChatSurfaceMode, resolveChatSurfaceMode, type ChatSurfaceMode } from '@/utils/chatSurfaceMode';
+const KnowledgeBaseEditorModal = defineAsyncComponent(() => import('@/views/knowledge/KnowledgeBaseEditorModal.vue'));
 
 const router = useRouter();
 const route = useRoute();
@@ -83,6 +92,7 @@ const uiStore = useUIStore();
 const { t } = useI18n();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 const currentSurfaceMode = computed<ChatSurfaceMode>(() => resolveChatSurfaceMode(settingsStore));
+const showAdvancedModeNotice = computed(() => currentSurfaceMode.value === 'deep-research');
 
 // ===== 推荐问题 =====
 const suggestedQuestions = ref<SuggestedQuestion[]>([]);
@@ -365,13 +375,54 @@ const handleKBEditorSuccess = (kbId: string) => {
     }
 }
 
+.dialogue-subtitle {
+    margin: -18px 0 20px;
+    max-width: 720px;
+    text-align: center;
+    color: var(--td-text-color-secondary);
+    font-size: 14px;
+    line-height: 1.7;
+}
+
 .surface-mode-strip {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     width: 100%;
     max-width: 800px;
     margin-bottom: 18px;
+}
+
+.advanced-mode-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    max-width: 800px;
+    margin: -6px 0 18px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 152, 0, 0.24);
+    background: linear-gradient(180deg, rgba(255, 152, 0, 0.08) 0%, rgba(255, 152, 0, 0.03) 100%);
+}
+
+.advanced-mode-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.advanced-mode-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+}
+
+.advanced-mode-desc {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--td-text-color-secondary);
 }
 
 .surface-mode-card {
@@ -440,6 +491,11 @@ const handleKBEditorSuccess = (kbId: string) => {
 @media (max-width: 750px) {
     .surface-mode-strip {
         grid-template-columns: 1fr;
+    }
+
+    .advanced-mode-notice {
+        flex-direction: column;
+        align-items: flex-start;
     }
 
     .answers-input {

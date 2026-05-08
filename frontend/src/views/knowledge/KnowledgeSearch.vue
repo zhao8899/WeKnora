@@ -13,6 +13,21 @@
         </div>
       </div>
 
+      <div class="search-surface-banner">
+        <div class="search-surface-copy">
+          <span class="search-surface-pill">可信问答前置搜索</span>
+          <div class="search-surface-text">
+            <h3>先确认证据，再进入问答</h3>
+            <p>这里优先帮普通租户定位知识片段和历史问答，减少直接提问时的上下文不确定性。</p>
+          </div>
+        </div>
+        <div class="search-surface-actions">
+          <t-button theme="primary" variant="outline" @click="startChat()">
+            直接进入可信问答
+          </t-button>
+        </div>
+      </div>
+
       <!-- Retrieval settings drawer -->
       <t-drawer
         v-model:visible="showSettings"
@@ -86,7 +101,7 @@
           class="search-btn"
           @click="handleSearch"
         >
-          {{ $t('knowledgeSearch.searchBtn') }}
+          开始搜索
         </t-button>
       </div>
 
@@ -263,7 +278,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { listKnowledgeBases, knowledgeSemanticSearch } from '@/api/knowledge-base'
 import { searchMessages, type MessageSearchGroupItem } from '@/api/chat-history'
 import RetrievalSettings from '@/views/settings/RetrievalSettings.vue'
@@ -598,6 +613,57 @@ onMounted(() => {
   }
 }
 
+.search-surface-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  background: linear-gradient(180deg, var(--td-bg-color-container) 0%, var(--td-bg-color-secondarycontainer) 100%);
+}
+
+.search-surface-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.search-surface-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--td-brand-color-active);
+  background: rgba(7, 192, 95, 0.12);
+  flex-shrink: 0;
+}
+
+.search-surface-text {
+  h3 {
+    margin: 0;
+    color: var(--td-text-color-primary);
+    font-size: 16px;
+  }
+
+  p {
+    margin: 6px 0 0;
+    color: var(--td-text-color-secondary);
+    font-size: 13px;
+    line-height: 1.7;
+    max-width: 620px;
+  }
+}
+
+.search-surface-actions {
+  flex-shrink: 0;
+}
+
 /* Tab 切换 */
 .search-tabs {
   display: flex;
@@ -741,6 +807,17 @@ onMounted(() => {
 
   p {
     margin: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .search-surface-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .search-surface-copy {
+    flex-direction: column;
   }
 }
 

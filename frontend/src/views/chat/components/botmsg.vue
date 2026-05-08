@@ -1,7 +1,7 @@
 <template>
     <div class="bot_msg">
         <div style="display: flex;flex-direction: column; gap:8px">
-            <!-- 显示@的知识库和文件（非 Agent 模式下显示） -->
+            <!-- 鏄剧ず@鐨勭煡璇嗗簱鍜屾枃浠讹紙闈?Agent 妯″紡涓嬫樉绀猴級 -->
             <div v-if="!session.isAgentMode && mentionedItems && mentionedItems.length > 0" class="mentioned_items">
                 <span
                     v-for="item in mentionedItems"
@@ -27,13 +27,13 @@
             <AgentStreamDisplay :session="session" :user-query="userQuery" :session-id="sessionId" v-if="session.isAgentMode"></AgentStreamDisplay>
             <deepThink :deepSession="session" v-if="session.showThink && !session.isAgentMode"></deepThink>
         </div>
-        <!-- 非 Agent 模式下才显示传统的 markdown 渲染 -->
+        <!-- 闈?Agent 妯″紡涓嬫墠鏄剧ず浼犵粺鐨?markdown 娓叉煋 -->
         <div ref="parentMd" v-if="!session.hideContent && !session.isAgentMode">
-            <!-- 直接渲染完整内容，避免切分导致的问题，样式与 thinking 一致 -->
-            <!-- 只有当有实际内容时才显示包围框 -->
+            <!-- 鐩存帴娓叉煋瀹屾暣鍐呭锛岄伩鍏嶅垏鍒嗗鑷寸殑闂锛屾牱寮忎笌 thinking 涓€鑷?-->
+            <!-- 鍙湁褰撴湁瀹為檯鍐呭鏃舵墠鏄剧ず鍖呭洿妗?-->
             <div class="content-wrapper" v-if="hasActualContent">
                 <div class="ai-markdown-template markdown-content">
-                    <div v-for="(token, index) in markdownTokens" :key="index" v-html="renderToken(token)"></div>
+                    <div v-for="(tokenHtml, index) in renderedMarkdownTokens" :key="index" v-html="tokenHtml"></div>
                 </div>
             </div>
             <!-- Streaming indicator (non-Agent mode) -->
@@ -44,7 +44,7 @@
                     <span></span>
                 </div>
             </div>
-            <!-- 复制和添加到知识库按钮 - 非 Agent 模式下显示 -->
+            <!-- 澶嶅埗鍜屾坊鍔犲埌鐭ヨ瘑搴撴寜閽?- 闈?Agent 妯″紡涓嬫樉绀?-->
             <div v-if="session.is_completed && (content || session.content)" class="answer-toolbar">
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer" :title="$t('agent.copy')">
                     <t-icon name="copy" />
@@ -52,7 +52,7 @@
                 <t-button size="small" variant="outline" shape="round" @click.stop="handleAddToKnowledge" :title="$t('agent.addToKnowledgeBase')">
                     <t-icon name="add" />
                 </t-button>
-                <!-- 点赞/踩反馈 -->
+                <!-- 鐐硅禐/韪╁弽棣?-->
                 <t-tooltip :content="$t('chat.feedbackLike')" placement="top">
                     <t-button
                         size="small" variant="outline" shape="round"
@@ -71,13 +71,13 @@
                         <t-icon name="thumb-down" />
                     </t-button>
                 </t-tooltip>
-                <!-- Fallback 提示图标 -->
+                <!-- Fallback 鎻愮ず鍥炬爣 -->
                 <t-tooltip v-if="session.is_fallback" :content="$t('chat.fallbackHint')" placement="top">
                     <t-button size="small" variant="outline" shape="round" class="fallback-icon-btn">
                         <t-icon name="info-circle" />
                     </t-button>
                 </t-tooltip>
-                <!-- 重新生成 -->
+                <!-- 閲嶆柊鐢熸垚 -->
                 <t-tooltip :content="$t('chat.regenerate')" placement="top">
                     <t-button size="small" variant="outline" shape="round" @click.stop="emit('regenerate', userQuery)">
                         <t-icon name="refresh" />
@@ -86,7 +86,7 @@
             </div>
             <div v-if="isImgLoading" class="img_loading"><t-loading size="small"></t-loading><span>{{ $t('common.loading') }}</span></div>
         </div>
-        <!-- Agent 模式工具栏（重新生成）-->
+        <!-- Agent 妯″紡宸ュ叿鏍忥紙閲嶆柊鐢熸垚锛?->
         <div v-if="session.isAgentMode && session.is_completed" class="answer-toolbar agent-toolbar">
             <t-tooltip :content="$t('chat.regenerate')" placement="top">
                 <t-button size="small" variant="outline" shape="round" @click.stop="emit('regenerate', userQuery)">
@@ -94,7 +94,7 @@
                 </t-button>
             </t-tooltip>
         </div>
-        <!-- 答后追问推荐 -->
+        <!-- 绛斿悗杩介棶鎺ㄨ崘 -->
         <div v-if="session.is_completed && isLatest && followUpQuestions.length > 0" class="follow-up-section">
             <div class="follow-up-label">{{ $t('chat.followUpQuestions') }}</div>
             <div class="follow-up-chips">
@@ -110,16 +110,10 @@
     </div>
 </template>
 <script setup>
-import { onMounted, onBeforeUnmount, watch, computed, ref, reactive, defineProps, nextTick, onUpdated } from 'vue';
-import { marked } from 'marked';
-import docInfo from './docInfo.vue';
-import ConfidencePanel from './ConfidencePanel.vue';
-import deepThink from './deepThink.vue';
-import AgentStreamDisplay from './AgentStreamDisplay.vue';
-import picturePreview from '@/components/picture-preview.vue';
+import { defineAsyncComponent, onMounted, onBeforeUnmount, watch, computed, ref, reactive, defineProps, nextTick, onUpdated } from 'vue';
 import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL, hydrateProtectedFileImages } from '@/utils/security';
 import { useI18n } from 'vue-i18n';
-import { MessagePlugin } from 'tdesign-vue-next';
+import { MessagePlugin } from 'tdesign-vue-next/es/message';
 import { useUIStore } from '@/stores/ui';
 import { useSettingsStore } from '@/stores/settings';
 import { submitMessageFeedback } from '@/api/chat/index';
@@ -133,26 +127,24 @@ import {
 } from '@/utils/chatMessageShared';
 import {
     createMermaidCodeRenderer,
-    ensureMermaidInitialized,
     renderMermaidInContainer
 } from '@/utils/mermaidShared';
 
-marked.use({
-    breaks: true,  // 全局启用单个换行支持
-});
-
-ensureMermaidInitialized();
+const docInfo = defineAsyncComponent(() => import('./docInfo.vue'));
+const ConfidencePanel = defineAsyncComponent(() => import('./ConfidencePanel.vue'));
+const deepThink = defineAsyncComponent(() => import('./deepThink.vue'));
+const AgentStreamDisplay = defineAsyncComponent(() => import('./AgentStreamDisplay.vue'));
+const picturePreview = defineAsyncComponent(() => import('@/components/picture-preview.vue'));
 
 const emit = defineEmits(['scroll-bottom', 'regenerate', 'send-question'])
 const { t } = useI18n()
 const uiStore = useUIStore();
-const renderer = new marked.Renderer();
 let parentMd = ref()
 let reviewUrl = ref('')
 let reviewImg = ref(false)
 let isImgLoading = ref(false);
 const props = defineProps({
-    // 必填项
+    // 蹇呭～椤?
     content: {
         type: String,
         required: false
@@ -182,13 +174,17 @@ const props = defineProps({
     }
 });
 
-// 本地反馈状态：初始化时从 session.feedback 读取
+// 鏈湴鍙嶉鐘舵€侊細鍒濆鍖栨椂浠?session.feedback 璇诲彇
 const localFeedback = ref(props.session?.feedback || '');
 
-// 答后追问
+// 绛斿悗杩介棶
 const useSettingsStoreInstance = useSettingsStore();
 const followUpQuestions = ref([]);
 const followUpLoading = ref(false);
+const renderedMarkdownTokens = ref([]);
+let markedInstancePromise = null;
+let customRenderer = null;
+let markdownRenderVersion = 0;
 
 const fetchFollowUp = async () => {
     const agentId = useSettingsStoreInstance.selectedAgentId;
@@ -210,6 +206,64 @@ const fetchFollowUp = async () => {
     }
 };
 
+const loadMarked = async () => {
+    if (!markedInstancePromise) {
+        markedInstancePromise = import('marked').then(async ({ marked }) => {
+            marked.use({
+                breaks: true,
+            });
+
+            if (!customRenderer) {
+                customRenderer = new marked.Renderer();
+                customRenderer.image = function({ href, title, text }) {
+                    if (!isValidImageURL(href)) {
+                        return `<p>${t('error.invalidImageLink')}</p>`;
+                    }
+                    return createSafeImage(href, text || '', title || '');
+                };
+                customRenderer.code = await createMermaidCodeRenderer('mermaid-botmsg');
+            }
+
+            return marked;
+        });
+    }
+
+    return markedInstancePromise;
+};
+
+const renderMarkdownTokens = async () => {
+    const renderVersion = ++markdownRenderVersion;
+    const text = props.content || props.session?.content || '';
+
+    if (!text || typeof text !== 'string' || !text.trim()) {
+        renderedMarkdownTokens.value = [];
+        return;
+    }
+
+    try {
+        const marked = await loadMarked();
+        const processed = replaceIncompleteImageWithPlaceholder(text);
+        const safeMarkdown = safeMarkdownToHTML(processed);
+        const tokens = marked.lexer(safeMarkdown);
+        const tokenHtmlList = tokens.map((token) => {
+            const html = marked.parser([token], {
+                renderer: customRenderer,
+                breaks: true,
+            });
+            return sanitizeHTML(html);
+        });
+
+        if (renderVersion === markdownRenderVersion) {
+            renderedMarkdownTokens.value = tokenHtmlList;
+        }
+    } catch (error) {
+        console.error('Markdown rendering error:', error);
+        if (renderVersion === markdownRenderVersion) {
+            renderedMarkdownTokens.value = [];
+        }
+    }
+};
+
 watch(
     () => props.session?.is_completed,
     (completed) => {
@@ -227,6 +281,14 @@ watch(
             fetchFollowUp();
         }
     }
+);
+
+watch(
+    () => props.content || props.session?.content || '',
+    () => {
+        void renderMarkdownTokens();
+    },
+    { immediate: true }
 );
 
 const handleFeedback = async (value) => {
@@ -258,76 +320,28 @@ const closePreImg = () => {
     reviewUrl.value = '';
 }
 
-// 创建自定义渲染器实例
-const customRenderer = new marked.Renderer();
-// 覆盖图片渲染方法
-customRenderer.image = function({href, title, text}){
-    if (!isValidImageURL(href)) {
-        return `<p>${t('error.invalidImageLink')}</p>`;
-    }
-    return createSafeImage(href, text || '', title || '');
-};
+// 鍒涘缓鑷畾涔夋覆鏌撳櫒瀹炰緥
+// 瑕嗙洊鍥剧墖娓叉煋鏂规硶
 
-// 覆盖代码块渲染方法，支持 Mermaid
-customRenderer.code = createMermaidCodeRenderer('mermaid-botmsg');
+// 瑕嗙洊浠ｇ爜鍧楁覆鏌撴柟娉曪紝鏀寔 Mermaid
 
-// 计算属性：将 Markdown 文本转换为 tokens
+// 璁＄畻灞炴€э細灏?Markdown 鏂囨湰杞崲涓?tokens
 const mentionedItems = computed(() => {
     return props.session?.mentioned_items || [];
 });
 
-const markdownTokens = computed(() => {
-    const text = props.content || props.session?.content || '';
-    if (!text || typeof text !== 'string') {
-        return [];
-    }
-
-    const processed = replaceIncompleteImageWithPlaceholder(text);
-    
-    // 首先对 Markdown 内容进行安全处理
-    const safeMarkdown = safeMarkdownToHTML(processed);
-    
-    // 使用 marked.lexer 分词
-    return marked.lexer(safeMarkdown);
-});
-
-// 计算属性：判断是否有实际内容（非空且不只是空白）
+// 璁＄畻灞炴€э細鍒ゆ柇鏄惁鏈夊疄闄呭唴瀹癸紙闈炵┖涓斾笉鍙槸绌虹櫧锛?
 const hasActualContent = computed(() => {
     const text = props.content || props.session?.content || '';
     return text && text.trim().length > 0;
 });
 
-// 渲染单个 token 为 HTML
-const renderToken = (token) => {
-    try {
-        // 创建临时的 marked 配置
-        const markedOptions = {
-            renderer: customRenderer,
-            breaks: true
-        };
-        
-        // 解析单个 token
-        // marked.parser 接受 token 数组
-        let html = marked.parser([token], markedOptions);
-        
-        // 使用 DOMPurify 进行最终的安全清理
-        return sanitizeHTML(html);
-    } catch (e) {
-        console.error('Token rendering error:', e);
-        return '';
-    }
-};
-
-const myMarkdown = (res) => {
-    return marked.parse(res, { renderer })
-}
-
-// 获取实际内容
+// 鑾峰彇瀹為檯鍐呭
 const getActualContent = () => {
     return (props.content || props.session?.content || '').trim();
 };
 
-// 复制回答内容
+// 澶嶅埗鍥炵瓟鍐呭
 const handleCopyAnswer = async () => {
     const content = getActualContent();
     if (!content) {
@@ -344,7 +358,7 @@ const handleCopyAnswer = async () => {
     }
 };
 
-// 添加到知识库
+// 娣诲姞鍒扮煡璇嗗簱
 const handleAddToKnowledge = () => {
     const content = getActualContent();
     if (!content) {
@@ -355,7 +369,6 @@ const handleAddToKnowledge = () => {
     const question = (props.userQuery || '').trim();
     const manualContent = buildManualMarkdown(question, content);
     const manualTitle = formatManualTitle(question);
-``
     uiStore.openManualEditor({
         mode: 'create',
         title: manualTitle,
@@ -366,7 +379,7 @@ const handleAddToKnowledge = () => {
     MessagePlugin.info(t('chat.editorOpened'));
 };
 
-// 处理 markdown-content 中图片的点击事件
+// 澶勭悊 markdown-content 涓浘鐗囩殑鐐瑰嚮浜嬩欢
 const handleMarkdownImageClick = (e) => {
     const target = e.target;
     if (target && target.tagName === 'IMG') {
@@ -379,16 +392,16 @@ const handleMarkdownImageClick = (e) => {
     }
 };
 
-// 渲染 Mermaid 图表的函数
+// 娓叉煋 Mermaid 鍥捐〃鐨勫嚱鏁?
 const renderMermaidDiagrams = async () => {
   await renderMermaidInContainer(parentMd.value);
 };
 
-// 监听内容变化并渲染 Mermaid - 只在会话完成后渲染
+// 鐩戝惉鍐呭鍙樺寲骞舵覆鏌?Mermaid - 鍙湪浼氳瘽瀹屾垚鍚庢覆鏌?
 onUpdated(() => {
     nextTick(async () => {
         await hydrateProtectedFileImages(parentMd.value);
-        // 只在会话完成后渲染 mermaid
+        // 鍙湪浼氳瘽瀹屾垚鍚庢覆鏌?mermaid
         if (props.session?.is_completed) {
             renderMermaidDiagrams();
         }
@@ -396,13 +409,13 @@ onUpdated(() => {
 });
 
 onMounted(async () => {
-    // 为 markdown-content 中的图片添加点击事件
+    // 涓?markdown-content 涓殑鍥剧墖娣诲姞鐐瑰嚮浜嬩欢
     nextTick(async () => {
         if (parentMd.value) {
             parentMd.value.addEventListener('click', handleMarkdownImageClick, true);
         }
         await hydrateProtectedFileImages(parentMd.value);
-        // 初始渲染 Mermaid 图表
+        // 鍒濆娓叉煋 Mermaid 鍥捐〃
         renderMermaidDiagrams();
     });
 });
@@ -417,7 +430,7 @@ onBeforeUnmount(() => {
 @import '../../../components/css/markdown.less';
 @import '../../../components/css/chat-message-shared.less';
 
-// 内容包装器 - 与 Agent 模式的 answer 样式一致
+// 鍐呭鍖呰鍣?- 涓?Agent 妯″紡鐨?answer 鏍峰紡涓€鑷?
 .content-wrapper {
     background: var(--td-bg-color-container);
     border-radius: 6px;
@@ -621,7 +634,7 @@ onBeforeUnmount(() => {
         }
     }
 
-    // Mermaid 图表样式
+    // Mermaid 鍥捐〃鏍峰紡
     :deep(.mermaid) {
         margin: 16px 0;
         padding: 16px;
@@ -779,3 +792,4 @@ onBeforeUnmount(() => {
     }
 }
 </style>
+

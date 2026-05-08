@@ -39,15 +39,20 @@ func (ch *IMChannel) BeforeCreate(tx *gorm.DB) error {
 	if ch.ID == "" {
 		ch.ID = uuid.New().String()
 	}
-	if ch.Mode == "" {
-		if ch.Platform == "mattermost" {
-			ch.Mode = "webhook"
-		} else {
-			ch.Mode = "websocket"
+	if ch.Platform == "wechat" {
+		ch.Mode = "longpoll"
+		ch.OutputMode = "full"
+	} else {
+		if ch.Mode == "" {
+			if ch.Platform == "mattermost" {
+				ch.Mode = "webhook"
+			} else {
+				ch.Mode = "websocket"
+			}
 		}
-	}
-	if ch.OutputMode == "" {
-		ch.OutputMode = "stream"
+		if ch.OutputMode == "" {
+			ch.OutputMode = "stream"
+		}
 	}
 	if ch.SessionMode == "" {
 		ch.SessionMode = string(SessionModeUser)
@@ -62,6 +67,21 @@ func (ch *IMChannel) BeforeCreate(tx *gorm.DB) error {
 // BeforeSave ensures bot_identity is recomputed and session_mode is validated
 // on every save (create + update).
 func (ch *IMChannel) BeforeSave(tx *gorm.DB) error {
+	if ch.Platform == "wechat" {
+		ch.Mode = "longpoll"
+		ch.OutputMode = "full"
+	} else {
+		if ch.Mode == "" {
+			if ch.Platform == "mattermost" {
+				ch.Mode = "webhook"
+			} else {
+				ch.Mode = "websocket"
+			}
+		}
+		if ch.OutputMode == "" {
+			ch.OutputMode = "stream"
+		}
+	}
 	if ch.SessionMode == "" {
 		ch.SessionMode = string(SessionModeUser)
 	}

@@ -274,7 +274,9 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { Icon as TIcon, Popup as TPopup, Tooltip as TTooltip } from 'tdesign-vue-next';
+import { Icon as TIcon } from 'tdesign-vue-next/es/icon';
+import { Popup as TPopup } from 'tdesign-vue-next/es/popup';
+import { Tooltip as TTooltip } from 'tdesign-vue-next/es/tooltip';
 import { type CustomAgent, type CustomAgentConfig, BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from '@/api/agent';
 import AgentAvatar from '@/components/AgentAvatar.vue';
 import { useOrganizationStore } from '@/stores/organization';

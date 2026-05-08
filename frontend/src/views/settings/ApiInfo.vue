@@ -123,7 +123,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { getCurrentUser, type TenantInfo, type UserInfo } from '@/api/auth'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 
 const { t, locale } = useI18n()

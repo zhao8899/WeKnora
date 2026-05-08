@@ -95,6 +95,40 @@ export function getSystemInfo(): Promise<{ data: SystemInfo }> {
   return get('/api/v1/system/info')
 }
 
+export interface LangfuseStatus {
+  enabled: boolean
+  configured: boolean
+  host: string
+  public_key_masked?: string
+  release?: string
+  environment?: string
+  flush_at: number
+  flush_interval: string
+  queue_size: number
+  request_timeout: string
+  sample_rate: number
+  debug: boolean
+}
+
+export interface LangfuseCheckRequest {
+  host: string
+  public_key: string
+  secret_key: string
+}
+
+export interface LangfuseCheckResponse {
+  ok: boolean
+  message: string
+}
+
+export function getLangfuseStatus(): Promise<{ data: LangfuseStatus }> {
+  return get('/api/v1/system/langfuse')
+}
+
+export function checkLangfuseConfig(req: LangfuseCheckRequest): Promise<{ data: LangfuseCheckResponse }> {
+  return post('/api/v1/system/langfuse/check', req)
+}
+
 export function getAgentConfig(): Promise<{ data: AgentConfig }> {
   return get('/api/v1/tenants/kv/agent-config')
 }

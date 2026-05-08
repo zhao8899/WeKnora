@@ -1,4 +1,4 @@
-import { MessagePlugin } from "tdesign-vue-next";
+import { MessagePlugin } from "tdesign-vue-next/es/message";
 import i18n from '@/i18n';
 
 // 声明全局运行时配置类型

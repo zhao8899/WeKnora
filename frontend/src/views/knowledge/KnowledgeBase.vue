@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, reactive, computed, nextTick, h, type ComponentPublicInstance } from "vue";
-import { MessagePlugin, DialogPlugin, Icon as TIcon } from "tdesign-vue-next";
-import DocContent from "@/components/doc-content.vue";
+import { defineAsyncComponent, ref, onMounted, onUnmounted, watch, reactive, computed, nextTick, h, type ComponentPublicInstance } from "vue";
+import { DialogPlugin } from "tdesign-vue-next/es/dialog";
+import { Icon as TIcon } from "tdesign-vue-next/es/icon";
+import { MessagePlugin } from "tdesign-vue-next/es/message";
 import useKnowledgeBase from '@/hooks/useKnowledgeBase';
 import { useRoute, useRouter } from 'vue-router';
 import EmptyKnowledge from '@/components/empty-knowledge.vue';
 import { getSessionsList, createSessions, generateSessionsTitle } from "@/api/chat/index";
 import { useMenuStore } from '@/stores/menu';
+import { useSettingsStore } from '@/stores/settings';
 import { useUIStore } from '@/stores/ui';
 import { useOrganizationStore } from '@/stores/organization';
 import { useAuthStore } from '@/stores/auth';
-import KnowledgeBaseEditorModal from './KnowledgeBaseEditorModal.vue';
+import { BUILTIN_QUICK_ANSWER_ID } from "@/api/agent";
 const usemenuStore = useMenuStore();
+const settingsStore = useSettingsStore();
 const uiStore = useUIStore();
 const orgStore = useOrganizationStore();
 const authStore = useAuthStore();
@@ -30,11 +33,14 @@ import {
   reparseKnowledge,
   delKnowledgeDetails,
 } from "@/api/knowledge-base/index";
-import FAQEntryManager from './components/FAQEntryManager.vue';
 import { listMoveTargets, moveKnowledge, getKnowledgeMoveProgress } from '@/api/knowledge-base';
 import { useI18n } from 'vue-i18n';
 import { formatStringDate, kbFileTypeVerification } from '@/utils';
 import { getParserEngines, type ParserEngineInfo } from '@/api/system';
+
+const DocContent = defineAsyncComponent(() => import("@/components/doc-content.vue"));
+const KnowledgeBaseEditorModal = defineAsyncComponent(() => import("./KnowledgeBaseEditorModal.vue"));
+const FAQEntryManager = defineAsyncComponent(() => import("./components/FAQEntryManager.vue"));
 const route = useRoute();
 const { t } = useI18n();
 const kbId = computed(() => (route.params as any).kbId as string || '');
@@ -106,6 +112,18 @@ const goToParserSettings = () => {
   }
 }
 
+const goToWikiWorkspace = () => {
+  if (kbId.value) {
+    router.push(`/platform/knowledge-bases/${kbId.value}/wiki`)
+  }
+}
+
+const goToWikiGraph = () => {
+  if (kbId.value) {
+    router.push(`/platform/knowledge-bases/${kbId.value}/wiki/graph`)
+  }
+}
+
 // Permission control: check if current user owns this KB or has edit/manage permission
 const isOwner = computed(() => {
   if (!kbInfo.value) return false;
@@ -155,6 +173,83 @@ const kbLastUpdated = computed(() => {
   const raw = kbInfo.value?.updated_at;
   if (!raw) return null;
   return formatStringDate(new Date(raw));
+});
+
+const kbHasRequiredModels = computed(() =>
+  !!(kbInfo.value?.embedding_model_id && kbInfo.value?.summary_model_id)
+);
+
+const kbDocumentCount = computed(() => Number(kbInfo.value?.knowledge_count || 0));
+const kbWikiEnabled = computed(() => !!kbInfo.value?.indexing_strategy?.wiki_enabled);
+
+const parsingDocCount = computed(() =>
+  (cardList.value as KnowledgeCard[]).filter(c => c.parse_status === 'pending' || c.parse_status === 'processing').length
+);
+
+const knowledgeWorkflowStatus = computed(() => {
+  if (!kbInfo.value) {
+    return {
+      label: '加载中',
+      tone: 'pending',
+      description: '正在读取当前知识库信息。',
+    };
+  }
+
+  if (!kbHasRequiredModels.value) {
+    return {
+      label: '待配置',
+      tone: 'warning',
+      description: '当前知识库还不能用于问答，请先完成基础问答配置。',
+    };
+  }
+
+  if (kbDocumentCount.value === 0) {
+    return {
+      label: '待导入',
+      tone: 'pending',
+      description: '知识库已创建，但还没有可解析的资料内容。',
+    };
+  }
+
+  if (parsingDocCount.value > 0) {
+    return {
+      label: '解析中',
+      tone: 'processing',
+      description: `当前仍有 ${parsingDocCount.value} 份资料处理中，可继续等待或补充内容。`,
+    };
+  }
+
+  if (failedDocCount.value > 0) {
+    return {
+      label: '部分异常',
+      tone: 'warning',
+      description: `当前有 ${failedDocCount.value} 份资料解析失败，建议先修复后再共享。`,
+    };
+  }
+
+  return {
+    label: '可问答',
+    tone: 'ready',
+    description: '基础配置和资料导入已完成，可以直接开始可信问答。',
+  };
+});
+
+const knowledgeWorkflowMetrics = computed(() => [
+  { label: '资料总数', value: kbDocumentCount.value },
+  { label: '解析中', value: parsingDocCount.value },
+  { label: '失败', value: failedDocCount.value },
+]);
+
+const primaryWorkflowActionLabel = computed(() => {
+  if (!kbHasRequiredModels.value) return '去完成配置';
+  if (kbDocumentCount.value === 0 && canEdit.value) return '上传资料';
+  return '去提问';
+});
+
+const primaryWorkflowActionDisabled = computed(() => {
+  if (!kbHasRequiredModels.value) return !canManage.value;
+  if (kbDocumentCount.value === 0) return !canEdit.value;
+  return false;
 });
 
 type KnowledgeBaseOption = { id: string; name: string; type?: string };
@@ -565,6 +660,7 @@ const loadKnowledgeBaseInfo = async (targetKbId: string) => {
       total.value = 0;
     }
     loadTags(targetKbId, true);
+    nextTick(() => consumeUploadAction());
   } catch (error) {
     console.error('Failed to load knowledge base info:', error);
     kbInfo.value = null;
@@ -681,6 +777,9 @@ const handleOpenURLImportDialog = (event: CustomEvent) => {
 const pendingKnowledgeId = ref<string | null>(
   (route.query.knowledge_id as string) || null
 );
+const pendingUploadAction = ref<string | null>(
+  (route.query.action as string) || (route.query.intent as string) || null
+);
 
 const tryAutoOpenDocument = () => {
   if (!pendingKnowledgeId.value || !cardList.value?.length) return;
@@ -739,6 +838,18 @@ watch(() => cardList.value, (newValue) => {
   }
   
 }, { deep: true })
+
+watch(
+  () => [route.query.action, route.query.intent],
+  ([action, intent]) => {
+    const nextAction = (action || intent) as string | undefined;
+    if (nextAction === 'upload') {
+      pendingUploadAction.value = nextAction;
+      nextTick(() => consumeUploadAction());
+    }
+  }
+);
+
 type KnowledgeCard = {
   id: string;
   knowledge_base_id?: string;
@@ -1072,6 +1183,23 @@ const handleFolderUploadClick = () => {
   if (!canEdit.value) return;
   if (!ensureDocumentKbReady()) return;
   folderUploadInputRef.value?.click();
+};
+
+const clearUploadActionQuery = () => {
+  const nextQuery = { ...route.query };
+  delete nextQuery.action;
+  delete nextQuery.intent;
+  router.replace({ path: route.path, query: nextQuery });
+};
+
+const consumeUploadAction = () => {
+  const action = pendingUploadAction.value || route.query.action || route.query.intent;
+  if (action !== 'upload') return;
+
+  pendingUploadAction.value = null;
+  clearUploadActionQuery();
+  MessagePlugin.info('请选择要导入的文件');
+  nextTick(() => handleDocumentUploadClick());
 };
 
 const resetUploadInput = () => {
@@ -1528,6 +1656,28 @@ async function createNewSession(value: string): Promise<void> {
     console.error(t('knowledgeBase.createSessionError'), error);
   });
 }
+
+const handleAskCurrentKnowledgeBase = () => {
+  if (!kbId.value) return;
+  settingsStore.selectAgent(BUILTIN_QUICK_ANSWER_ID);
+  settingsStore.selectKnowledgeBases([kbId.value]);
+  settingsStore.clearFiles();
+  router.push('/platform/creatChat');
+};
+
+const handlePrimaryWorkflowAction = () => {
+  if (!kbHasRequiredModels.value) {
+    handleOpenKBSettings();
+    return;
+  }
+
+  if (kbDocumentCount.value === 0 && canEdit.value) {
+    handleDocumentUploadClick();
+    return;
+  }
+
+  handleAskCurrentKnowledgeBase();
+};
 </script>
 
 <template>
@@ -1617,6 +1767,48 @@ async function createNewSession(value: string): Promise<void> {
             <span>{{ $t('knowledgeBase.missingStorageEngine') }}</span>
             <span class="warning-link">{{ $t('knowledgeBase.goToStorageSettings') }} →</span>
           </p>
+        </div>
+      </div>
+
+      <div v-if="kbInfo" class="kb-workflow-banner">
+        <div class="kb-workflow-main">
+          <div class="kb-workflow-status">
+            <span class="workflow-status-pill" :class="`status-${knowledgeWorkflowStatus.tone}`">
+              {{ knowledgeWorkflowStatus.label }}
+            </span>
+            <div class="workflow-status-copy">
+              <h3>当前知识库状态清晰可见</h3>
+              <p>{{ knowledgeWorkflowStatus.description }}</p>
+            </div>
+          </div>
+          <div class="kb-workflow-actions">
+            <t-button theme="primary" :disabled="primaryWorkflowActionDisabled" @click="handlePrimaryWorkflowAction">
+              {{ primaryWorkflowActionLabel }}
+            </t-button>
+            <t-button
+              v-if="canEdit"
+              variant="outline"
+              @click="handleDocumentUploadClick"
+              :disabled="!kbHasRequiredModels"
+            >
+              继续导入
+            </t-button>
+            <t-button v-if="canManage" variant="text" theme="primary" @click="handleOpenKBSettings">
+              查看设置
+            </t-button>
+            <t-button v-if="kbWikiEnabled" variant="outline" theme="primary" @click="goToWikiWorkspace">
+              Wiki 浏览
+            </t-button>
+            <t-button v-if="kbWikiEnabled" variant="text" theme="primary" @click="goToWikiGraph">
+              图谱
+            </t-button>
+          </div>
+        </div>
+        <div class="kb-workflow-metrics">
+          <div v-for="item in knowledgeWorkflowMetrics" :key="item.label" class="workflow-metric">
+            <span class="workflow-metric-label">{{ item.label }}</span>
+            <strong class="workflow-metric-value">{{ item.value }}</strong>
+          </div>
         </div>
       </div>
       
@@ -2944,6 +3136,114 @@ async function createNewSession(value: string): Promise<void> {
   display: none;
 }
 
+.kb-workflow-banner {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 18px 0 16px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  background: linear-gradient(180deg, var(--td-bg-color-container) 0%, var(--td-bg-color-secondarycontainer) 100%);
+}
+
+.kb-workflow-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.kb-workflow-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.workflow-status-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+
+  &.status-warning {
+    color: #b65c00;
+    background: rgba(255, 152, 0, 0.12);
+  }
+
+  &.status-processing {
+    color: var(--td-brand-color);
+    background: rgba(0, 82, 217, 0.1);
+  }
+
+  &.status-pending {
+    color: var(--td-text-color-secondary);
+    background: var(--td-bg-color-page);
+  }
+
+  &.status-ready {
+    color: var(--td-brand-color-active);
+    background: rgba(7, 192, 95, 0.12);
+  }
+}
+
+.workflow-status-copy {
+  h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--td-text-color-primary);
+  }
+
+  p {
+    margin: 6px 0 0;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--td-text-color-secondary);
+    max-width: 560px;
+  }
+}
+
+.kb-workflow-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.kb-workflow-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 240px;
+}
+
+.workflow-metric {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(7, 192, 95, 0.05);
+}
+
+.workflow-metric-label {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+
+.workflow-metric-value {
+  font-size: 22px;
+  color: var(--td-text-color-primary);
+}
+
 .kb-settings-button {
   width: 30px;
   height: 30px;
@@ -3031,6 +3331,16 @@ async function createNewSession(value: string): Promise<void> {
 }
 
 @media (max-width: 1250px) and (min-width: 1045px) {
+  .kb-workflow-banner,
+  .kb-workflow-main {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .kb-workflow-actions {
+    justify-content: flex-start;
+  }
+
   .answers-input {
     transform: translateX(-329px);
   }
@@ -3041,6 +3351,21 @@ async function createNewSession(value: string): Promise<void> {
 }
 
 @media (max-width: 1045px) {
+  .kb-workflow-banner,
+  .kb-workflow-main {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .kb-workflow-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    min-width: 0;
+  }
+
+  .kb-workflow-actions {
+    justify-content: flex-start;
+  }
+
   .answers-input {
     transform: translateX(-250px);
   }
@@ -3051,6 +3376,20 @@ async function createNewSession(value: string): Promise<void> {
 }
 
 @media (max-width: 750px) {
+  .kb-workflow-status,
+  .kb-workflow-actions,
+  .kb-workflow-metrics {
+    width: 100%;
+  }
+
+  .kb-workflow-status {
+    flex-direction: column;
+  }
+
+  .kb-workflow-metrics {
+    grid-template-columns: 1fr;
+  }
+
   .answers-input {
     transform: translateX(-182px);
   }

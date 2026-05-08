@@ -2,9 +2,8 @@
 <script setup lang="ts">
 import { ref, shallowRef, watch, onUnmounted, nextTick, defineAsyncComponent } from 'vue';
 import { previewKnowledgeFile } from '@/api/knowledge-base/index';
-import { MessagePlugin } from 'tdesign-vue-next';
-import hljs from 'highlight.js';
-import 'highlight.js/styles/github.css';
+import { loadHighlightJs } from '@/utils/highlightRuntime';
+import { sanitizeHTML, safeMarkdownToHTML } from '@/utils/security';
 import { useI18n } from 'vue-i18n';
 
 
@@ -32,6 +31,7 @@ const docxContainer = ref<HTMLElement | null>(null);
 const imageNaturalWidth = ref(0);
 const imageNaturalHeight = ref(0);
 let loadedForId = '';
+let previewLoadSeq = 0;
 
 const isFullscreen = ref(false);
 
@@ -148,9 +148,11 @@ function decodeCSVBlob(arrayBuffer: ArrayBuffer): string {
   return new TextDecoder('gbk').decode(bytes);
 }
 
-async function renderExcel(blob: Blob, fileType?: string) {
+async function renderExcel(blob: Blob, fileType: string | undefined, seq: number) {
   const XLSX = await import('xlsx');
+  if (seq !== previewLoadSeq) return;
   const arrayBuffer = await blob.arrayBuffer();
+  if (seq !== previewLoadSeq) return;
 
   let workbook;
   if (fileType?.toLowerCase() === 'csv') {
@@ -171,27 +173,42 @@ async function renderExcel(blob: Blob, fileType?: string) {
     html += sheetHtml;
     html += `</div>`;
   });
-  excelHtml.value = html;
+  if (seq === previewLoadSeq) {
+    excelHtml.value = sanitizeHTML(html);
+  }
 }
 
-async function renderText(blob: Blob, fileType: string) {
+async function renderText(blob: Blob, fileType: string, seq: number) {
   const text = await blob.text();
-  textContent.value = text;
+  if (seq !== previewLoadSeq) return;
+  const hljs = await loadHighlightJs();
+  if (seq !== previewLoadSeq) return;
 
   const lang = getHighlightLang(fileType);
+  let nextHighlightedCode = '';
   if (lang && hljs.getLanguage(lang)) {
     try {
-      highlightedCode.value = hljs.highlight(text, { language: lang }).value;
+      nextHighlightedCode = hljs.highlight(text, { language: lang }).value;
+      if (seq === previewLoadSeq) {
+        textContent.value = text;
+        highlightedCode.value = nextHighlightedCode;
+      }
       return;
     } catch { /* fallthrough */ }
   }
   const auto = hljs.highlightAuto(text);
-  highlightedCode.value = auto.value;
+  if (seq === previewLoadSeq) {
+    textContent.value = text;
+    highlightedCode.value = auto.value;
+  }
 }
 
-async function renderMarkdown(blob: Blob) {
+async function renderMarkdown(blob: Blob, seq: number) {
   const { marked } = await import('marked');
-  const text = await blob.text();
+  const hljs = await loadHighlightJs();
+  if (seq !== previewLoadSeq) return;
+  const text = safeMarkdownToHTML(await blob.text());
+  if (seq !== previewLoadSeq) return;
   marked.use({
     breaks: true,
     gfm: true,
@@ -208,7 +225,10 @@ async function renderMarkdown(blob: Blob) {
     return `<pre><code class="hljs">${highlighted}</code></pre>`;
   };
   marked.use({ renderer });
-  markdownHtml.value = marked.parse(text, { async: false }) as string;
+  const nextMarkdownHtml = sanitizeHTML(marked.parse(text, { async: false }) as string);
+  if (seq === previewLoadSeq) {
+    markdownHtml.value = nextMarkdownHtml;
+  }
 }
 
 function onImageLoad(e: Event) {
@@ -221,9 +241,11 @@ async function loadPreview() {
   const id = props.knowledgeId;
   const ft = props.fileType;
   if (!id || !ft) return;
-  if (loadedForId === id) return;
+  const loadKey = `${id}:${ft}`;
+  if (loadedForId === loadKey) return;
+  const seq = ++previewLoadSeq;
 
-  cleanup();
+  cleanup(false);
   loading.value = true;
   error.value = '';
   previewType.value = resolvePreviewType(ft);
@@ -235,11 +257,13 @@ async function loadPreview() {
 
   try {
     const rawBlob = await previewKnowledgeFile(id);
+    if (seq !== previewLoadSeq) return;
     const blob = ensureBlobType(rawBlob, ft);
-    loadedForId = id;
+    loadedForId = loadKey;
 
     loading.value = false;
     await nextTick();
+    if (seq !== previewLoadSeq) return;
 
     switch (previewType.value) {
       case 'pdf': {
@@ -252,18 +276,19 @@ async function loadPreview() {
       }
       case 'docx': {
         await renderDocx(blob);
+        if (seq !== previewLoadSeq) return;
         break;
       }
       case 'excel': {
-        await renderExcel(blob, ft);
+        await renderExcel(blob, ft, seq);
         break;
       }
       case 'text': {
-        await renderText(blob, ft);
+        await renderText(blob, ft, seq);
         break;
       }
       case 'markdown': {
-        await renderMarkdown(blob);
+        await renderMarkdown(blob, seq);
         break;
       }
       case 'pptx': {
@@ -279,7 +304,8 @@ async function loadPreview() {
   }
 }
 
-function cleanup() {
+function cleanup(invalidate = true) {
+  if (invalidate) previewLoadSeq++;
   if (blobUrl.value) {
     URL.revokeObjectURL(blobUrl.value);
     blobUrl.value = '';

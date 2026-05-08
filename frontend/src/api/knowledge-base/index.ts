@@ -22,6 +22,18 @@ export function createKnowledgeBase(data: {
   storage_provider_config?: { provider: string };
   storage_config?: any; // legacy, kept for backward compat (dual-write)
   extract_config?: any;
+  indexing_strategy?: {
+    vector_enabled: boolean;
+    keyword_enabled: boolean;
+    wiki_enabled?: boolean;
+    graph_enabled?: boolean;
+    knowledge_graph_enabled?: boolean;
+  };
+  wiki_config?: {
+    synthesis_model_id?: string;
+    max_pages_per_ingest?: number;
+    extraction_granularity?: 'focused' | 'standard' | 'exhaustive';
+  };
   faq_config?: { index_mode: string; question_index_mode?: string };
 }) {
   return post(`/api/v1/knowledge-bases`, data);

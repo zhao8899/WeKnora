@@ -41,6 +41,7 @@
     </div>
 
     <KnowledgeBaseEditorModal
+      v-if="createVisible"
       v-model:visible="createVisible"
       mode="create"
       initial-type="faq"
@@ -50,11 +51,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { listKnowledgeBases } from '@/api/knowledge-base'
 import { useAuthStore } from '@/stores/auth'
-import KnowledgeBaseEditorModal from './KnowledgeBaseEditorModal.vue'
+const KnowledgeBaseEditorModal = defineAsyncComponent(() => import('./KnowledgeBaseEditorModal.vue'))
 
 interface KnowledgeBaseItem {
   id: string
@@ -76,7 +77,7 @@ const canCreateKnowledgeBase = computed(() => authStore.hasValidTenant)
 const emptyStateText = computed(() =>
   canCreateKnowledgeBase.value
     ? '可以先创建一个 FAQ，把高频问题沉淀成标准答案。'
-    : '当前还没有可维护的 FAQ 内容，请联系管理员或空间负责人分配维护权限。'
+    : '当前还没有可维护的 FAQ 内容，请联系空间负责人分配维护权限。'
 )
 
 const faqKnowledgeBases = computed(() =>

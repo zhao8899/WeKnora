@@ -180,7 +180,7 @@
                                 @mouseenter="selectedPlaceholderIndex = index"
                               >
                                 <div class="placeholder-name">
-                                  <code v-html="`{{${placeholder.name}}}`"></code>
+                                  <code>{{ formatPlaceholderName(placeholder.name) }}</code>
                                 </div>
                                 <div class="placeholder-desc">{{ placeholder.description }}</div>
                               </div>
@@ -247,7 +247,7 @@
                                 @mouseenter="selectedContextPlaceholderIndex = index"
                               >
                                 <div class="placeholder-name">
-                                  <code v-html="`{{${placeholder.name}}}`"></code>
+                                  <code>{{ formatPlaceholderName(placeholder.name) }}</code>
                                 </div>
                                 <div class="placeholder-desc">{{ placeholder.description }}</div>
                               </div>
@@ -581,7 +581,7 @@
                                 @mouseenter="rewriteSystemPopup.selectedIndex = index"
                               >
                                 <div class="placeholder-name">
-                                  <code v-html="`{{${placeholder.name}}}`"></code>
+                                  <code>{{ formatPlaceholderName(placeholder.name) }}</code>
                                 </div>
                                 <div class="placeholder-desc">{{ placeholder.description }}</div>
                               </div>
@@ -645,7 +645,7 @@
                                 @mouseenter="rewriteUserPopup.selectedIndex = index"
                               >
                                 <div class="placeholder-name">
-                                  <code v-html="`{{${placeholder.name}}}`"></code>
+                                  <code>{{ formatPlaceholderName(placeholder.name) }}</code>
                                 </div>
                                 <div class="placeholder-desc">{{ placeholder.description }}</div>
                               </div>
@@ -1247,7 +1247,7 @@
                                   @mouseenter="fallbackPromptPopup.selectedIndex = index"
                                 >
                                   <div class="placeholder-name">
-                                    <code v-html="`{{${placeholder.name}}}`"></code>
+                                    <code>{{ formatPlaceholderName(placeholder.name) }}</code>
                                   </div>
                                   <div class="placeholder-desc">{{ placeholder.description }}</div>
                                 </div>
@@ -1266,7 +1266,7 @@
                 </div>
 
                 <!-- IM集成（仅编辑模式） -->
-                <div v-if="props.mode === 'edit' && props.agent?.id" v-show="currentSection === 'im'" class="section">
+                <div v-if="props.mode === 'edit' && props.agent?.id && currentSection === 'im'" class="section">
                   <div class="section-header">
                     <h2>{{ $t('agentEditor.im.title') }}</h2>
                     <p class="section-description">
@@ -1296,9 +1296,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue';
+import { defineAsyncComponent, ref, computed, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { MessagePlugin } from 'tdesign-vue-next';
+import { MessagePlugin } from 'tdesign-vue-next/es/message';
 import { createAgent, updateAgent, getPlaceholders, type CustomAgent, type PlaceholderDefinition } from '@/api/agent';
 import { listModels, type ModelConfig } from '@/api/model';
 import { listKnowledgeBases } from '@/api/knowledge-base';
@@ -1312,8 +1312,8 @@ import AgentAvatar from '@/components/AgentAvatar.vue';
 import PromptTemplateSelector from '@/components/PromptTemplateSelector.vue';
 import ModelSelector from '@/components/ModelSelector.vue';
 import AgentShareSettings from '@/components/AgentShareSettings.vue';
-import IMChannelPanel from '@/components/IMChannelPanel.vue';
 import { getFixedTemperatureForModel } from '@/utils/modelCapabilities';
+const IMChannelPanel = defineAsyncComponent(() => import('@/components/IMChannelPanel.vue'));
 
 const uiStore = useUIStore();
 const orgStore = useOrganizationStore();
@@ -1467,6 +1467,7 @@ const placeholderData = ref<{
 const availablePlaceholders = computed(() => {
   return isAgentMode.value ? placeholderData.value.agent_system_prompt : placeholderData.value.system_prompt;
 });
+const formatPlaceholderName = (name: string) => `{{${name}}}`;
 
 // 上下文模板占位符
 const contextTemplatePlaceholders = computed(() => placeholderData.value.context_template);

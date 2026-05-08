@@ -7,25 +7,27 @@
             <UploadMask></UploadMask>
         </div>
         <!-- 全局设置模态框，供所有 platform 子路由使用 -->
-        <Settings v-if="route.path !== '/platform/settings'" />
+        <Settings v-if="route.path !== '/platform/settings' && uiStore.showSettingsModal" />
     </div>
 </template>
 <script setup lang="ts">
 import Menu from '@/components/menu.vue'
-import { ref, onMounted, onUnmounted } from 'vue';
+import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router'
 import useKnowledgeBase from '@/hooks/useKnowledgeBase'
 import UploadMask from '@/components/upload-mask.vue'
-import Settings from '@/views/settings/Settings.vue'
+import { useUIStore } from '@/stores/ui'
 import { getKnowledgeBaseById } from '@/api/knowledge-base/index'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 
 let { requestMethod } = useKnowledgeBase()
 const route = useRoute();
+const uiStore = useUIStore();
 let ismask = ref(false)
 let uploadInput = ref();
 const { t } = useI18n();
+const Settings = defineAsyncComponent(() => import('@/views/settings/Settings.vue'))
 
 // 用于跟踪拖拽进入/离开的计数器，解决子元素触发 dragleave 的问题
 let dragCounter = 0;
@@ -34,6 +36,10 @@ let dragCounter = 0;
 const getCurrentKbId = (): string | null => {
     return (route.params as any)?.kbId as string || null
 }
+
+const canDropUpload = computed(() => route.name === 'knowledgeBaseDetail' && !!getCurrentKbId());
+
+const isFileDrag = (event: DragEvent) => Array.from(event.dataTransfer?.types || []).includes('Files');
 
 // 检查知识库初始化状态
 const checkKnowledgeBaseInitialization = async (): Promise<boolean> => {
@@ -62,6 +68,10 @@ const checkKnowledgeBaseInitialization = async (): Promise<boolean> => {
 
 // 全局拖拽事件处理
 const handleGlobalDragEnter = (event: DragEvent) => {
+    if (!canDropUpload.value) {
+        if (isFileDrag(event)) event.preventDefault();
+        return;
+    }
     event.preventDefault();
     dragCounter++;
     if (event.dataTransfer) {
@@ -71,6 +81,10 @@ const handleGlobalDragEnter = (event: DragEvent) => {
 }
 
 const handleGlobalDragOver = (event: DragEvent) => {
+    if (!canDropUpload.value) {
+        if (isFileDrag(event)) event.preventDefault();
+        return;
+    }
     event.preventDefault();
     if (event.dataTransfer) {
         event.dataTransfer.dropEffect = 'copy';
@@ -78,6 +92,7 @@ const handleGlobalDragOver = (event: DragEvent) => {
 }
 
 const handleGlobalDragLeave = (event: DragEvent) => {
+    if (!canDropUpload.value) return;
     event.preventDefault();
     dragCounter--;
     if (dragCounter === 0) {
@@ -86,6 +101,10 @@ const handleGlobalDragLeave = (event: DragEvent) => {
 }
 
 const handleGlobalDrop = async (event: DragEvent) => {
+    if (!canDropUpload.value) {
+        if (isFileDrag(event)) event.preventDefault();
+        return;
+    }
     event.preventDefault();
     dragCounter = 0;
     ismask.value = false;
@@ -111,6 +130,13 @@ const handleGlobalDrop = async (event: DragEvent) => {
         MessagePlugin.warning(t('knowledgeBase.dragFileNotText'));
     }
 }
+
+watch(canDropUpload, (enabled) => {
+    if (!enabled) {
+        dragCounter = 0;
+        ismask.value = false;
+    }
+});
 
 // 组件挂载时添加全局事件监听器
 onMounted(() => {

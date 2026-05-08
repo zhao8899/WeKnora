@@ -49,6 +49,13 @@ type HotQuestion struct {
 	LastAccessAt   time.Time `json:"last_access_at"`
 }
 
+type AnalyticsFilter struct {
+	KnowledgeBaseID *string `json:"knowledge_base_id,omitempty"`
+	SessionID       string  `json:"session_id,omitempty"`
+	MessageID       string  `json:"message_id,omitempty"`
+	Limit           *int    `json:"limit,omitempty"`
+}
+
 type CoverageGap struct {
 	MessageID             string    `json:"message_id"`
 	SessionID             string    `json:"session_id"`
@@ -87,6 +94,16 @@ type CitationHeat struct {
 	SourceHealthScore float64 `json:"source_health_score"`
 	SourceHealthLabel string  `json:"source_health_label"`
 	HealthStatus      string  `json:"health_status"`
+}
+
+type UnansweredQuestion struct {
+	MessageID       string     `json:"message_id"`
+	SessionID       string     `json:"session_id"`
+	Question        string     `json:"question"`
+	AnswerCreatedAt *time.Time `json:"answer_created_at,omitempty"`
+	SourceCount     int64      `json:"source_count"`
+	QuestionFreq    int64      `json:"question_freq"`
+	LastQuestionAt  time.Time  `json:"last_question_at"`
 }
 
 func SourceHealthLabel(score float64) string {

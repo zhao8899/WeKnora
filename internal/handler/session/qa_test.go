@@ -448,6 +448,47 @@ func TestBuildExecutionMeta_UsesRequestContextFields(t *testing.T) {
 	}
 }
 
+func TestHasKnowledgeTargets(t *testing.T) {
+	tests := []struct {
+		name   string
+		reqCtx *qaRequestContext
+		want   bool
+	}{
+		{
+			name:   "nil context",
+			reqCtx: nil,
+			want:   false,
+		},
+		{
+			name:   "empty scope",
+			reqCtx: &qaRequestContext{},
+			want:   false,
+		},
+		{
+			name: "knowledge base scope",
+			reqCtx: &qaRequestContext{
+				knowledgeBaseIDs: []string{"kb-1"},
+			},
+			want: true,
+		},
+		{
+			name: "document scope",
+			reqCtx: &qaRequestContext{
+				knowledgeIDs: []string{"doc-1"},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasKnowledgeTargets(tt.reqCtx); got != tt.want {
+				t.Fatalf("hasKnowledgeTargets() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUpdateExecutionMetaJSON_PatchesAndRecoversFromInvalidJSON(t *testing.T) {
 	current := mustMarshalJSON(map[string]interface{}{
 		"requested_mode": "knowledge",

@@ -79,11 +79,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/stores/settings'
 import { getSystemInfo } from '@/api/system'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
+import { setI18nLocale } from '@/i18n'
 
 const { t, locale } = useI18n()
 const settingsStore = useSettingsStore()
@@ -109,13 +110,7 @@ const isMemoryEnabled = computed({
 // 初始化加载
 onMounted(async () => {
   // 从 localStorage 加载语言设置
-  const savedLocale = localStorage.getItem('locale')
-  if (savedLocale) {
-    localLanguage.value = savedLocale
-    locale.value = savedLocale
-  } else {
-    localLanguage.value = locale.value
-  }
+  localLanguage.value = locale.value
 
   // 加载系统信息以检查 Neo4j 可用性
   try {
@@ -130,9 +125,8 @@ onMounted(async () => {
 })
 
 // 处理语言变化
-const handleLanguageChange = () => {
-  locale.value = localLanguage.value
-  localStorage.setItem('locale', localLanguage.value)
+const handleLanguageChange = async () => {
+  await setI18nLocale(localLanguage.value)
   MessagePlugin.success(t('language.languageSaved'))
     }
 

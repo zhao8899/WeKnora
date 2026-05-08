@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import type { UserInfo, TenantInfo, KnowledgeBaseInfo } from '@/api/auth'
 import type { TenantInfo as TenantInfoFromAPI } from '@/api/tenant'
 import i18n from '@/i18n'
+import { useAgentStore } from '@/stores/agent'
+import { useOrganizationStore } from '@/stores/organization'
 
 export const useAuthStore = defineStore('auth', () => {
   // 状态
@@ -80,7 +82,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  const clearTenantScopedCaches = () => {
+    useAgentStore().clearState()
+    useOrganizationStore().clearState()
+  }
+
   const setSelectedTenant = (tenantId: number | null, tenantName: string | null = null) => {
+    const changed = selectedTenantId.value !== tenantId
     selectedTenantId.value = tenantId
     selectedTenantName.value = tenantName
     if (tenantId !== null) {
@@ -92,6 +100,7 @@ export const useAuthStore = defineStore('auth', () => {
       localStorage.removeItem('weknora_selected_tenant_id')
       localStorage.removeItem('weknora_selected_tenant_name')
     }
+    if (changed) clearTenantScopedCaches()
   }
 
   const setAllTenants = (tenants: TenantInfoFromAPI[]) => {
@@ -124,6 +133,7 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('weknora_current_kb')
     localStorage.removeItem('weknora_selected_tenant_id')
     localStorage.removeItem('weknora_selected_tenant_name')
+    clearTenantScopedCaches()
 
   }
 

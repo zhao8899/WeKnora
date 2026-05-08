@@ -132,7 +132,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 import { useOrganizationStore } from '@/stores/organization'
 import { shareAgent, listAgentShares, removeAgentShare } from '@/api/organization'
@@ -210,7 +210,9 @@ async function handleShare() {
     if (result.success) {
       MessagePlugin.success(t('organization.share.shareSuccess'))
       selectedOrgId.value = ''
-      await loadShares()
+      orgStore.invalidateSharedResourcesCache()
+      orgStore.invalidateOrganizationsCache()
+      await Promise.all([loadShares(), orgStore.fetchOrganizations({ force: true })])
     } else {
       MessagePlugin.error(result.message || t('organization.share.shareFailed'))
     }
@@ -226,7 +228,9 @@ async function handleUnshare(share: AgentShareResponse) {
     const result = await removeAgentShare(props.agentId, share.id)
     if (result.success) {
       MessagePlugin.success(t('organization.share.unshareSuccess'))
-      await loadShares()
+      orgStore.invalidateSharedResourcesCache()
+      orgStore.invalidateOrganizationsCache()
+      await Promise.all([loadShares(), orgStore.fetchOrganizations({ force: true })])
     } else {
       MessagePlugin.error(result.message || t('organization.share.unshareFailed'))
     }

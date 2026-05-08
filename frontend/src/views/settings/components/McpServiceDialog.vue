@@ -100,8 +100,8 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
-import type { FormInstanceFunctions, FormRule } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
+import type { FormInstanceFunctions, FormRule } from 'tdesign-vue-next/es/form/type'
 import { useI18n } from 'vue-i18n'
 import {
   createMCPService,

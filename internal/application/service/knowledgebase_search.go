@@ -176,7 +176,8 @@ func (s *knowledgeBaseService) buildRetrievalParams(
 	var retrieveParams []types.RetrieveParams
 
 	// Add vector retrieval params if supported
-	if retrieveEngine.SupportRetriever(types.VectorRetrieverType) && !params.DisableVectorMatch {
+	if kb.IsVectorEnabled() && kb.EmbeddingModelID != "" &&
+		retrieveEngine.SupportRetriever(types.VectorRetrieverType) && !params.DisableVectorMatch {
 		logger.Info(ctx, "Vector retrieval supported, preparing vector retrieval parameters")
 
 		var queryEmbedding []float32
@@ -234,7 +235,8 @@ func (s *knowledgeBaseService) buildRetrievalParams(
 	}
 
 	// Add keyword retrieval params if supported and not FAQ
-	if retrieveEngine.SupportRetriever(types.KeywordsRetrieverType) && !params.DisableKeywordsMatch &&
+	if kb.IsKeywordEnabled() &&
+		retrieveEngine.SupportRetriever(types.KeywordsRetrieverType) && !params.DisableKeywordsMatch &&
 		kb.Type != types.KnowledgeBaseTypeFAQ {
 		logger.Info(ctx, "Keyword retrieval supported, preparing keyword retrieval parameters")
 		retrieveParams = append(retrieveParams, types.RetrieveParams{

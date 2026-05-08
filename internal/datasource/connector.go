@@ -3,6 +3,10 @@ package datasource
 import (
 	"context"
 
+	"github.com/Tencent/WeKnora/internal/datasource/connector/feishu"
+	"github.com/Tencent/WeKnora/internal/datasource/connector/rss"
+	"github.com/Tencent/WeKnora/internal/datasource/connector/web"
+	yuqueconnector "github.com/Tencent/WeKnora/internal/datasource/connector/yuque"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -37,9 +41,14 @@ type ConnectorRegistry struct {
 
 // NewConnectorRegistry creates a new connector registry
 func NewConnectorRegistry() *ConnectorRegistry {
-	return &ConnectorRegistry{
+	r := &ConnectorRegistry{
 		connectors: make(map[string]Connector),
 	}
+	_ = r.Register(feishu.NewConnector())
+	_ = r.Register(yuqueconnector.NewConnector())
+	_ = r.Register(rss.NewConnector())
+	_ = r.Register(web.NewConnector())
+	return r
 }
 
 // Register registers a connector with the registry
@@ -81,6 +90,7 @@ type ConnectorMetadata struct {
 	Priority     int      `json:"priority"`     // Priority order for UI display (lower = higher priority)
 	AuthType     string   `json:"auth_type"`    // "oauth2", "api_key", "token", etc.
 	Capabilities []string `json:"capabilities"` // "incremental", "webhook", "deletion_sync", etc.
+	Available    bool     `json:"available"`
 }
 
 // GetConnectorMetadata returns metadata for all available connectors
@@ -93,6 +103,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Priority:     0,
 		AuthType:     "oauth2",
 		Capabilities: []string{"incremental", "webhook", "deletion_sync"},
+		Available:    true,
 	},
 	types.ConnectorTypeNotion: {
 		Type:         types.ConnectorTypeNotion,
@@ -100,7 +111,8 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Description:  "Sync pages and databases from Notion",
 		Priority:     1,
 		AuthType:     "api_key",
-		Capabilities: []string{"incremental"},
+		Capabilities: []string{"incremental", "hierarchy", "full_text"},
+		Available:    false,
 	},
 	types.ConnectorTypeConfluence: {
 		Type:         types.ConnectorTypeConfluence,
@@ -109,6 +121,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Priority:     2,
 		AuthType:     "api_key",
 		Capabilities: []string{"incremental"},
+		Available:    false,
 	},
 	types.ConnectorTypeYuque: {
 		Type:         types.ConnectorTypeYuque,
@@ -116,7 +129,8 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Description:  "Sync knowledge bases and documents from Yuque",
 		Priority:     3,
 		AuthType:     "api_key",
-		Capabilities: []string{"incremental"},
+		Capabilities: []string{"incremental", "hierarchy", "markdown"},
+		Available:    true,
 	},
 	types.ConnectorTypeGitHub: {
 		Type:         types.ConnectorTypeGitHub,
@@ -125,6 +139,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Priority:     4,
 		AuthType:     "oauth2",
 		Capabilities: []string{"incremental"},
+		Available:    false,
 	},
 	types.ConnectorTypeGoogleDrive: {
 		Type:         types.ConnectorTypeGoogleDrive,
@@ -133,6 +148,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Priority:     5,
 		AuthType:     "oauth2",
 		Capabilities: []string{"incremental"},
+		Available:    false,
 	},
 	types.ConnectorTypeOneDrive: {
 		Type:         types.ConnectorTypeOneDrive,
@@ -141,6 +157,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Priority:     6,
 		AuthType:     "oauth2",
 		Capabilities: []string{"incremental"},
+		Available:    false,
 	},
 	types.ConnectorTypeDingTalk: {
 		Type:         types.ConnectorTypeDingTalk,
@@ -149,6 +166,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Priority:     7,
 		AuthType:     "api_key",
 		Capabilities: []string{"incremental"},
+		Available:    false,
 	},
 	types.ConnectorTypeWebCrawler: {
 		Type:         types.ConnectorTypeWebCrawler,
@@ -157,6 +175,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Priority:     9,
 		AuthType:     "none",
 		Capabilities: []string{},
+		Available:    true,
 	},
 	types.ConnectorTypeSlack: {
 		Type:         types.ConnectorTypeSlack,
@@ -165,6 +184,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Priority:     10,
 		AuthType:     "oauth2",
 		Capabilities: []string{"incremental"},
+		Available:    false,
 	},
 	types.ConnectorTypeIMAP: {
 		Type:         types.ConnectorTypeIMAP,
@@ -173,6 +193,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Priority:     11,
 		AuthType:     "password",
 		Capabilities: []string{},
+		Available:    false,
 	},
 	types.ConnectorTypeRSS: {
 		Type:         types.ConnectorTypeRSS,
@@ -181,6 +202,7 @@ var ConnectorMetadataRegistry = map[string]ConnectorMetadata{
 		Priority:     12,
 		AuthType:     "none",
 		Capabilities: []string{},
+		Available:    true,
 	},
 }
 

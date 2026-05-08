@@ -130,6 +130,11 @@
 
           <!-- 卡片内容 -->
           <div class="card-content">
+            <div class="kb-status-row">
+              <span class="kb-status-pill" :class="`status-${getKbWorkflowStatus(kb).tone}`">
+                {{ getKbWorkflowStatus(kb).label }}
+              </span>
+            </div>
             <div class="card-description">
               {{ kb.description || $t('knowledgeBase.noDescription') }}
             </div>
@@ -303,6 +308,11 @@
 
         <!-- 卡片内容 -->
         <div class="card-content">
+          <div class="kb-status-row">
+            <span class="kb-status-pill" :class="`status-${getKbWorkflowStatus(kb).tone}`">
+              {{ getKbWorkflowStatus(kb).label }}
+            </span>
+          </div>
           <div class="card-description">
             {{ kb.description || $t('knowledgeBase.noDescription') }}
           </div>
@@ -532,7 +542,8 @@
     </t-dialog>
 
     <!-- 知识库编辑器（创建/编辑统一组件） -->
-    <KnowledgeBaseEditorModal 
+    <KnowledgeBaseEditorModal
+      v-if="uiStore.showKBEditorModal"
       :visible="uiStore.showKBEditorModal"
       :mode="uiStore.kbEditorMode"
       :kb-id="uiStore.currentKBId || undefined"
@@ -543,6 +554,7 @@
 
     <!-- 共享知识库对话框 -->
     <ShareKnowledgeBaseDialog
+      v-if="shareDialogVisible"
       v-model:visible="shareDialogVisible"
       :knowledge-base-id="sharingKbId"
       :knowledge-base-name="sharingKbName"
@@ -611,17 +623,16 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch, nextTick, defineAsyncComponent } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { MessagePlugin, Icon as TIcon } from 'tdesign-vue-next'
+import { Icon as TIcon } from 'tdesign-vue-next/es/icon'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { listKnowledgeBases, deleteKnowledgeBase, togglePinKnowledgeBase } from '@/api/knowledge-base'
 import { formatStringDate } from '@/utils/index'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import { useOrganizationStore } from '@/stores/organization'
 import { listOrganizationSharedKnowledgeBases, type SharedKnowledgeBase, type OrganizationSharedKnowledgeBaseItem, type SourceFromAgentInfo } from '@/api/organization'
-import KnowledgeBaseEditorModal from './KnowledgeBaseEditorModal.vue'
-import ShareKnowledgeBaseDialog from '@/components/ShareKnowledgeBaseDialog.vue'
 import ListSpaceSidebar from '@/components/ListSpaceSidebar.vue'
 import { useI18n } from 'vue-i18n'
 
@@ -631,6 +642,8 @@ const uiStore = useUIStore()
 const authStore = useAuthStore()
 const orgStore = useOrganizationStore()
 const { t } = useI18n()
+const KnowledgeBaseEditorModal = defineAsyncComponent(() => import('./KnowledgeBaseEditorModal.vue'))
+const ShareKnowledgeBaseDialog = defineAsyncComponent(() => import('@/components/ShareKnowledgeBaseDialog.vue'))
 const isFaqView = computed(() => route.name === 'faqList')
 const canCreateKnowledgeBase = computed(() => authStore.hasValidTenant)
 
@@ -643,7 +656,11 @@ const createActionLabel = computed(() =>
 )
 
 // 左侧空间选择：我的 / 空间 ID（已去掉「全部」）
-const spaceSelection = ref<'all' | 'mine' | 'shared' | string>('mine')
+const getRouteSpaceSelection = () => {
+  const space = route.query.space
+  return typeof space === 'string' && space.trim() ? space : 'mine'
+}
+const spaceSelection = ref<'all' | 'mine' | 'shared' | string>(getRouteSpaceSelection())
 
 interface KB { 
   id: string; 
@@ -703,6 +720,52 @@ const displayedSpaceKbs = computed(() =>
 // All knowledge bases (mine + shared to me)
 const allKnowledgeBases = computed(() => displayedMineKbs.value.length + displayedSharedKbs.value.length)
 
+const isDocumentKb = (kb: KB) => (kb.type || 'document') === 'document'
+
+const replaceQueryWithout = (keys: string[]) => {
+  const nextQuery = { ...route.query }
+  keys.forEach(key => delete nextQuery[key])
+  router.replace({ path: route.path, query: nextQuery })
+}
+
+const goDetail = (id: string, query: Record<string, string> = {}) => {
+  router.push({
+    path: `/platform/knowledge-bases/${id}`,
+    query
+  })
+}
+
+const consumeImportIntent = () => {
+  if (route.query.intent !== 'import') return
+
+  const readyDocumentKbs = displayedMineKbs.value.filter(kb => isDocumentKb(kb) && isInitialized(kb))
+  const draftDocumentKb = displayedMineKbs.value.find(kb => isDocumentKb(kb))
+
+  if (readyDocumentKbs.length === 1) {
+    router.replace({
+      path: `/platform/knowledge-bases/${readyDocumentKbs[0].id}`,
+      query: { action: 'upload' }
+    })
+    return
+  }
+
+  replaceQueryWithout(['intent'])
+
+  if (readyDocumentKbs.length > 1) {
+    MessagePlugin.info('请选择要导入资料的知识库')
+    return
+  }
+
+  if (draftDocumentKb) {
+    MessagePlugin.info('请先完成知识库配置，再导入资料')
+    goSettings(draftDocumentKb.id)
+    return
+  }
+
+  MessagePlugin.info('请先创建知识库，再导入资料')
+  uiStore.openCreateKB('document')
+}
+
 // 当前选中的是空间 ID（非全部、非我的）
 const spaceSelectionOrgId = computed(() => {
   const s = spaceSelection.value
@@ -720,6 +783,12 @@ const sharedKbsByOrg = computed(() => {
 const spaceKbsList = ref<OrganizationSharedKnowledgeBaseItem[]>([])
 const spaceKbsLoading = ref(false)
 const spaceCountByOrg = ref<Record<string, number>>({})
+const SPACE_RESOURCE_CACHE_TTL_MS = 30_000
+const spaceKbsCache = new Map<string, { items: OrganizationSharedKnowledgeBaseItem[]; fetchedAt: number }>()
+let spaceKbsRequestSeq = 0
+
+const isSpaceResourceCacheFresh = (fetchedAt: number) =>
+  fetchedAt > 0 && Date.now() - fetchedAt < SPACE_RESOURCE_CACHE_TTL_MS
 
 // 各空间下的共享知识库数量（用于侧栏展示）：优先用接口返回的该空间总数，否则用「共享给我」数量
 const sharedCountByOrg = computed<Record<string, number>>(() => {
@@ -818,31 +887,63 @@ const fetchList = () => {
 
 // 选中空间时请求该空间内全部知识库（含我共享的）
 watch(spaceSelection, (val) => {
+  const currentSpace = typeof route.query.space === 'string' ? route.query.space : ''
+  if (val !== currentSpace) {
+    const nextQuery = { ...route.query }
+    if (val === 'mine') {
+      delete nextQuery.space
+    } else {
+      nextQuery.space = val
+    }
+    router.replace({ path: route.path, query: nextQuery })
+  }
   if (val === 'all' || val === 'mine' || val === 'shared' || !val) {
     spaceKbsList.value = []
     return
   }
+  const cached = spaceKbsCache.get(val)
+  if (cached && isSpaceResourceCacheFresh(cached.fetchedAt)) {
+    spaceKbsList.value = cached.items
+    spaceCountByOrg.value = { ...spaceCountByOrg.value, [val]: cached.items.length }
+    return
+  }
+  const requestSeq = ++spaceKbsRequestSeq
   spaceKbsLoading.value = true
   listOrganizationSharedKnowledgeBases(val).then((res) => {
+    if (requestSeq !== spaceKbsRequestSeq || spaceSelection.value !== val) return
     if (res.success && res.data) {
       spaceKbsList.value = res.data
+      spaceKbsCache.set(val, { items: res.data, fetchedAt: Date.now() })
       spaceCountByOrg.value = { ...spaceCountByOrg.value, [val]: res.data.length }
     } else {
       spaceKbsList.value = []
     }
   }).finally(() => {
-    spaceKbsLoading.value = false
+    if (requestSeq === spaceKbsRequestSeq) {
+      spaceKbsLoading.value = false
+    }
   })
 }, { immediate: true })
 
+watch(
+  () => route.query.space,
+  () => {
+    const next = getRouteSpaceSelection()
+    if (spaceSelection.value !== next) {
+      spaceSelection.value = next
+    }
+  }
+)
+
 onMounted(() => {
   fetchList().then(() => {
+    consumeImportIntent()
     // 检查路由参数中是否有需要高亮的知识库ID
     const highlightKbId = route.query.highlightKbId as string
     if (highlightKbId) {
       triggerHighlightFlash(highlightKbId)
       // 清除 URL 中的查询参数
-      router.replace({ query: {} })
+      replaceQueryWithout(['highlightKbId'])
     }
   })
 
@@ -870,7 +971,13 @@ onUnmounted(() => {
 watch(() => route.query.highlightKbId, (newKbId) => {
   if (newKbId && typeof newKbId === 'string' && kbs.value.length > 0) {
     triggerHighlightFlash(newKbId)
-    router.replace({ query: {} })
+    replaceQueryWithout(['highlightKbId'])
+  }
+})
+
+watch(() => route.query.intent, (newIntent) => {
+  if (newIntent === 'import' && kbs.value.length > 0) {
+    consumeImportIntent()
   }
 })
 
@@ -946,6 +1053,7 @@ const handleShare = (kb: KB) => {
 
 const handleShareSuccess = () => {
   // 共享成功后可刷新列表
+  spaceKbsCache.clear()
   fetchList()
 }
 
@@ -1026,6 +1134,24 @@ const confirmDelete = () => {
 const isInitialized = (kb: KB) => {
   return !!(kb.embedding_model_id && kb.embedding_model_id !== '' && 
             kb.summary_model_id && kb.summary_model_id !== '')
+}
+
+const getKbWorkflowStatus = (kb: KB) => {
+  const itemCount = kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count || 0)
+
+  if (!isInitialized(kb)) {
+    return { label: '待配置', tone: 'warning' as const }
+  }
+
+  if (kb.isProcessing) {
+    return { label: '解析中', tone: 'processing' as const }
+  }
+
+  if (itemCount === 0) {
+    return { label: '待导入', tone: 'pending' as const }
+  }
+
+  return { label: '可问答', tone: 'ready' as const }
 }
 
 // 计算是否有未初始化的知识库
@@ -1136,10 +1262,6 @@ const handleCardClick = (kb: KB) => {
   }
 }
 
-const goDetail = (id: string) => {
-  router.push(`/platform/knowledge-bases/${id}`)
-}
-
 const goSettings = (id: string) => {
   // 使用模态框打开设置
   uiStore.openKBSettings(id)
@@ -1154,12 +1276,25 @@ const handleCreateKnowledgeBase = () => {
 // 知识库编辑器成功回调（创建或编辑成功）
 const handleKBEditorSuccess = (kbId: string) => {
   console.log('[KnowledgeBaseList] knowledge operation success:', kbId)
+  const wasCreating = uiStore.kbEditorMode === 'create'
+  const createdType = uiStore.kbEditorType
+
+  if (wasCreating) {
+    if (createdType === 'document') {
+      goDetail(kbId, { action: 'upload', created: '1' })
+      return
+    }
+
+    goDetail(kbId, { created: '1' })
+    return
+  }
+
   fetchList().then(() => {
     // 如果是从路由参数中获取的高亮ID，触发闪烁效果
     if (route.query.highlightKbId === kbId) {
       triggerHighlightFlash(kbId)
       // 清除 URL 中的查询参数
-      router.replace({ query: {} })
+      replaceQueryWithout(['highlightKbId'])
     }
   })
 }
@@ -1416,7 +1551,7 @@ const handleUploadFinishedEvent = (event: Event) => {
   }
 }
 
-// 来源组织（空间图标 + 空间名）
+// 来源共享空间（空间图标 + 空间名）
 .org-source {
   display: inline-flex;
   align-items: center;
@@ -1851,6 +1986,43 @@ const handleUploadFinishedEvent = (event: Event) => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.kb-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kb-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  width: fit-content;
+
+  &.status-warning {
+    color: #b65c00;
+    background: rgba(255, 152, 0, 0.12);
+  }
+
+  &.status-processing {
+    color: var(--td-brand-color);
+    background: rgba(0, 82, 217, 0.1);
+  }
+
+  &.status-pending {
+    color: var(--td-text-color-secondary);
+    background: var(--td-bg-color-secondarycontainer);
+  }
+
+  &.status-ready {
+    color: var(--td-brand-color-active);
+    background: rgba(7, 192, 95, 0.12);
+  }
 }
 
 /* 三个列表卡片统一：描述字体 */

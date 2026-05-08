@@ -1,33 +1,36 @@
-# 组织管理 API
+# 共享空间管理 API
+
+> 兼容性说明：当前接口路径和部分响应字段仍沿用 `organizations` / `organization_id` 命名；在产品语义上，这里的 `organization` 均指「共享空间」。
+> 权限说明：`admin` / `editor` / `viewer` 是共享空间内部权限，不代表平台角色；平台角色仅区分「平台超级管理员」和「普通租户」。
 
 [返回目录](./README.md)
 
-## 组织 CRUD
+## 共享空间 CRUD
 
 | 方法   | 路径                      | 描述             |
 | ------ | ------------------------- | ---------------- |
-| POST   | `/organizations`          | 创建组织         |
-| GET    | `/organizations`          | 获取我的组织列表 |
-| GET    | `/organizations/:id`      | 获取组织详情     |
-| PUT    | `/organizations/:id`      | 更新组织         |
-| DELETE | `/organizations/:id`      | 删除组织         |
+| POST   | `/organizations`          | 创建共享空间       |
+| GET    | `/organizations`          | 获取我的共享空间列表 |
+| GET    | `/organizations/:id`      | 获取共享空间详情   |
+| PUT    | `/organizations/:id`      | 更新共享空间       |
+| DELETE | `/organizations/:id`      | 删除共享空间       |
 
 ## 成员管理
 
 | 方法   | 路径                                          | 描述               |
 | ------ | --------------------------------------------- | ------------------ |
-| POST   | `/organizations/join`                         | 通过邀请码加入组织 |
+| POST   | `/organizations/join`                         | 通过邀请码加入共享空间 |
 | POST   | `/organizations/join-request`                 | 提交加入申请       |
-| GET    | `/organizations/search`                       | 搜索组织           |
-| POST   | `/organizations/join-by-id`                   | 通过组织ID加入     |
-| GET    | `/organizations/preview/:invite_code`         | 预览组织信息       |
-| POST   | `/organizations/:id/leave`                    | 离开组织           |
-| POST   | `/organizations/:id/request-upgrade`          | 请求角色升级       |
+| GET    | `/organizations/search`                       | 搜索共享空间       |
+| POST   | `/organizations/join-by-id`                   | 通过共享空间 ID 加入 |
+| GET    | `/organizations/preview/:invite_code`         | 预览共享空间信息   |
+| POST   | `/organizations/:id/leave`                    | 离开共享空间       |
+| POST   | `/organizations/:id/request-upgrade`          | 请求空间权限升级   |
 | POST   | `/organizations/:id/invite-code`              | 生成邀请码         |
 | GET    | `/organizations/:id/search-users`             | 搜索可邀请用户     |
 | POST   | `/organizations/:id/invite`                   | 邀请成员           |
 | GET    | `/organizations/:id/members`                  | 获取成员列表       |
-| PUT    | `/organizations/:id/members/:user_id`         | 更新成员角色       |
+| PUT    | `/organizations/:id/members/:user_id`         | 更新成员空间权限   |
 | DELETE | `/organizations/:id/members/:user_id`         | 移除成员           |
 
 ## 加入请求
@@ -63,12 +66,12 @@
 
 ---
 
-## POST `/organizations` - 创建组织
+## POST `/organizations` - 创建共享空间
 
 **请求参数**:
-- `name`: 组织名称（必填）
-- `description`: 组织描述（可选）
-- `avatar`: 组织头像 URL（可选）
+- `name`: 共享空间名称（必填）
+- `description`: 共享空间描述（可选）
+- `avatar`: 共享空间头像 URL（可选）
 - `invite_code_validity_days`: 邀请码有效天数（可选）
 - `member_limit`: 成员上限（可选）
 
@@ -115,7 +118,7 @@ curl --location 'http://localhost:8080/api/v1/organizations' \
 }
 ```
 
-## GET `/organizations` - 获取我的组织列表
+## GET `/organizations` - 获取我的共享空间列表
 
 **请求**:
 
@@ -157,7 +160,7 @@ curl --location 'http://localhost:8080/api/v1/organizations' \
 }
 ```
 
-## GET `/organizations/:id` - 获取组织详情
+## GET `/organizations/:id` - 获取共享空间详情
 
 **请求**:
 
@@ -197,12 +200,12 @@ curl --location 'http://localhost:8080/api/v1/organizations/org-00000001' \
 }
 ```
 
-## PUT `/organizations/:id` - 更新组织
+## PUT `/organizations/:id` - 更新共享空间
 
 **请求参数**（均为可选）:
-- `name`: 组织名称
-- `description`: 组织描述
-- `avatar`: 组织头像 URL
+- `name`: 共享空间名称
+- `description`: 共享空间描述
+- `avatar`: 共享空间头像 URL
 - `require_approval`: 是否需要审核加入
 - `searchable`: 是否可被搜索
 - `invite_code_validity_days`: 邀请码有效天数
@@ -249,7 +252,7 @@ curl --location --request PUT 'http://localhost:8080/api/v1/organizations/org-00
 }
 ```
 
-## DELETE `/organizations/:id` - 删除组织
+## DELETE `/organizations/:id` - 删除共享空间
 
 **请求**:
 
@@ -269,7 +272,7 @@ curl --location --request DELETE 'http://localhost:8080/api/v1/organizations/org
 
 ---
 
-## POST `/organizations/join` - 通过邀请码加入组织
+## POST `/organizations/join` - 通过邀请码加入共享空间
 
 **请求参数**:
 - `invite_code`: 邀请码（必填）
@@ -295,12 +298,12 @@ curl --location 'http://localhost:8080/api/v1/organizations/join' \
 
 ## POST `/organizations/join-request` - 提交加入申请
 
-当组织开启了审核加入（`require_approval: true`）时使用。
+当共享空间开启了审核加入（`require_approval: true`）时使用。
 
 **请求参数**:
 - `invite_code`: 邀请码（必填）
 - `message`: 申请留言（可选）
-- `role`: 申请角色（可选）
+- `role`: 申请空间权限（可选），可选值：`admin`（空间负责人）、`editor`（协作者）、`viewer`（只读成员）
 
 **请求**:
 
@@ -323,7 +326,7 @@ curl --location 'http://localhost:8080/api/v1/organizations/join-request' \
 }
 ```
 
-## GET `/organizations/search` - 搜索组织
+## GET `/organizations/search` - 搜索共享空间
 
 **查询参数**:
 - `keyword`: 搜索关键字（可选）
@@ -370,12 +373,12 @@ curl --location 'http://localhost:8080/api/v1/organizations/search?keyword=AI&pa
 }
 ```
 
-## POST `/organizations/join-by-id` - 通过组织ID加入
+## POST `/organizations/join-by-id` - 通过共享空间 ID 加入
 
 **请求参数**:
-- `organization_id`: 组织 ID（必填）
+- `organization_id`: 共享空间 ID（必填）
 - `message`: 申请留言（可选）
-- `role`: 申请角色（可选）
+- `role`: 申请空间权限（可选），可选值：`admin`（空间负责人）、`editor`（协作者）、`viewer`（只读成员）
 
 **请求**:
 
@@ -398,7 +401,7 @@ curl --location 'http://localhost:8080/api/v1/organizations/join-by-id' \
 }
 ```
 
-## GET `/organizations/preview/:invite_code` - 预览组织信息
+## GET `/organizations/preview/:invite_code` - 预览共享空间信息
 
 **请求**:
 
@@ -436,7 +439,7 @@ curl --location 'http://localhost:8080/api/v1/organizations/preview/ABC123XY' \
 }
 ```
 
-## POST `/organizations/:id/leave` - 离开组织
+## POST `/organizations/:id/leave` - 离开共享空间
 
 **请求**:
 
@@ -454,10 +457,10 @@ curl --location --request POST 'http://localhost:8080/api/v1/organizations/org-0
 }
 ```
 
-## POST `/organizations/:id/request-upgrade` - 请求角色升级
+## POST `/organizations/:id/request-upgrade` - 请求空间权限升级
 
 **请求参数**:
-- `requested_role`: 期望角色（必填）
+- `requested_role`: 期望空间权限（必填），可选值：`admin`（空间负责人）、`editor`（协作者）、`viewer`（只读成员）
 - `message`: 申请理由（可选）
 
 **请求**:
@@ -468,7 +471,7 @@ curl --location --request POST 'http://localhost:8080/api/v1/organizations/org-0
 --header 'Content-Type: application/json' \
 --data '{
     "requested_role": "admin",
-    "message": "需要管理员权限来管理知识库共享"
+    "message": "需要空间负责人权限来管理知识库共享"
 }'
 ```
 
@@ -538,7 +541,7 @@ curl --location 'http://localhost:8080/api/v1/organizations/org-00000001/search-
 
 **请求参数**:
 - `user_id`: 用户 ID（必填）
-- `role`: 角色（必填）
+- `role`: 空间权限（必填），可选值：`admin`（空间负责人）、`editor`（协作者）、`viewer`（只读成员）
 
 **请求**:
 
@@ -602,10 +605,10 @@ curl --location 'http://localhost:8080/api/v1/organizations/org-00000001/members
 }
 ```
 
-## PUT `/organizations/:id/members/:user_id` - 更新成员角色
+## PUT `/organizations/:id/members/:user_id` - 更新成员空间权限
 
 **请求参数**:
-- `role`: 新角色（必填）
+- `role`: 新的空间权限（必填），可选值：`admin`（空间负责人）、`editor`（协作者）、`viewer`（只读成员）
 
 **请求**:
 
@@ -685,7 +688,7 @@ curl --location 'http://localhost:8080/api/v1/organizations/org-00000001/join-re
 **请求参数**:
 - `approved`: 是否批准（必填，布尔值）
 - `message`: 审核留言（可选）
-- `role`: 分配角色（可选，批准时生效）
+- `role`: 分配空间权限（可选，批准时生效），可选值：`admin`（空间负责人）、`editor`（协作者）、`viewer`（只读成员）
 
 **请求**:
 
@@ -713,7 +716,7 @@ curl --location --request PUT 'http://localhost:8080/api/v1/organizations/org-00
 ## POST `/knowledge-bases/:id/shares` - 共享知识库
 
 **请求参数**:
-- `organization_id`: 目标组织 ID（必填）
+- `organization_id`: 目标共享空间 ID（必填）
 - `permission`: 权限级别（必填）
 
 **请求**:
@@ -833,7 +836,7 @@ curl --location --request DELETE 'http://localhost:8080/api/v1/knowledge-bases/k
 ## POST `/agents/:id/shares` - 共享智能体
 
 **请求参数**:
-- `organization_id`: 目标组织 ID（必填）
+- `organization_id`: 目标共享空间 ID（必填）
 - `permission`: 权限级别（必填）
 
 **请求**:
@@ -924,7 +927,7 @@ curl --location --request DELETE 'http://localhost:8080/api/v1/agents/agent-0000
 
 ## GET `/shared-knowledge-bases` - 获取共享知识库列表
 
-获取当前用户通过组织共享获得的所有知识库。
+获取当前用户通过共享空间获得的所有知识库。
 
 **请求**:
 
@@ -954,7 +957,7 @@ curl --location 'http://localhost:8080/api/v1/shared-knowledge-bases' \
 
 ## GET `/shared-agents` - 获取共享智能体列表
 
-获取当前用户通过组织共享获得的所有智能体。
+获取当前用户通过共享空间获得的所有智能体。
 
 **请求**:
 

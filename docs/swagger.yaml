@@ -74,64 +74,6 @@ definitions:
     - ErrAgentMissingAllowedTools
     - ErrAgentInvalidMaxIterations
     - ErrAgentInvalidTemperature
-  github_com_Tencent_WeKnora_internal_types.AnswerConfidenceEvidenceItem:
-    properties:
-      chunk_id:
-        type: string
-      current_feedback:
-        type: string
-      id:
-        type: string
-      knowledge_base_id:
-        type: string
-      knowledge_id:
-        type: string
-      match_type:
-        type: string
-      position:
-        type: integer
-      rerank_score:
-        type: number
-      retrieval_score:
-        type: number
-      source_channel:
-        type: string
-      source_type:
-        type: string
-      title:
-        type: string
-    type: object
-  github_com_Tencent_WeKnora_internal_types.AnswerConfidenceResponse:
-    properties:
-      confidence_label:
-        type: string
-      confidence_score:
-        type: number
-      evidence_status:
-        type: string
-      evidence_strength_label:
-        type: string
-      evidence_strength_score:
-        type: number
-      evidences:
-        items:
-          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.AnswerConfidenceEvidenceItem'
-        type: array
-      message_id:
-        type: string
-      reference_count:
-        type: integer
-      source_count:
-        type: integer
-      source_health_label:
-        type: string
-      source_health_score:
-        type: number
-      source_type_counts:
-        additionalProperties:
-          type: integer
-        type: object
-    type: object
   github_com_Tencent_WeKnora_internal_types.AgentConfig:
     properties:
       allowed_skills:
@@ -169,6 +111,11 @@ definitions:
         type: integer
       max_iterations:
         description: Maximum number of ReAct iterations
+        type: integer
+      max_parallel_tool_calls:
+        description: |-
+          Maximum number of tool calls to execute concurrently when parallel execution is enabled.
+          Values <= 0 fall back to the engine default.
         type: integer
       max_tool_output_chars:
         description: |-
@@ -215,12 +162,16 @@ definitions:
           during migration.'
         type: string
       temperature:
-        description: LLM temperature for agent
+        description: LLM temperature for agent (0–1, default 0.3)
         type: number
       thinking:
         description: Whether to enable thinking mode (for models that support extended
           thinking)
         type: boolean
+      top_p:
+        description: Nucleus sampling probability mass (0–1, 0 = disabled/use model
+          default)
+        type: number
       use_custom_system_prompt:
         description: Whether to use custom system prompt instead of default
         type: boolean
@@ -230,6 +181,9 @@ definitions:
       web_search_max_results:
         description: 'Maximum number of web search results (default: 5)'
         type: integer
+      web_search_provider_id:
+        description: WebSearchProviderEntity ID (resolved from agent config)
+        type: string
     type: object
   github_com_Tencent_WeKnora_internal_types.AgentStep:
     properties:
@@ -517,6 +471,9 @@ definitions:
           ===== Agent Mode Settings =====
           Maximum iterations for ReAct loop (only for agent type)
         type: integer
+      max_parallel_tool_calls:
+        description: Maximum number of tool calls that may execute concurrently
+        type: integer
       mcp_selection_mode:
         description: 'MCP service selection mode: "all" = all enabled MCP services,
           "selected" = specific services, "none" = no MCP'
@@ -536,6 +493,9 @@ definitions:
         description: |-
           ===== Multi-turn Conversation Settings =====
           Whether multi-turn conversation is enabled
+        type: boolean
+      parallel_tool_calls:
+        description: Whether independent safe tool calls can run in parallel
         type: boolean
       rerank_model_id:
         description: ReRank model ID for retrieval
@@ -607,6 +567,13 @@ definitions:
         description: VLM model ID for image analysis (optional, falls back to tenant-level
           VLM)
         type: string
+      web_fetch_enabled:
+        description: Whether to auto-fetch full page content for reranked web search
+          results
+        type: boolean
+      web_fetch_top_n:
+        description: 'Max number of pages to fetch after rerank (default: 3)'
+        type: integer
       web_search_enabled:
         description: |-
           ===== Web Search Settings =====
@@ -615,6 +582,11 @@ definitions:
       web_search_max_results:
         description: Maximum web search results
         type: integer
+      web_search_provider_id:
+        description: |-
+          WebSearchProviderID references a specific WebSearchProviderEntity.
+          If empty, the tenant's default provider (is_default=true) is used.
+        type: string
     type: object
   github_com_Tencent_WeKnora_internal_types.DataSource:
     properties:
@@ -880,7 +852,8 @@ definitions:
       role:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole'
-        description: 'Role to assign: admin/editor/viewer'
+        description: 'Shared-space permission to assign: admin/editor/viewer; not
+          platform role'
       user_id:
         description: User ID to invite
         type: string
@@ -899,7 +872,7 @@ definitions:
       role:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole'
-        description: 'Optional: requested role (admin/editor/viewer); default viewer'
+        description: Optional requested shared-space permission; not platform role
     required:
     - organization_id
     type: object
@@ -937,6 +910,10 @@ definitions:
       error_message:
         description: Error message of the knowledge
         type: string
+      external_id:
+        description: ExternalID stores the stable upstream identifier used by datasource
+          sync.
+        type: string
       file_hash:
         description: File hash of the knowledge
         type: string
@@ -952,6 +929,10 @@ definitions:
       file_type:
         description: File type of the knowledge
         type: string
+      freshness_flag:
+        description: FreshnessFlag marks sources that recently received negative feedback
+          and may need review.
+        type: boolean
       id:
         description: Unique identifier of the knowledge
         type: string
@@ -981,6 +962,10 @@ definitions:
         description: Source of the knowledge (e.g. URL address for url type, "manual"
           for manual type)
         type: string
+      source_weight:
+        description: SourceWeight adjusts retrieval preference using recent source-level
+          feedback.
+        type: number
       storage_size:
         description: Storage size of the knowledge
         type: integer
@@ -1071,7 +1056,7 @@ definitions:
         description: QuestionGenerationConfig stores question generation configuration
           for document knowledge bases
       share_count:
-        description: ShareCount indicates the number of organizations this knowledge
+        description: ShareCount indicates the number of shared spaces this knowledge
           base is shared with (not stored in database)
         type: integer
       storage_config:
@@ -1133,10 +1118,10 @@ definitions:
       knowledge_count:
         type: integer
       my_permission:
-        description: Effective permission for current user = min(Permission, MyRoleInOrg)
+        description: Effective permission = min(share permission, user space permission)
         type: string
       my_role_in_org:
-        description: Current user's role in this organization (admin/editor/viewer)
+        description: Current user's shared-space permission (admin/editor/viewer)
         type: string
       organization_id:
         type: string
@@ -1412,6 +1397,16 @@ definitions:
         allOf:
         - $ref: '#/definitions/gorm.DeletedAt'
         description: Soft delete timestamp
+      execution_meta:
+        description: |-
+          ExecutionMeta stores runtime execution metadata for assistant messages.
+          Used for auditing, troubleshooting, and future analytics.
+        items:
+          type: integer
+        type: array
+      feedback:
+        description: 'Feedback stores user quality signal: "" (none), "like", or "dislike"'
+        type: string
       id:
         description: Unique identifier for the message
         type: string
@@ -1651,7 +1646,7 @@ definitions:
   github_com_Tencent_WeKnora_internal_types.OrganizationResponse:
     properties:
       agent_share_count:
-        description: 共享到该组织的智能体数量
+        description: 共享到该共享空间的智能体数量
         type: integer
       avatar:
         type: string
@@ -1684,14 +1679,14 @@ definitions:
       owner_id:
         type: string
       pending_join_request_count:
-        description: 待审批加入申请数（仅管理员可见）
+        description: 待审批加入申请数（仅具备 admin 空间权限的成员可见）
         type: integer
       require_approval:
         type: boolean
       searchable:
         type: boolean
       share_count:
-        description: 共享到该组织的知识库数量
+        description: 共享到该共享空间的知识库数量
         type: integer
       updated_at:
         type: string
@@ -1784,7 +1779,7 @@ definitions:
       requested_role:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole'
-        description: The role user wants to upgrade to
+        description: Requested shared-space permission; not platform role
     required:
     - requested_role
     type: object
@@ -1926,8 +1921,8 @@ definitions:
       role:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole'
-        description: 'Optional: role to assign when approving; overrides applicant''s
-          requested role'
+        description: Optional shared-space permission to assign when approving; not
+          platform role
     type: object
   github_com_Tencent_WeKnora_internal_types.S3EngineConfig:
     properties:
@@ -2154,8 +2149,8 @@ definitions:
       role:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole'
-        description: 'Optional: role the applicant requests (admin/editor/viewer);
-          default viewer'
+        description: Optional requested shared-space permission (admin/editor/viewer);
+          not platform role
     required:
     - invite_code
     type: object
@@ -2229,6 +2224,12 @@ definitions:
     type: object
   github_com_Tencent_WeKnora_internal_types.Tenant:
     properties:
+      agent_config:
+        allOf:
+        - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.AgentConfig'
+        description: |-
+          Deprecated: AgentConfig is deprecated, use CustomAgent (builtin-smart-reasoning) config instead.
+          This field is kept for backward compatibility and will be removed in future versions.
       api_key:
         description: API key
         type: string
@@ -2449,7 +2450,7 @@ definitions:
   github_com_Tencent_WeKnora_internal_types.WebSearchConfig:
     properties:
       api_key:
-        description: API密钥（如果需要）
+        description: 'Deprecated: Use WebSearchProviderEntity.Parameters.APIKey instead.'
         type: string
       blacklist:
         description: 黑名单规则列表
@@ -2475,7 +2476,7 @@ definitions:
         description: 最大搜索结果数
         type: integer
       provider:
-        description: 搜索引擎提供商ID
+        description: 'Deprecated: Use WebSearchProviderEntity.Parameters.APIKey instead.'
         type: string
       rerank_model_id:
         description: 重排模型ID（用于RAG压缩）
@@ -2517,6 +2518,8 @@ definitions:
     properties:
       description:
         type: string
+      is_builtin:
+        type: boolean
       name:
         type: string
       parameters:
@@ -2564,6 +2567,17 @@ definitions:
         type: array
     required:
     - model_id
+    type: object
+  internal_handler.FeedbackMessageRequest:
+    properties:
+      feedback:
+        description: 'Feedback value: "like" or "dislike"'
+        enum:
+        - like
+        - dislike
+        type: string
+    required:
+    - feedback
     type: object
   internal_handler.GetStorageEngineStatusResponse:
     properties:
@@ -2716,6 +2730,18 @@ definitions:
     required:
     - query
     type: object
+  internal_handler.SourceFeedbackRequest:
+    properties:
+      comment:
+        type: string
+      evidence_id:
+        type: string
+      feedback:
+        type: string
+    required:
+    - evidence_id
+    - feedback
+    type: object
   internal_handler.StorageCheckRequest:
     properties:
       cos:
@@ -2811,6 +2837,8 @@ definitions:
     properties:
       description:
         type: string
+      is_builtin:
+        type: boolean
       name:
         type: string
       parameters:
@@ -2972,18 +3000,6 @@ definitions:
           type: string
         type: array
     type: object
-  internal_handler.SourceFeedbackRequest:
-    properties:
-      comment:
-        type: string
-      evidence_id:
-        type: string
-      feedback:
-        type: string
-    required:
-    - evidence_id
-    - feedback
-    type: object
 info:
   contact:
     name: WeKnora Github
@@ -2993,92 +3009,6 @@ info:
   title: WeKnora API
   version: "1.0"
 paths:
-  /chat/answer/{message_id}/confidence:
-    get:
-      consumes:
-      - application/json
-      description: Returns evidence strength, source health, and cited evidence details for an assistant answer
-      parameters:
-      - description: Assistant message ID
-        in: path
-        name: message_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Confidence details
-          schema:
-            properties:
-              data:
-                $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.AnswerConfidenceResponse'
-              success:
-                type: boolean
-            type: object
-        "400":
-          description: Invalid request
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
-        "404":
-          description: Message not found
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
-        "500":
-          description: Internal server error
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
-      security:
-      - Bearer: []
-      - ApiKeyAuth: []
-      summary: Get answer confidence details
-      tags:
-      - chat
-  /chat/answer/{message_id}/feedback:
-    post:
-      consumes:
-      - application/json
-      description: Submits up, down, or expired feedback for a cited source in an assistant answer
-      parameters:
-      - description: Assistant message ID
-        in: path
-        name: message_id
-        required: true
-        type: string
-      - description: Source feedback payload
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_handler.SourceFeedbackRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Feedback accepted
-          schema:
-            properties:
-              success:
-                type: boolean
-            type: object
-        "400":
-          description: Invalid request
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
-        "404":
-          description: Message or evidence not found
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
-        "500":
-          description: Internal server error
-          schema:
-            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
-      security:
-      - Bearer: []
-      - ApiKeyAuth: []
-      summary: Submit source feedback
-      tags:
-      - chat
   /agents:
     get:
       consumes:
@@ -3952,6 +3882,88 @@ paths:
       summary: 验证令牌
       tags:
       - 认证
+  /chat/answer/{message_id}/confidence:
+    get:
+      consumes:
+      - application/json
+      description: Returns evidence strength, source health, and cited evidence details
+        for an assistant answer
+      parameters:
+      - description: Assistant message ID
+        in: path
+        name: message_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Confidence details
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+        "404":
+          description: Message not found
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+      security:
+      - Bearer: []
+      - ApiKeyAuth: []
+      summary: Get answer confidence details
+      tags:
+      - chat
+  /chat/answer/{message_id}/feedback:
+    post:
+      consumes:
+      - application/json
+      description: Submits up, down, or expired feedback for a cited source in an
+        assistant answer
+      parameters:
+      - description: Assistant message ID
+        in: path
+        name: message_id
+        required: true
+        type: string
+      - description: Source feedback payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.SourceFeedbackRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Feedback accepted
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+        "404":
+          description: Message or evidence not found
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+      security:
+      - Bearer: []
+      - ApiKeyAuth: []
+      summary: Submit source feedback
+      tags:
+      - chat
   /chunks/{knowledge_id}:
     delete:
       consumes:
@@ -5659,7 +5671,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 将知识库共享到指定组织
+      description: 将知识库共享到指定共享空间
       parameters:
       - description: 知识库ID
         in: path
@@ -5686,7 +5698,7 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: 共享知识库到组织
+      summary: 共享知识库到共享空间
       tags:
       - 知识库共享
   /knowledge-bases/{id}/shares/{share_id}:
@@ -6627,6 +6639,46 @@ paths:
       summary: 删除消息
       tags:
       - 消息
+  /messages/{session_id}/{id}/feedback:
+    post:
+      consumes:
+      - application/json
+      description: 对指定 AI 回复提交点赞或踩的质量反馈
+      parameters:
+      - description: 会话ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      - description: 消息ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 反馈内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.FeedbackMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 成功
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: 参数错误
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
+      security:
+      - Bearer: []
+      - ApiKeyAuth: []
+      summary: 提交消息质量反馈
+      tags:
+      - 消息
   /messages/{session_id}/load:
     get:
       consumes:
@@ -6883,7 +6935,7 @@ paths:
       - 模型管理
   /organizations:
     get:
-      description: 获取当前用户所属的所有组织，并附带各空间内知识库/智能体数量
+      description: 获取当前用户所属的所有共享空间，并附带各空间内知识库/智能体数量
       produces:
       - application/json
       responses:
@@ -6893,15 +6945,15 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.ListOrganizationsResponse'
       security:
       - Bearer: []
-      summary: 获取我的组织列表
+      summary: 获取我的共享空间列表
       tags:
-      - 组织管理
+      - 共享空间管理
     post:
       consumes:
       - application/json
-      description: 创建新的组织，创建者自动成为管理员
+      description: 创建新的共享空间，创建者自动成为空间负责人
       parameters:
-      - description: 组织信息
+      - description: 共享空间信息
         in: body
         name: request
         required: true
@@ -6921,14 +6973,14 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: 创建组织
+      summary: 创建共享空间
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}:
     delete:
-      description: 删除组织（仅组织创建者可操作）
+      description: 删除共享空间（仅空间创建者可操作）
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -6945,13 +6997,13 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: 删除组织
+      summary: 删除共享空间
       tags:
-      - 组织管理
+      - 共享空间管理
     get:
-      description: 根据ID获取组织详情
+      description: 根据 ID 获取共享空间详情
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -6970,15 +7022,15 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: 获取组织详情
+      summary: 获取共享空间详情
       tags:
-      - 组织管理
+      - 共享空间管理
     put:
       consumes:
       - application/json
-      description: 更新组织信息（需要管理员权限）
+      description: 更新共享空间信息（需要空间负责人权限）
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7003,16 +7055,16 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: 更新组织
+      summary: 更新共享空间
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/invite:
     post:
       consumes:
       - application/json
-      description: 管理员直接添加用户为组织成员
+      description: 空间负责人直接添加用户为共享空间成员
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7043,12 +7095,12 @@ paths:
       - Bearer: []
       summary: 邀请成员
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/invite-code:
     post:
-      description: 生成新的组织邀请码（需要管理员权限）
+      description: 生成新的共享空间邀请码（需要空间负责人权限）
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7069,12 +7121,12 @@ paths:
       - Bearer: []
       summary: 生成邀请码
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/join-requests:
     get:
-      description: 获取组织的待审核加入申请（仅管理员）
+      description: 获取共享空间的待审核加入申请（仅具备 admin 空间权限的成员）
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7095,14 +7147,14 @@ paths:
       - Bearer: []
       summary: 获取待审核加入申请列表
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/join-requests/{request_id}/review:
     put:
       consumes:
       - application/json
-      description: 通过或拒绝加入申请（仅管理员）
+      description: 通过或拒绝加入申请（仅具备 admin 空间权限的成员）
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7134,12 +7186,12 @@ paths:
       - Bearer: []
       summary: 审核加入申请
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/leave:
     post:
-      description: 退出指定组织
+      description: 退出指定共享空间
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7156,14 +7208,14 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: 退出组织
+      summary: 退出共享空间
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/members:
     get:
-      description: 获取组织的所有成员
+      description: 获取共享空间的所有成员
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7177,14 +7229,14 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.ListMembersResponse'
       security:
       - Bearer: []
-      summary: 获取组织成员列表
+      summary: 获取共享空间成员列表
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/members/{user_id}:
     delete:
-      description: 从组织中移除成员（需要管理员权限）
+      description: 从共享空间中移除成员（需要空间负责人权限）
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7208,13 +7260,13 @@ paths:
       - Bearer: []
       summary: 移除成员
       tags:
-      - 组织管理
+      - 共享空间管理
     put:
       consumes:
       - application/json
-      description: 更新组织成员的角色（需要管理员权限）
+      description: 更新共享空间成员的空间权限（需要空间负责人权限）
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7224,7 +7276,7 @@ paths:
         name: user_id
         required: true
         type: string
-      - description: 角色信息
+      - description: 空间权限信息
         in: body
         name: request
         required: true
@@ -7244,16 +7296,16 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: 更新成员角色
+      summary: 更新成员空间权限
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/request-upgrade:
     post:
       consumes:
       - application/json
-      description: 现有成员申请更高权限
+      description: 现有成员申请更高空间权限
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7278,14 +7330,14 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: 申请权限升级
+      summary: 申请空间权限升级
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/search-users:
     get:
-      description: 搜索用户（排除已有成员）用于邀请加入组织
+      description: 搜索用户（排除已有成员）用于邀请加入共享空间
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7316,12 +7368,12 @@ paths:
       - Bearer: []
       summary: 搜索可邀请的用户
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/shared-agents:
     get:
       description: 获取指定空间下所有共享智能体，包含他人共享的与我共享的，用于列表页空间视角
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7338,12 +7390,12 @@ paths:
       - Bearer: []
       summary: 获取空间内全部智能体（含我共享的）
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/shared-knowledge-bases:
     get:
       description: 获取指定空间下所有共享知识库，包含直接共享的与通过共享智能体可见的，用于列表页空间视角
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7360,12 +7412,12 @@ paths:
       - Bearer: []
       summary: 获取空间内全部知识库（含我共享的、含智能体携带的）
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/{id}/shares:
     get:
-      description: 获取共享到指定组织的所有知识库
+      description: 获取共享到指定共享空间的所有知识库
       parameters:
-      - description: 组织ID
+      - description: 共享空间 ID
         in: path
         name: id
         required: true
@@ -7379,14 +7431,14 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.ListSharesResponse'
       security:
       - Bearer: []
-      summary: 获取组织的共享知识库列表
+      summary: 获取共享空间的共享知识库列表
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/join:
     post:
       consumes:
       - application/json
-      description: 使用邀请码加入组织
+      description: 使用邀请码加入共享空间
       parameters:
       - description: 邀请码
         in: body
@@ -7408,9 +7460,9 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: 通过邀请码加入组织
+      summary: 通过邀请码加入共享空间
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/join-by-id:
     post:
       consumes:
@@ -7439,12 +7491,12 @@ paths:
       - Bearer: []
       summary: 通过空间 ID 加入（可搜索空间）
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/join-request:
     post:
       consumes:
       - application/json
-      description: 对需要审核的组织提交加入申请
+      description: 对需要审核的共享空间提交加入申请
       parameters:
       - description: 申请信息
         in: body
@@ -7468,10 +7520,10 @@ paths:
       - Bearer: []
       summary: 提交加入申请
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/preview/{code}:
     get:
-      description: 通过邀请码获取组织基本信息（不加入）
+      description: 通过邀请码获取共享空间基本信息（不加入）
       parameters:
       - description: 邀请码
         in: path
@@ -7492,9 +7544,9 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: 通过邀请码预览组织
+      summary: 通过邀请码预览共享空间
       tags:
-      - 组织管理
+      - 共享空间管理
   /organizations/search:
     get:
       description: 搜索已开放可被搜索的空间，用于发现并加入
@@ -7520,7 +7572,7 @@ paths:
       - Bearer: []
       summary: 搜索可加入的空间
       tags:
-      - 组织管理
+      - 共享空间管理
   /sessions:
     get:
       consumes:
@@ -7942,7 +7994,7 @@ paths:
       - 问答
   /shared-knowledge-bases:
     get:
-      description: 获取通过组织共享给当前用户的所有知识库
+      description: 获取通过共享空间共享给当前用户的所有知识库
       produces:
       - application/json
       responses:
@@ -8467,25 +8519,41 @@ paths:
       summary: 搜索租户
       tags:
       - 租户管理
-  /web-search/providers:
+  /usage/daily-trend:
     get:
-      consumes:
-      - application/json
-      description: Returns the list of available web search providers from configuration
+      parameters:
+      - description: 天数（默认30）
+        in: query
+        name: days
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: List of providers
+          description: OK
           schema:
             additionalProperties: true
             type: object
       security:
       - Bearer: []
-      - ApiKeyAuth: []
-      summary: Get available web search providers
+      summary: 获取每日使用量趋势
       tags:
-      - web-search
+      - 使用量审计
+  /usage/stats:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: 获取使用量统计汇总
+      tags:
+      - 使用量审计
 securityDefinitions:
   ApiKeyAuth:
     description: 租户身份认证：输入 sk- 开头的 API Key

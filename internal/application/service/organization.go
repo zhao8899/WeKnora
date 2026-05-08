@@ -285,7 +285,7 @@ func (s *organizationService) JoinByOrganizationID(ctx context.Context, orgID st
 	if err == nil {
 		return org, nil // already member
 	}
-	// Validate requested role if provided
+	// Validate requested shared-space permission if provided.
 	if requestedRole != "" && !requestedRole.IsValid() {
 		return nil, ErrInvalidRole
 	}
@@ -636,7 +636,7 @@ func (s *organizationService) CountPendingJoinRequests(ctx context.Context, orgI
 }
 
 // ReviewJoinRequest reviews a join request or upgrade request (approve or reject).
-// When approving, assignRole overrides the applicant's requested role if set; otherwise uses request.RequestedRole or viewer.
+// When approving, assignRole overrides the applicant's requested permission; otherwise uses request.RequestedRole or viewer.
 func (s *organizationService) ReviewJoinRequest(ctx context.Context, orgID string, requestID string, approved bool, reviewerID string, message string, assignRole *types.OrgMemberRole) error {
 	request, err := s.orgRepo.GetJoinRequestByID(ctx, requestID)
 	if err != nil {
@@ -654,7 +654,7 @@ func (s *organizationService) ReviewJoinRequest(ctx context.Context, orgID strin
 	if approved {
 		status = types.JoinRequestStatusApproved
 
-		// Role to assign: admin override > applicant's requested role > viewer
+		// Shared-space permission to assign: admin override > applicant's requested permission > viewer.
 		role := types.OrgRoleViewer
 		if assignRole != nil && assignRole.IsValid() {
 			role = *assignRole
@@ -706,7 +706,7 @@ func (s *organizationService) ReviewJoinRequest(ctx context.Context, orgID strin
 	return s.orgRepo.UpdateJoinRequestStatus(ctx, requestID, status, reviewerID, message)
 }
 
-// RequestRoleUpgrade submits a request to upgrade role in an organization
+// RequestRoleUpgrade submits a request to upgrade shared-space permission.
 func (s *organizationService) RequestRoleUpgrade(ctx context.Context, orgID string, userID string, tenantID uint64, requestedRole types.OrgMemberRole, message string) (*types.OrganizationJoinRequest, error) {
 	logger.Infof(ctx, "User %s submitting role upgrade request for organization %s to role %s", userID, orgID, requestedRole)
 
@@ -719,7 +719,7 @@ func (s *organizationService) RequestRoleUpgrade(ctx context.Context, orgID stri
 		return nil, err
 	}
 
-	// Validate the requested role
+	// Validate the requested shared-space permission.
 	if !requestedRole.IsValid() {
 		return nil, ErrInvalidRole
 	}
@@ -729,7 +729,7 @@ func (s *organizationService) RequestRoleUpgrade(ctx context.Context, orgID stri
 		return nil, ErrAlreadyAdmin
 	}
 
-	// Check if requested role is higher than current role
+	// Check if requested shared-space permission is higher than the current one.
 	if !requestedRole.HasPermission(member.Role) || requestedRole == member.Role {
 		return nil, ErrCannotUpgradeToSameRole
 	}

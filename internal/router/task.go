@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/hibiken/asynq"
@@ -71,6 +72,7 @@ func NewAsynqServer() *asynq.Server {
 func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 	// Create a new mux and register all handlers
 	mux := asynq.NewServeMux()
+	mux.Use(langfuse.AsynqMiddleware())
 
 	// Register extract handlers - router will dispatch to appropriate handler
 	mux.HandleFunc(types.TypeChunkExtract, params.ChunkExtractor.Handle)

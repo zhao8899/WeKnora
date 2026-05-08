@@ -158,7 +158,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 import { AddIcon } from 'tdesign-icons-vue-next'
 import { useAuthStore } from '@/stores/auth'

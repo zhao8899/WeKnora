@@ -371,7 +371,7 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { Swiper, SwiperSlide } from 'swiper/vue'
 import { Autoplay, EffectFade, Pagination } from 'swiper/modules'
 import 'swiper/css'
@@ -380,6 +380,7 @@ import 'swiper/css/pagination'
 import { login, register, getOIDCAuthorizationURL, getOIDCConfig } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from 'vue-i18n'
+import { setI18nLocale } from '@/i18n'
 
 // Import screenshot images
 import screenshot1 from '@/assets/img/screenshot-1.svg'
@@ -389,6 +390,7 @@ import screenshot4 from '@/assets/img/screenshot-4.svg'
 const router = useRouter()
 const authStore = useAuthStore()
 const { t, locale } = useI18n()
+const getDefaultHomePath = () => authStore.canAccessAllTenants ? '/platform/dashboard' : '/platform/home'
 
 // Swiper modules
 const modules = [Autoplay, EffectFade, Pagination]
@@ -518,9 +520,8 @@ const toggleLanguageMenu = () => {
 }
 
 // Select language
-const selectLanguage = (lang: string) => {
-  locale.value = lang
-  localStorage.setItem('locale', lang)
+const selectLanguage = async (lang: string) => {
+  await setI18nLocale(lang)
   showLanguageMenu.value = false
   MessagePlugin.success(t('language.languageSaved'))
 }
@@ -569,7 +570,7 @@ const persistLoginResponse = async (response: any) => {
   }
 
   await nextTick()
-  router.replace('/platform/knowledge-bases')
+  router.replace(getDefaultHomePath())
 }
 
 const getBackendOIDCRedirectURI = () => `${window.location.origin}/api/v1/auth/oidc/callback`
@@ -671,7 +672,7 @@ const handleRegister = async () => {
 // Check if already logged in
 onMounted(() => {
   if (authStore.isLoggedIn) {
-    router.replace('/platform/knowledge-bases')
+    router.replace(getDefaultHomePath())
     return
   }
 

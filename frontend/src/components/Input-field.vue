@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, computed, watch, nextTick, h } from "vue";
 import { useRoute, useRouter } from 'vue-router';
 import { onBeforeRouteUpdate } from 'vue-router';
-import { MessagePlugin } from "tdesign-vue-next";
+import { MessagePlugin } from "tdesign-vue-next/es/message";
 import { useSettingsStore } from '@/stores/settings';
 import { useUIStore } from '@/stores/ui';
 import { useMenuStore } from '@/stores/menu';
@@ -14,19 +14,29 @@ import MentionSelector from './MentionSelector.vue';
 import AgentSelector from './AgentSelector.vue';
 import { getCaretCoordinates } from '@/utils/caret';
 import { listModels, type ModelConfig } from '@/api/model';
-import { listAgents, type CustomAgent, BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from '@/api/agent';
+import { type CustomAgent, BUILTIN_QUICK_ANSWER_ID, BUILTIN_SMART_REASONING_ID } from '@/api/agent';
+import { useAgentStore } from '@/stores/agent';
 import { getTenantWebSearchConfig } from '@/api/web-search';
 import { getConversationConfig, updateConversationConfig, type ConversationConfig } from '@/api/system';
 import { useI18n } from 'vue-i18n';
 import { applyChatSurfaceMode, resolveChatSurfaceMode } from '@/utils/chatSurfaceMode';
+import organizationGreenSvg from '@/assets/img/organization-green.svg';
+import organizationGreySvg from '@/assets/img/organization-grey.svg';
 
 const route = useRoute();
 const router = useRouter();
 const settingsStore = useSettingsStore();
 const uiStore = useUIStore();
 const orgStore = useOrganizationStore();
+const agentStore = useAgentStore();
 const menuStore = useMenuStore();
 const { t } = useI18n();
+const mentionChipIconSrcMap: Record<string, string> = {
+  'organization-green.svg': organizationGreenSvg,
+  'organization-grey.svg': organizationGreySvg
+};
+
+const getImgSrc = (url: string) => mentionChipIconSrcMap[url] || organizationGreenSvg;
 
 let query = ref("");
 const showKbSelector = ref(false);
@@ -253,7 +263,7 @@ const mentionLoading = ref(false);
 const mentionOffset = ref(0);
 const MENTION_PAGE_SIZE = 20;
 
-// 共享问答助手时用于标识“共享空间”的展示名（组织名或共享者），供 @ 列表与已选标签显示角标
+// 共享问答助手时用于标识“共享空间”的展示名（空间名或共享者），供 @ 列表与已选标签显示角标
 const sharedAgentOrgName = computed(() => {
   const sourceTenantId = settingsStore.selectedAgentSourceTenantId;
   const agentId = selectedAgentId.value;
@@ -292,7 +302,7 @@ const isWebSearchConfigured = ref(false);
 const knowledgeBases = ref<Array<{ id: string; name: string; type?: 'document' | 'faq'; knowledge_count?: number; chunk_count?: number }>>([]);
 const fileList = ref<Array<{ id: string; name: string }>>([]);
 
-// 选中的知识库：包含自己的、组织共享的、共享助手下的，用于展示已选列表与 org 角标
+// 选中的知识库：包含自己的、共享空间共享的、共享助手下的，用于展示已选列表与空间角标
 const selectedKbs = computed(() => {
   const own = knowledgeBases.value.filter(kb => selectedKbIds.value.includes(kb.id));
   const sharedList = orgStore.sharedKnowledgeBases || [];
@@ -467,7 +477,7 @@ const loadKnowledgeBases = async () => {
       // 拉取共享知识库（供 @ 提及与清理选中项时识别）
       await orgStore.fetchSharedKnowledgeBases().catch(() => {});
 
-      // 清理无效的知识库 ID：只移除既不在自己列表、也不在组织共享、也不在共享助手知识库中的项
+      // 清理无效的知识库 ID：只移除既不在自己列表、也不在共享空间共享、也不在共享助手知识库中的项
       const validKbIds = new Set(validKbs.map((kb: any) => kb.id));
       const sharedKbIds = new Set(
         (orgStore.sharedKnowledgeBases || []).map((s: any) => s.knowledge_base?.id).filter(Boolean)
@@ -571,12 +581,12 @@ const loadWebSearchConfig = async () => {
 const loadAgents = async () => {
   try {
     const [agentsRes] = await Promise.all([
-      listAgents(),
+      agentStore.fetchAgents(),
       orgStore.fetchSharedAgents(),
     ]);
-    const res = agentsRes as { data?: CustomAgent[]; disabled_own_agent_ids?: string[] }
+    const res = agentsRes as { data?: CustomAgent[]; disabledOwnAgentIds?: string[] }
     agents.value = res.data || []
-    disabledOwnAgentIds.value = res.disabled_own_agent_ids || []
+    disabledOwnAgentIds.value = res.disabledOwnAgentIds || []
   } catch (error) {
     console.error('Failed to load agents:', error)
   }
@@ -1384,6 +1394,10 @@ const createSession = async (val: string) => {
     return;
   }
   // 获取@提及的知识库和文件信息
+  if (currentSurfaceMode.value === 'trusted-qa' && !isCustomAgent.value && allSelectedItems.value.length === 0) {
+    MessagePlugin.warning('可信问答需要先选择知识库或文件，避免生成无依据答案');
+    return;
+  }
   const mentionedItems = allSelectedItems.value.map(item => ({
     id: item.id,
     name: item.name,
@@ -2165,11 +2179,6 @@ defineExpose({
     </Teleport>
   </div>
 </template>
-<script lang="ts">
-const getImgSrc = (url: string) => {
-  return new URL(`/src/assets/img/${url}`, import.meta.url).href;
-}
-</script>
 <style scoped lang="less">
 .answers-input {
   position: absolute;

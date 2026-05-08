@@ -133,7 +133,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useOrganizationStore } from '@/stores/organization'
@@ -235,7 +235,9 @@ async function handleShare() {
     )
     if (result.success) {
       MessagePlugin.success(t('organization.share.shareSuccess'))
-      await loadShares()
+      orgStore.invalidateSharedResourcesCache()
+      orgStore.invalidateOrganizationsCache()
+      await Promise.all([loadShares(), orgStore.fetchOrganizations({ force: true })])
       shareForm.value = { organization_id: '', permission: 'viewer' }
       emit('shared')
     } else {
@@ -253,7 +255,9 @@ async function handleUnshare(share: KnowledgeBaseShare) {
     const result = await removeShare(props.knowledgeBaseId, share.id)
     if (result.success) {
       MessagePlugin.success(t('organization.share.unshareSuccess'))
-      await loadShares()
+      orgStore.invalidateSharedResourcesCache()
+      orgStore.invalidateOrganizationsCache()
+      await Promise.all([loadShares(), orgStore.fetchOrganizations({ force: true })])
       emit('shared')
     } else {
       MessagePlugin.error(result.message || t('organization.share.unshareFailed'))

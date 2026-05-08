@@ -42,13 +42,17 @@ func TestValidateSessionMode(t *testing.T) {
 
 func TestIMChannelBeforeCreate_SessionModeDefault(t *testing.T) {
 	tests := []struct {
-		name         string
-		inputMode    string
-		expectedMode string
+		name               string
+		platform           string
+		inputMode          string
+		expectedSession    string
+		expectedChannelMode string
+		expectedOut        string
 	}{
-		{"empty defaults to user", "", "user"},
-		{"user preserved", "user", "user"},
-		{"thread preserved", "thread", "thread"},
+		{name: "empty defaults to user", platform: "slack", inputMode: "", expectedSession: "user", expectedChannelMode: "websocket", expectedOut: "stream"},
+		{name: "user preserved", platform: "slack", inputMode: "user", expectedSession: "user", expectedChannelMode: "websocket", expectedOut: "stream"},
+		{name: "thread preserved", platform: "slack", inputMode: "thread", expectedSession: "thread", expectedChannelMode: "websocket", expectedOut: "stream"},
+		{name: "wechat forced longpoll", platform: "wechat", inputMode: "", expectedSession: "user", expectedChannelMode: "longpoll", expectedOut: "full"},
 	}
 
 	for _, tt := range tests {
@@ -56,7 +60,7 @@ func TestIMChannelBeforeCreate_SessionModeDefault(t *testing.T) {
 			ch := &IMChannel{
 				TenantID:    1,
 				AgentID:     "agent-1",
-				Platform:    "slack",
+				Platform:    tt.platform,
 				SessionMode: tt.inputMode,
 				Credentials: []byte("{}"),
 			}
@@ -64,8 +68,14 @@ func TestIMChannelBeforeCreate_SessionModeDefault(t *testing.T) {
 			if err != nil {
 				t.Fatalf("BeforeCreate error: %v", err)
 			}
-			if ch.SessionMode != tt.expectedMode {
-				t.Errorf("SessionMode = %q, want %q", ch.SessionMode, tt.expectedMode)
+			if ch.SessionMode != tt.expectedSession {
+				t.Errorf("SessionMode = %q, want %q", ch.SessionMode, tt.expectedSession)
+			}
+			if ch.Mode != tt.expectedChannelMode {
+				t.Errorf("Mode = %q, want %q", ch.Mode, tt.expectedChannelMode)
+			}
+			if ch.OutputMode != tt.expectedOut {
+				t.Errorf("OutputMode = %q, want %q", ch.OutputMode, tt.expectedOut)
 			}
 		})
 	}
@@ -87,20 +97,25 @@ func TestIMChannelBeforeCreate_InvalidSessionMode(t *testing.T) {
 
 func TestIMChannelBeforeSave_SessionModeValidation(t *testing.T) {
 	tests := []struct {
-		name        string
-		sessionMode string
-		wantMode    string
-		wantErr     bool
+		name            string
+		platform        string
+		sessionMode     string
+		wantSessionMode string
+		wantChannelMode string
+		wantOut         string
+		wantErr         bool
 	}{
-		{"empty defaults to user", "", "user", false},
-		{"user preserved", "user", "user", false},
-		{"thread preserved", "thread", "thread", false},
-		{"invalid rejected", "invalid", "", true},
+		{name: "empty defaults to user", platform: "slack", sessionMode: "", wantSessionMode: "user", wantChannelMode: "websocket", wantOut: "stream", wantErr: false},
+		{name: "user preserved", platform: "slack", sessionMode: "user", wantSessionMode: "user", wantChannelMode: "websocket", wantOut: "stream", wantErr: false},
+		{name: "thread preserved", platform: "slack", sessionMode: "thread", wantSessionMode: "thread", wantChannelMode: "websocket", wantOut: "stream", wantErr: false},
+		{name: "wechat forced longpoll", platform: "wechat", sessionMode: "", wantSessionMode: "user", wantChannelMode: "longpoll", wantOut: "full", wantErr: false},
+		{name: "invalid rejected", platform: "slack", sessionMode: "invalid", wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ch := &IMChannel{
+				Platform:    tt.platform,
 				SessionMode: tt.sessionMode,
 				Credentials: []byte("{}"),
 			}
@@ -114,8 +129,14 @@ func TestIMChannelBeforeSave_SessionModeValidation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if ch.SessionMode != tt.wantMode {
-				t.Errorf("SessionMode = %q, want %q", ch.SessionMode, tt.wantMode)
+			if ch.SessionMode != tt.wantSessionMode {
+				t.Errorf("SessionMode = %q, want %q", ch.SessionMode, tt.wantSessionMode)
+			}
+			if ch.Mode != tt.wantChannelMode {
+				t.Errorf("Mode = %q, want %q", ch.Mode, tt.wantChannelMode)
+			}
+			if ch.OutputMode != tt.wantOut {
+				t.Errorf("OutputMode = %q, want %q", ch.OutputMode, tt.wantOut)
 			}
 		})
 	}

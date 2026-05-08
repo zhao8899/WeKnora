@@ -85,6 +85,7 @@
             </div>
             <template #content>
               <div class="popup-menu">
+                <div class="popup-menu-item" @click="handleUseOwnAgentInChat(agent)"><t-icon class="menu-icon" name="chat" /><span>去问答/试用</span></div>
                 <div class="popup-menu-item" @click="handleEdit(agent)"><t-icon class="menu-icon" name="edit" /><span>{{ $t('common.edit') }}</span></div>
                 <div class="popup-menu-item" @click="handleCopy(agent)"><t-icon class="menu-icon" name="file-copy" /><span>{{ $t('common.copy') }}</span></div>
                 <div v-if="!agent.is_builtin" class="popup-menu-item" @click="handleToggleDisabled(agent)">
@@ -235,6 +236,10 @@
             </div>
             <template #content>
               <div class="popup-menu">
+                <div class="popup-menu-item" @click="handleUseOwnAgentInChat(agent)">
+                  <t-icon class="menu-icon" name="chat" />
+                  <span>去问答/试用</span>
+                </div>
                 <div class="popup-menu-item" @click="handleEdit(agent)">
                   <t-icon class="menu-icon" name="edit" />
                   <span>{{ $t('common.edit') }}</span>
@@ -530,6 +535,7 @@
 
     <!-- 模板选择器 -->
     <AgentTemplateSelector
+      v-if="templateSelectorVisible"
       :visible="templateSelectorVisible"
       @cancel="templateSelectorVisible = false"
       @select="handleTemplateSelect"
@@ -537,6 +543,7 @@
 
     <!-- 智能体编辑器弹窗 -->
     <AgentEditorModal
+      v-if="editorVisible"
       :visible="editorVisible"
       :mode="editorMode"
       :agent="editingAgent"
@@ -549,20 +556,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { MessagePlugin, Icon as TIcon } from 'tdesign-vue-next'
-import { listAgents, deleteAgent, copyAgent, type CustomAgent } from '@/api/agent'
+import { Icon as TIcon } from 'tdesign-vue-next/es/icon'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
+import { deleteAgent, copyAgent, type CustomAgent } from '@/api/agent'
 import { formatStringDate } from '@/utils/index'
 import { useI18n } from 'vue-i18n'
 import { createSessions } from '@/api/chat/index'
 import { useOrganizationStore } from '@/stores/organization'
+import { useAgentStore } from '@/stores/agent'
 import { setSharedAgentDisabledByMe, listOrganizationSharedAgents } from '@/api/organization'
 import { useSettingsStore } from '@/stores/settings'
 import { useMenuStore } from '@/stores/menu'
 import type { SharedAgentInfo, OrganizationSharedAgentItem } from '@/api/organization'
-import AgentEditorModal from './AgentEditorModal.vue'
-import AgentTemplateSelector from './AgentTemplateSelector.vue'
 import AgentAvatar from '@/components/AgentAvatar.vue'
 import ListSpaceSidebar from '@/components/ListSpaceSidebar.vue'
 
@@ -570,6 +577,9 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const orgStore = useOrganizationStore()
+const agentStore = useAgentStore()
+const AgentEditorModal = defineAsyncComponent(() => import('./AgentEditorModal.vue'))
+const AgentTemplateSelector = defineAsyncComponent(() => import('./AgentTemplateSelector.vue'))
 
 interface AgentWithUI extends CustomAgent {
   showMore?: boolean
@@ -581,7 +591,11 @@ interface AgentWithUI extends CustomAgent {
 type DisplayAgent = (AgentWithUI & { isMine: true }) | (CustomAgent & { isMine: false; org_name: string; source_tenant_id: number; share_id: string; showMore?: boolean; disabled_by_me?: boolean })
 
 // 左侧空间选择：我的 / 空间 ID（已去掉「全部」）
-const spaceSelection = ref<'all' | 'mine' | string>('mine')
+const getRouteSpaceSelection = () => {
+  const space = route.query.space
+  return typeof space === 'string' && space.trim() ? space : 'mine'
+}
+const spaceSelection = ref<'all' | 'mine' | string>(getRouteSpaceSelection())
 const agents = ref<AgentWithUI[]>([])
 const builtinAgentsList = computed(() => agents.value.filter(a => a.is_builtin))
 const customAgentsList = computed(() => agents.value.filter(a => !a.is_builtin))
@@ -605,6 +619,12 @@ const sharedAgentsByOrg = computed(() => {
 const spaceAgentsList = ref<OrganizationSharedAgentItem[]>([])
 const spaceAgentsLoading = ref(false)
 const spaceAgentCountByOrg = ref<Record<string, number>>({})
+const SPACE_RESOURCE_CACHE_TTL_MS = 30_000
+const spaceAgentsCache = new Map<string, { items: OrganizationSharedAgentItem[]; fetchedAt: number }>()
+let spaceAgentsRequestSeq = 0
+
+const isSpaceResourceCacheFresh = (fetchedAt: number) =>
+  fetchedAt > 0 && Date.now() - fetchedAt < SPACE_RESOURCE_CACHE_TTL_MS
 
 // 各空间下的共享智能体数量（用于侧栏展示）：优先用接口返回的该空间总数
 const sharedCountByOrg = computed<Record<string, number>>(() => {
@@ -682,12 +702,12 @@ const templateSelectorVisible = ref(false)
 /** 当前打开三点菜单的卡片 agent.id（用于受控弹出层，避免 computed 项无持久引用导致菜单不响应） */
 const openMoreAgentId = ref<string | null>(null)
 
-const fetchList = () => {
+const fetchList = (options: { force?: boolean } = {}) => {
   loading.value = true
   return Promise.all([
-    listAgents().then((res: any) => {
+    agentStore.fetchAgents(options).then((res) => {
       const data = res.data || []
-      const disabledOwnIds = res.disabled_own_agent_ids || []
+      const disabledOwnIds = res.disabledOwnAgentIds || []
       agents.value = data.map((agent: CustomAgent) => ({
         ...agent,
         showMore: false,
@@ -730,22 +750,53 @@ const handleOpenAgentEditor = (event: CustomEvent) => {
 
 // 选中空间时请求该空间内全部智能体（含我共享的）
 watch(spaceSelection, (val) => {
+  const currentSpace = typeof route.query.space === 'string' ? route.query.space : ''
+  if (val !== currentSpace) {
+    const nextQuery = { ...route.query }
+    if (val === 'mine') {
+      delete nextQuery.space
+    } else {
+      nextQuery.space = val
+    }
+    router.replace({ path: route.path, query: nextQuery })
+  }
   if (val === 'all' || val === 'mine' || !val) {
     spaceAgentsList.value = []
     return
   }
+  const cached = spaceAgentsCache.get(val)
+  if (cached && isSpaceResourceCacheFresh(cached.fetchedAt)) {
+    spaceAgentsList.value = cached.items
+    spaceAgentCountByOrg.value = { ...spaceAgentCountByOrg.value, [val]: cached.items.length }
+    return
+  }
+  const requestSeq = ++spaceAgentsRequestSeq
   spaceAgentsLoading.value = true
   listOrganizationSharedAgents(val).then((res) => {
+    if (requestSeq !== spaceAgentsRequestSeq || spaceSelection.value !== val) return
     if (res.success && res.data) {
       spaceAgentsList.value = res.data
+      spaceAgentsCache.set(val, { items: res.data, fetchedAt: Date.now() })
       spaceAgentCountByOrg.value = { ...spaceAgentCountByOrg.value, [val]: res.data.length }
     } else {
       spaceAgentsList.value = []
     }
   }).finally(() => {
-    spaceAgentsLoading.value = false
+    if (requestSeq === spaceAgentsRequestSeq) {
+      spaceAgentsLoading.value = false
+    }
   })
 }, { immediate: true })
+
+watch(
+  () => route.query.space,
+  () => {
+    const next = getRouteSpaceSelection()
+    if (spaceSelection.value !== next) {
+      spaceSelection.value = next
+    }
+  }
+)
 
 onMounted(() => {
   fetchList()
@@ -777,6 +828,94 @@ const handleCardClick = (agent: DisplayAgent | AgentWithUI) => {
   handleEdit(agent as AgentWithUI)
 }
 
+function getAgentChatNotReadyReasons(agent: CustomAgent) {
+  const reasons: string[] = []
+  const config = agent.config || {}
+  const isAgentMode = config.agent_mode === 'smart-reasoning'
+
+  if (agent.is_builtin) {
+    if (isAgentMode && (!config.allowed_tools || config.allowed_tools.length === 0)) {
+      reasons.push(t('input.agentMissingAllowedTools'))
+    }
+    return reasons
+  }
+
+  if (!config.model_id || config.model_id.trim() === '') {
+    reasons.push(t('input.customAgentMissingSummaryModel'))
+  }
+  if (config.kb_selection_mode !== 'none' && (!config.rerank_model_id || config.rerank_model_id.trim() === '')) {
+    reasons.push(t('input.customAgentMissingRerankModel'))
+  }
+  return reasons
+}
+
+async function startAgentChat(agent: CustomAgent, sourceTenantId?: string) {
+  if (!agent?.id) return
+
+  const disabledByMe = (agent as AgentWithUI).disabled_by_me
+  if (disabledByMe) {
+    MessagePlugin.warning('该智能体已停用，请先启用后再试用')
+    return
+  }
+
+  const notReadyReasons = getAgentChatNotReadyReasons(agent)
+  if (notReadyReasons.length > 0) {
+    MessagePlugin.warning(t('input.agentNotReadyDetail', { agentName: agent.name, reasons: notReadyReasons.join('、') }))
+    return
+  }
+
+  openMoreAgentId.value = null
+  const settingsStore = useSettingsStore()
+  const menuStore = useMenuStore()
+  const isAgentMode = agent.config?.agent_mode === 'smart-reasoning'
+  settingsStore.selectAgent(agent.id, sourceTenantId)
+  settingsStore.toggleAgent(isAgentMode)
+
+  if (agent.config?.web_search_enabled !== undefined) {
+    settingsStore.toggleWebSearch(agent.config.web_search_enabled)
+  }
+  if (agent.config?.model_id) {
+    settingsStore.updateConversationModels({
+      summaryModelId: agent.config.model_id,
+      selectedChatModelId: agent.config.model_id
+    })
+  }
+
+  try {
+    const res = await createSessions({})
+    if (!res?.data?.id) {
+      MessagePlugin.error(t('createChat.messages.createFailed'))
+      return
+    }
+
+    const sessionId = res.data.id
+    const now = new Date().toISOString()
+    menuStore.updataMenuChildren({
+      title: t('createChat.newSessionTitle'),
+      path: `chat/${sessionId}`,
+      id: sessionId,
+      isMore: false,
+      isNoTitle: true,
+      created_at: now,
+      updated_at: now
+    })
+    menuStore.changeIsFirstSession(false)
+    router.push({
+      path: `/platform/chat/${sessionId}`,
+      query: sourceTenantId
+        ? { agent_id: agent.id, source_tenant_id: sourceTenantId }
+        : { agent_id: agent.id }
+    })
+  } catch (e) {
+    console.error('Create session for agent failed', e)
+    MessagePlugin.error(t('createChat.messages.createError'))
+  }
+}
+
+function handleUseOwnAgentInChat(agent: AgentWithUI) {
+  startAgentChat(agent)
+}
+
 function openSharedAgentDetail(shared: SharedAgentInfo) {
   currentSharedAgent.value = shared
   sharedDetailVisible.value = true
@@ -800,35 +939,10 @@ function closeSharedAgentDetail() {
 async function handleUseSharedAgentInChat(shared: SharedAgentInfo) {
   if (!shared.agent?.id) return
   closeSharedAgentDetail()
-  const settingsStore = useSettingsStore()
-  const menuStore = useMenuStore()
-  settingsStore.selectAgent(shared.agent.id, String(shared.source_tenant_id))
-  try {
-    const res = await createSessions({})
-    if (res?.data?.id) {
-      const sessionId = res.data.id
-      const now = new Date().toISOString()
-      menuStore.updataMenuChildren({
-        title: t('createChat.newSessionTitle'),
-        path: `chat/${sessionId}`,
-        id: sessionId,
-        isMore: false,
-        isNoTitle: true,
-        created_at: now,
-        updated_at: now
-      })
-      menuStore.changeIsFirstSession(false)
-      router.push({
-        path: `/platform/chat/${sessionId}`,
-        query: { agent_id: shared.agent.id, source_tenant_id: String(shared.source_tenant_id) }
-      })
-    } else {
-      MessagePlugin.error(t('createChat.messages.createFailed'))
-    }
-  } catch (e) {
-    console.error('Create session for shared agent failed', e)
-    MessagePlugin.error(t('createChat.messages.createError'))
-  }
+  await startAgentChat(
+    { ...shared.agent, disabled_by_me: shared.disabled_by_me } as CustomAgent & { disabled_by_me?: boolean },
+    String(shared.source_tenant_id)
+  )
 }
 
 const handleEdit = (agent: AgentWithUI) => {
@@ -849,7 +963,7 @@ const handleCopy = (agent: AgentWithUI) => {
   copyAgent(agent.id).then((res: any) => {
     if (res.data) {
       MessagePlugin.success(t('agent.messages.copied'))
-      fetchList()
+      fetchList({ force: true })
     } else {
       MessagePlugin.error(res.message || t('agent.messages.copyFailed'))
     }
@@ -865,7 +979,7 @@ const handleToggleDisabled = (agent: AgentWithUI) => {
   setSharedAgentDisabledByMe(agent.id, nextDisabled).then((res: any) => {
     if (res.success) {
       MessagePlugin.success(nextDisabled ? t('agent.messages.disabled') : t('agent.messages.enabled'))
-      fetchList()
+      fetchList({ force: true })
     } else {
       MessagePlugin.error(res.message || t('agent.messages.saveFailed'))
     }
@@ -882,7 +996,8 @@ const handleToggleSharedDisabled = (agent: DisplayAgent) => {
   setSharedAgentDisabledByMe(agent.id, nextDisabled).then((res: any) => {
     if (res.success) {
       MessagePlugin.success(nextDisabled ? t('agent.messages.disabled') : t('agent.messages.enabled'))
-      orgStore.fetchSharedAgents()
+      spaceAgentsCache.clear()
+      orgStore.fetchSharedAgents({ force: true })
     } else {
       MessagePlugin.error(res.message || t('agent.messages.saveFailed'))
     }
@@ -898,7 +1013,8 @@ const handleToggleSharedDisabledFromShared = (shared: SharedAgentInfo) => {
   setSharedAgentDisabledByMe(shared.agent.id, nextDisabled).then((res: any) => {
     if (res.success) {
       MessagePlugin.success(nextDisabled ? t('agent.messages.disabled') : t('agent.messages.enabled'))
-      orgStore.fetchSharedAgents()
+      spaceAgentsCache.clear()
+      orgStore.fetchSharedAgents({ force: true })
     } else {
       MessagePlugin.error(res.message || t('agent.messages.saveFailed'))
     }
@@ -915,7 +1031,7 @@ const confirmDelete = () => {
       MessagePlugin.success(t('agent.messages.deleted'))
       deleteVisible.value = false
       deletingAgent.value = null
-      fetchList()
+      fetchList({ force: true })
     } else {
       MessagePlugin.error(res.message || t('agent.messages.deleteFailed'))
     }
@@ -927,7 +1043,7 @@ const confirmDelete = () => {
 const handleEditorSuccess = () => {
   editorVisible.value = false
   editingAgent.value = null
-  fetchList()
+  fetchList({ force: true })
 }
 
 const formatDate = (dateStr: string) => {

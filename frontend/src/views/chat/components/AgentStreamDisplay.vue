@@ -6,7 +6,7 @@
       <div class="tree-root" @click="toggleIntermediateSteps">
         <div class="tree-root-title">
           <img :src="agentIcon" alt="" />
-          <span v-html="intermediateStepsSummaryHtml"></span>
+          <span>{{ intermediateStepsSummary }}</span>
         </div>
         <div class="tree-root-toggle">
           <t-icon :name="showIntermediateSteps ? 'chevron-up' : 'chevron-down'" />
@@ -42,7 +42,7 @@
                   </div>
                   <div v-if="event.content && isEventExpanded(event.event_id)" class="action-details">
                     <div class="thinking-detail-content markdown-content">
-                      <div v-for="(token, idx) in getTokens(event.content)" :key="idx" v-html="getTokenHTML(token)"></div>
+                      <div v-for="(tokenHtml, idx) in getRenderedTokens(event.content)" :key="idx" v-html="tokenHtml"></div>
                     </div>
                   </div>
                 </div>
@@ -64,7 +64,7 @@
                   </div>
                   <div v-if="event.tool_data?.thought && isEventExpanded(event.tool_call_id)" class="action-details">
                     <div class="thinking-detail-content markdown-content">
-                      <div v-for="(token, idx) in getTokens(event.tool_data.thought)" :key="idx" v-html="getTokenHTML(token)"></div>
+                      <div v-for="(tokenHtml, idx) in getRenderedTokens(event.tool_data.thought)" :key="idx" v-html="tokenHtml"></div>
                     </div>
                   </div>
                 </div>
@@ -110,7 +110,7 @@
                   </div>
 
                   <div v-if="!event.pending && event.tool_name === 'web_search' && event.tool_data" class="search-results-summary-fixed">
-                    <div class="results-summary-text" v-html="t('agent.webSearchFound', { count: getResultsCount(event.tool_data) })"></div>
+                    <div class="results-summary-text">{{ t('agent.webSearchFound', { count: getResultsCount(event.tool_data) }) }}</div>
                   </div>
 
                   <div v-if="!event.pending && event.tool_name === 'grep_chunks' && event.tool_data" class="search-results-summary-fixed grep-summary">
@@ -173,7 +173,7 @@
             </div>
             <div v-if="event.content && isEventExpanded(event.event_id)" class="action-details">
               <div class="thinking-detail-content markdown-content">
-                <div v-for="(token, idx) in getTokens(event.content)" :key="idx" v-html="getTokenHTML(token)"></div>
+                <div v-for="(tokenHtml, idx) in getRenderedTokens(event.content)" :key="idx" v-html="tokenHtml"></div>
               </div>
             </div>
           </div>
@@ -195,7 +195,7 @@
             </div>
             <div v-if="event.tool_data?.thought && isEventExpanded(event.tool_call_id)" class="action-details">
               <div class="thinking-detail-content markdown-content">
-                <div v-for="(token, idx) in getTokens(event.tool_data.thought)" :key="idx" v-html="getTokenHTML(token)"></div>
+                <div v-for="(tokenHtml, idx) in getRenderedTokens(event.tool_data.thought)" :key="idx" v-html="tokenHtml"></div>
               </div>
             </div>
           </div>
@@ -207,7 +207,7 @@
             v-if="event.content && event.content.trim()"
             class="answer-content markdown-content"
           >
-               <div v-for="(token, idx) in getTokens(event.content)" :key="idx" v-html="getTokenHTML(token)"></div>
+               <div v-for="(tokenHtml, idx) in getRenderedTokens(event.content)" :key="idx" v-html="tokenHtml"></div>
           </div>
           <div v-if="event.done" class="answer-toolbar">
             <t-button size="small" variant="outline" shape="round" @click.stop="handleCopyAnswer(event)" :title="$t('agent.copy')">
@@ -285,7 +285,7 @@
           </div>
 
           <div v-if="!event.pending && event.tool_name === 'web_search' && event.tool_data" class="search-results-summary-fixed">
-            <div class="results-summary-text" v-html="t('agent.webSearchFound', { count: getResultsCount(event.tool_data) })"></div>
+            <div class="results-summary-text">{{ t('agent.webSearchFound', { count: getResultsCount(event.tool_data) }) }}</div>
           </div>
 
           <div v-if="!event.pending && event.tool_name === 'grep_chunks' && event.tool_data" class="search-results-summary-fixed grep-summary">
@@ -357,18 +357,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { defineAsyncComponent, ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
-import ToolResultRenderer from './ToolResultRenderer.vue';
-import picturePreview from '@/components/picture-preview.vue';
 import { getChunkByIdOnly } from '@/api/knowledge-base';
-import { MessagePlugin } from 'tdesign-vue-next';
+import { MessagePlugin } from 'tdesign-vue-next/es/message';
 import { useUIStore } from '@/stores/ui';
 import { useI18n } from 'vue-i18n';
 import i18n from '@/i18n';
-import { hydrateProtectedFileImages } from '@/utils/security';
+import { hydrateProtectedFileImages, sanitizeHTML } from '@/utils/security';
 import { submitMessageFeedback } from '@/api/chat/index';
 import {
   buildManualMarkdown,
@@ -378,15 +374,18 @@ import {
 } from '@/utils/chatMessageShared';
 import {
   createMermaidCodeRenderer,
-  ensureMermaidInitialized,
   renderMermaidInContainer,
 } from '@/utils/mermaidShared';
+
+const ToolResultRenderer = defineAsyncComponent(() => import('./ToolResultRenderer.vue'));
+const picturePreview = defineAsyncComponent(() => import('@/components/picture-preview.vue'));
 
 const router = useRouter();
 const uiStore = useUIStore();
 const { t } = useI18n();
+type MarkedModule = typeof import('marked');
+type DOMPurifyModule = typeof import('dompurify');
 
-ensureMermaidInitialized();
 
 // DOMPurify 配置 - 支持 Mermaid SVG 标签
 const DOMPurifyConfig = {
@@ -625,8 +624,36 @@ const handleAgentFeedback = async (value: string) => {
   }
 };
 
-// Configure marked for security
-marked.use({});
+let markedModulePromise: Promise<MarkedModule['marked']> | null = null;
+let domPurifyModulePromise: Promise<DOMPurifyModule['default']> | null = null;
+let agentRenderer: InstanceType<MarkedModule['marked']['Renderer']> | null = null;
+const renderedTokenCache = ref(new Map<string, string[]>());
+let renderedTokenCacheVersion = ref(0);
+
+const loadMarkdownRenderer = async () => {
+  if (!markedModulePromise) {
+    markedModulePromise = import('marked').then(async ({ marked }) => {
+      marked.use({});
+
+      if (!agentRenderer) {
+        agentRenderer = new marked.Renderer();
+        agentRenderer.code = await createMermaidCodeRenderer('mermaid-agent');
+      }
+
+      return marked;
+    });
+  }
+
+  return markedModulePromise;
+};
+
+const loadDOMPurify = async () => {
+  if (!domPurifyModulePromise) {
+    domPurifyModulePromise = import('dompurify').then((module) => module.default);
+  }
+
+  return domPurifyModulePromise;
+};
 
 // Event stream
 const eventStream = computed(() => props.session?.agentEventStream || []);
@@ -704,6 +731,26 @@ watch(eventStream, (stream) => {
       }
     }
   });
+}, { immediate: true, deep: true });
+
+watch(eventStream, (stream) => {
+  if (!stream || !Array.isArray(stream)) return;
+
+  const contents = new Set<string>();
+  for (const event of stream) {
+    if (!event) continue;
+
+    if (typeof event.content === 'string' && event.content.trim()) {
+      contents.add(event.content);
+    }
+
+    const thought = event.tool_data?.thought;
+    if (typeof thought === 'string' && thought.trim()) {
+      contents.add(thought);
+    }
+  }
+
+  void Promise.all(Array.from(contents).map((content) => ensureRenderedTokens(content)));
 }, { immediate: true, deep: true });
 
 // State for intermediate steps collapse
@@ -811,11 +858,6 @@ const intermediateStepsSummary = computed(() => {
   }
 
   return t('agent.stepsCompleted', { steps });
-});
-
-// HTML version of intermediate steps summary with colored numbers
-const intermediateStepsSummaryHtml = computed(() => {
-  return intermediateStepsSummary.value;
 });
 
 // Should show the collapsed steps indicator (tree root)
@@ -1137,15 +1179,15 @@ const updateKBCitationTooltip = (chunkId: string, state: KbTooltipState) => {
   citations.forEach((citation) => {
     const tipElement = citation.querySelector('.citation-tip');
     if (tipElement) {
-      const shortChunkId = `${chunkId.substring(0, 25)}...`;
+      const shortChunkId = escapeHtml(`${chunkId.substring(0, 25)}...`);
       
       const renderContent = (inner: string) => {
-        tipElement.innerHTML = `
+        tipElement.innerHTML = sanitizeHTML(`
           <span class="t-popup__content">
             ${inner}
             <span class="tip-meta">${t('agentStream.citation.chunkId')}: ${shortChunkId}</span>
           </span>
-        `;
+        `);
       };
 
       renderContent(getKbTooltipInnerHtml(state));
@@ -1424,10 +1466,10 @@ const preprocessMarkdown = (contentStr: string): string => {
     );
 };
 
-// Get tokens from markdown content (with sanitization for user-friendly display)
-const getTokens = (content: any) => {
+// Prepare markdown content for token rendering.
+const getProcessedMarkdown = (content: any): string => {
   const contentStr = typeof content === 'string' ? content : String(content || '');
-  if (!contentStr.trim()) return [];
+  if (!contentStr.trim()) return '';
 
   // Extract <kb.../> and <web.../> tags before sanitization to prevent
   // sanitizeForDisplay from stripping chunk_id labels and UUIDs inside them.
@@ -1455,42 +1497,45 @@ const getTokens = (content: any) => {
   // Restore preserved tags
   sanitized = sanitized.replace(/\x00TAG(\d+)\x00/g, (_, idx) => tagPlaceholders[Number(idx)]);
 
-  const processed = preprocessMarkdown(sanitized);
-  return marked.lexer(processed);
+  return preprocessMarkdown(sanitized);
 };
 
 // 自定义渲染器 - 支持 Mermaid
-const agentRenderer = new marked.Renderer();
-agentRenderer.code = createMermaidCodeRenderer('mermaid-agent');
+const renderTokenList = async (content: any): Promise<string[]> => {
+  const processed = getProcessedMarkdown(content);
+  if (!processed) return [];
 
-// Render HTML from a single token
-const getTokenHTML = (token: any): string => {
   try {
-    const html = marked.parser([token], { renderer: agentRenderer });
-    const protectedHTML = protectProviderImageSrcInHTML(html);
-    return DOMPurify.sanitize(protectedHTML, DOMPurifyConfig);
+    const [marked, DOMPurify] = await Promise.all([loadMarkdownRenderer(), loadDOMPurify()]);
+    const tokens = marked.lexer(processed);
+
+    return tokens.map((token: any) => {
+      const html = marked.parser([token], { renderer: agentRenderer! }) as string;
+      const protectedHTML = protectProviderImageSrcInHTML(html);
+      return DOMPurify.sanitize(protectedHTML, DOMPurifyConfig);
+    });
   } catch (e) {
-    console.error('Token rendering error:', e);
-    return '';
+    const contentStr = typeof content === 'string' ? content : String(content || '');
+    console.error('Markdown token rendering error:', e, 'Content:', contentStr.substring(0, 100));
+    return [contentStr.replace(/</g, '&lt;').replace(/>/g, '&gt;')];
   }
 };
 
-// Legacy Markdown rendering function (kept for summaries)
-const renderMarkdown = (content: any): string => {
+const ensureRenderedTokens = async (content: any) => {
   const contentStr = typeof content === 'string' ? content : String(content || '');
-  if (!contentStr.trim()) return '';
+  if (!contentStr.trim() || renderedTokenCache.value.has(contentStr)) return;
 
-  try {
-    const processed = preprocessMarkdown(contentStr);
-    const html = marked.parse(processed, { renderer: agentRenderer }) as string;
-    if (!html) return '';
+  const tokenHtmlList = await renderTokenList(contentStr);
+  const nextCache = new Map(renderedTokenCache.value);
+  nextCache.set(contentStr, tokenHtmlList);
+  renderedTokenCache.value = nextCache;
+  renderedTokenCacheVersion.value += 1;
+};
 
-    const protectedHTML = protectProviderImageSrcInHTML(html);
-    return DOMPurify.sanitize(protectedHTML, DOMPurifyConfig);
-  } catch (e) {
-    console.error('Markdown rendering error:', e, 'Content:', contentStr.substring(0, 100));
-    return contentStr.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
+const getRenderedTokens = (content: any): string[] => {
+  void renderedTokenCacheVersion.value;
+  const contentStr = typeof content === 'string' ? content : String(content || '');
+  return renderedTokenCache.value.get(contentStr) || [];
 };
 
 const protectProviderImageSrcInHTML = (html: string): string => {
@@ -1659,7 +1704,7 @@ const getSearchResultsSummary = (event: any): string => {
   } else {
     summary = t('agentStream.search.foundResults', { count: `<strong>${count}</strong>` });
   }
-  return summary;
+  return sanitizeHTML(summary);
 };
 
 // Get web search results summary text
@@ -1694,7 +1739,7 @@ const getGrepResultsSummary = (toolData: any): string => {
     summary += t('agentStream.search.showingCount', { count: `<strong>${resultCount}</strong>` });
   }
   
-  return summary;
+  return sanitizeHTML(summary);
 };
 
 // Extract and format query parameters from args
@@ -3044,11 +3089,6 @@ const handleAddToKnowledge = (answerEvent: any) => {
     }
   }
   
-  .botanswer_loading_gif {
-    width: 24px;
-    height: 18px;
-    margin-left: 0;
-  }
 }
 
 @keyframes spin {

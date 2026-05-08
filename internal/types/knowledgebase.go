@@ -64,12 +64,20 @@ type KnowledgeBase struct {
 	StorageProviderConfig *StorageProviderConfig `yaml:"storage_provider_config" json:"storage_provider_config"  gorm:"column:storage_provider_config;type:jsonb"`
 	// Deprecated: legacy COS config column. Kept for backward compatibility with old data.
 	StorageConfig StorageConfig `yaml:"-" json:"storage_config" gorm:"column:cos_config;type:json"`
+	// VectorStoreID references a tenant-scoped vector store. Nil preserves the
+	// current tenant/env retriever configuration.
+	VectorStoreID *string `yaml:"vector_store_id" json:"vector_store_id,omitempty" gorm:"column:vector_store_id;type:varchar(36);<-:create"`
 	// Extract config
 	ExtractConfig *ExtractConfig `yaml:"extract_config"          json:"extract_config"          gorm:"column:extract_config;type:json"`
 	// FAQConfig stores FAQ specific configuration such as indexing strategy
 	FAQConfig *FAQConfig `yaml:"faq_config"              json:"faq_config"              gorm:"column:faq_config;type:json"`
 	// QuestionGenerationConfig stores question generation configuration for document knowledge bases
 	QuestionGenerationConfig *QuestionGenerationConfig `yaml:"question_generation_config" json:"question_generation_config" gorm:"column:question_generation_config;type:json"`
+	// WikiConfig stores wiki-specific generation settings. Wiki activation is
+	// controlled by IndexingStrategy.WikiEnabled.
+	WikiConfig WikiConfig `yaml:"wiki_config" json:"wiki_config" gorm:"column:wiki_config;type:json"`
+	// IndexingStrategy controls which indexing pipelines are active.
+	IndexingStrategy IndexingStrategy `yaml:"indexing_strategy" json:"indexing_strategy" gorm:"column:indexing_strategy;type:json"`
 	// Whether this knowledge base is pinned to the top of the list
 	IsPinned bool `yaml:"is_pinned"               json:"is_pinned"               gorm:"default:false"`
 	// Time when the knowledge base was pinned (nil if not pinned)
@@ -88,7 +96,7 @@ type KnowledgeBase struct {
 	IsProcessing bool `yaml:"is_processing"           json:"is_processing"           gorm:"-"`
 	// ProcessingCount indicates the number of knowledge items being processed (for document type knowledge bases)
 	ProcessingCount int64 `yaml:"processing_count"        json:"processing_count"        gorm:"-"`
-	// ShareCount indicates the number of organizations this knowledge base is shared with (not stored in database)
+	// ShareCount indicates the number of shared spaces this knowledge base is shared with (not stored in database)
 	ShareCount int64 `yaml:"share_count"             json:"share_count"             gorm:"-"`
 }
 
@@ -100,6 +108,10 @@ type KnowledgeBaseConfig struct {
 	ImageProcessingConfig ImageProcessingConfig `yaml:"image_processing_config" json:"image_processing_config"`
 	// FAQ configuration (only for FAQ type knowledge bases)
 	FAQConfig *FAQConfig `yaml:"faq_config"              json:"faq_config"`
+	// IndexingStrategy controls which indexing pipelines are active.
+	IndexingStrategy *IndexingStrategy `yaml:"indexing_strategy" json:"indexing_strategy"`
+	// WikiConfig stores wiki-specific generation settings.
+	WikiConfig *WikiConfig `yaml:"wiki_config" json:"wiki_config"`
 }
 
 // ParserEngineRule maps a set of file types to a specific parser engine.
@@ -131,6 +143,13 @@ type ChunkingConfig struct {
 	// ChildChunkSize is the size of child chunks used for embedding (default: 384).
 	// Only used when EnableParentChild is true.
 	ChildChunkSize int `yaml:"child_chunk_size,omitempty" json:"child_chunk_size,omitempty"`
+	// Strategy selects the adaptive chunking tier. Empty / "legacy" preserves
+	// the historical recursive splitter; "auto" lets the profiler choose.
+	Strategy string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
+	// TokenLimit caps chunk size in approximate tokens. 0 = use ChunkSize chars.
+	TokenLimit int `yaml:"token_limit,omitempty" json:"token_limit,omitempty"`
+	// Languages hints heuristic patterns. Empty = auto-detect from content.
+	Languages []string `yaml:"languages,omitempty" json:"languages,omitempty"`
 }
 
 // ResolveParserEngine returns the engine name for the given file type
@@ -443,6 +462,9 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 	if kb.Type == "" {
 		kb.Type = KnowledgeBaseTypeDocument
 	}
+	if kb.IndexingStrategy.IsZero() {
+		kb.IndexingStrategy = DefaultIndexingStrategy()
+	}
 	if kb.Type != KnowledgeBaseTypeFAQ {
 		kb.FAQConfig = nil
 		return
@@ -460,6 +482,38 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 	if kb.FAQConfig.QuestionIndexMode == "" {
 		kb.FAQConfig.QuestionIndexMode = FAQQuestionIndexModeCombined
 	}
+}
+
+func (kb *KnowledgeBase) IsVectorEnabled() bool {
+	if kb == nil {
+		return false
+	}
+	kb.EnsureDefaults()
+	return kb.IndexingStrategy.VectorEnabled
+}
+
+func (kb *KnowledgeBase) IsKeywordEnabled() bool {
+	if kb == nil {
+		return false
+	}
+	kb.EnsureDefaults()
+	return kb.IndexingStrategy.KeywordEnabled
+}
+
+func (kb *KnowledgeBase) IsWikiEnabled() bool {
+	if kb == nil {
+		return false
+	}
+	kb.EnsureDefaults()
+	return kb.Type == KnowledgeBaseTypeDocument && kb.IndexingStrategy.WikiEnabled
+}
+
+func (kb *KnowledgeBase) NeedsEmbeddingModel() bool {
+	if kb == nil {
+		return false
+	}
+	kb.EnsureDefaults()
+	return kb.IndexingStrategy.NeedsEmbedding()
 }
 
 // IsMultimodalEnabled 判断多模态是否启用（兼容新老版本配置）

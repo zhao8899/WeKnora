@@ -308,6 +308,7 @@ func CloneContext(ctx context.Context) context.Context {
 		types.LanguageContextKey,
 		types.SessionTenantIDContextKey,
 		types.EmbedQueryContextKey,
+		types.LangfuseTraceContextKey,
 	} {
 		if v := ctx.Value(k); v != nil {
 			newCtx = context.WithValue(newCtx, k, v)

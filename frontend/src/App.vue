@@ -1,30 +1,37 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted } from 'vue'
+import { defineAsyncComponent, nextTick, onMounted, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { MessagePlugin } from 'tdesign-vue-next'
-import ManualKnowledgeEditor from '@/components/manual-knowledge-editor.vue'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useAuthStore } from '@/stores/auth'
+import { useUIStore } from '@/stores/ui'
 import { getCurrentUser } from '@/api/auth'
 
-// TDesign locale configs
-import enUSConfig from 'tdesign-vue-next/esm/locale/en_US'
 import zhCNConfig from 'tdesign-vue-next/esm/locale/zh_CN'
-import koKRConfig from 'tdesign-vue-next/esm/locale/ko_KR'
-import ruRUConfig from 'tdesign-vue-next/esm/locale/ru_RU'
+
+const ManualKnowledgeEditor = defineAsyncComponent(() => import('@/components/manual-knowledge-editor.vue'))
 
 const { locale } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
+const uiStore = useUIStore()
 
-const tdLocaleMap: Record<string, object> = {
-  'en-US': enUSConfig,
-  'zh-CN': zhCNConfig,
-  'ko-KR': koKRConfig,
-  'ru-RU': ruRUConfig,
+const tdGlobalConfig = shallowRef<object>(zhCNConfig)
+const tdLocaleLoaders: Record<string, () => Promise<object>> = {
+  'zh-CN': async () => zhCNConfig,
+  'en-US': () => import('tdesign-vue-next/esm/locale/en_US').then(module => module.default),
+  'ko-KR': () => import('tdesign-vue-next/esm/locale/ko_KR').then(module => module.default),
+  'ru-RU': () => import('tdesign-vue-next/esm/locale/ru_RU').then(module => module.default),
 }
 
-const tdGlobalConfig = computed(() => tdLocaleMap[locale.value] || enUSConfig)
+let tdLocaleRequestId = 0
+watch(locale, async (currentLocale) => {
+  const requestId = ++tdLocaleRequestId
+  const nextConfig = await (tdLocaleLoaders[currentLocale] || tdLocaleLoaders['zh-CN'])()
+  if (requestId === tdLocaleRequestId) {
+    tdGlobalConfig.value = nextConfig
+  }
+}, { immediate: true })
 
 const decodeOIDCResult = (encoded: string) => {
   const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/')
@@ -140,7 +147,7 @@ onMounted(() => {
   <t-config-provider :globalConfig="tdGlobalConfig">
     <div id="app">
       <RouterView />
-      <ManualKnowledgeEditor />
+      <ManualKnowledgeEditor v-if="uiStore.manualEditorVisible" />
     </div>
   </t-config-provider>
 </template>

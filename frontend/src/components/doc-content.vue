@@ -1,59 +1,24 @@
 // @ts-nocheck
 <script setup lang="ts">
-import { marked } from "marked";
-
-import hljs from "highlight.js";
-import "highlight.js/styles/github.css";
-import mermaid from "mermaid";
-import { onMounted, ref, nextTick, onUnmounted, watch } from "vue";
+import { defineAsyncComponent, onMounted, ref, nextTick, onUnmounted, watch } from "vue";
 import { downKnowledgeDetails, deleteGeneratedQuestion, getChunkByIdOnly } from "@/api/knowledge-base/index";
-import { MessagePlugin, DialogPlugin } from "tdesign-vue-next";
+import { DialogPlugin } from "tdesign-vue-next/es/dialog";
+import { MessagePlugin } from "tdesign-vue-next/es/message";
 import { sanitizeHTML, safeMarkdownToHTML, createSafeImage, isValidImageURL, hydrateProtectedFileImages } from '@/utils/security';
-import { openMermaidFullscreen } from '@/utils/mermaidViewer';
+import { loadHighlightJs } from '@/utils/highlightRuntime';
+import { renderMermaidInContainer } from '@/utils/mermaidShared';
 import { useI18n } from 'vue-i18n';
-import DocumentPreview from '@/components/document-preview.vue';
+const DocumentPreview = defineAsyncComponent(() => import('@/components/document-preview.vue'));
 
 const { t } = useI18n();
+let markedModulePromise: Promise<any> | null = null;
+let renderer: any = null;
+let markdownRenderSeq = 0;
 
-// Mermaid 初始化计数器，用于生成唯一ID
+// Mermaid 閸掓繂顫愰崠鏍吀閺佹澘娅掗敍宀€鏁ゆ禍搴ｆ晸閹存劕鏁稉鈧琁D
 let mermaidRenderCount = 0;
-
-// 初始化 Mermaid
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'default',
-  securityLevel: 'strict',
-  fontFamily: 'PingFang SC, Microsoft YaHei, sans-serif',
-  flowchart: {
-    useMaxWidth: true,
-    htmlLabels: true,
-    curve: 'basis'
-  },
-  sequence: {
-    useMaxWidth: true,
-    diagramMarginX: 8,
-    diagramMarginY: 8,
-    actorMargin: 50,
-    width: 150,
-    height: 65
-  },
-  gantt: {
-    useMaxWidth: true,
-    leftPadding: 75,
-    gridLineStartPadding: 35,
-    barHeight: 20,
-    barGap: 4,
-    topPadding: 50
-  }
-});
 const props = defineProps(["visible", "details", "knowledgeType", "sourceInfo"]);
 const emit = defineEmits(["closeDoc", "getDoc", "questionDeleted"]);
-
-marked.use({
-  breaks: true,      // 启用单行换行转 <br>
-  gfm: true,         // 启用 GitHub Flavored Markdown
-});
-const renderer = new marked.Renderer();
 let page = 1;
 let loadingChunks = false;
 let pendingRequestedPage: number | null = null;
@@ -62,29 +27,121 @@ let doc: HTMLElement | null = null;
 let down = ref()
 let mdContentWrap = ref<HTMLElement | null>(null)
 let url = ref('')
-// 视图模式：chunks / merged / preview
-// file 类型默认「预览」，URL / 手动创建 默认「全文」
 const viewMode = ref<'chunks' | 'merged' | 'preview'>('merged');
 
-// 合并后的文档内容
 const mergedContent = ref<string>('');
+const renderedMergedContent = ref('');
+const renderedChunkContent = ref<Map<string, string>>(new Map());
+const renderedParentContent = ref<Map<string, string>>(new Map());
+
+const loadMarkdownRuntime = async () => {
+  if (!markedModulePromise) {
+    markedModulePromise = import('marked').then(({ marked }) => marked);
+  }
+  const [marked, hljs] = await Promise.all([markedModulePromise, loadHighlightJs()]);
+
+  if (!renderer) {
+    marked.use({ breaks: true, gfm: true });
+    renderer = new marked.Renderer();
+    renderer.image = function ({href, title, text}: { href: string; title?: string; text?: string }) {
+      if (!isValidImageURL(href)) {
+        return `<p>${t('error.invalidImageLink')}</p>`;
+      }
+      const safeImage = createSafeImage(href, text || '', title || '');
+      return `<figure>${safeImage}<figcaption style="text-align: left;">${text || ''}</figcaption></figure>`;
+    };
+    renderer.code = function ({text, lang}: { text: string; lang?: string }) {
+      let detectedLang = lang;
+      let highlighted = '';
+      if (lang && hljs.getLanguage(lang)) {
+        try {
+          highlighted = hljs.highlight(text, { language: lang }).value;
+        } catch (e) {
+          const autoFallback = hljs.highlightAuto(text);
+          highlighted = autoFallback.value;
+          detectedLang = autoFallback.language || lang;
+        }
+      } else {
+        const auto = hljs.highlightAuto(text);
+        highlighted = auto.value;
+        detectedLang = auto.language || lang;
+      }
+      if (lang === 'mermaid') {
+        const id = `doc-mermaid-${++mermaidRenderCount}`;
+        return `<pre id="${id}" data-mermaid="false"><code class="hljs language-${detectedLang || 'mermaid'}">${highlighted}</code></pre>`;
+      }
+      const displayLang = detectedLang || 'Code';
+      return `<div class="code-block-wrapper"><div class="code-block-header"><span class="code-block-lang">${displayLang}</span></div><pre class="code-block-pre"><code class="hljs language-${detectedLang || ''}">${highlighted}</code></pre></div>`;
+    };
+  }
+
+  return { marked };
+};
+
+const renderMarkdownToHTML = async (markdownText: string): Promise<string> => {
+  if (!markdownText || typeof markdownText !== 'string') return '';
+  let processedText = markdownText
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#34;/g, '"')
+    .replace(/&#x22;/gi, '"')
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+  processedText = processedText.replace(/<p>\s*(\|[\s\S]*?\|)\s*<\/p>/gi, '\n$1\n');
+  const safeMarkdown = safeMarkdownToHTML(processedText);
+  const { marked } = await loadMarkdownRuntime();
+  marked.use({ renderer });
+  let html = String(marked.parse(safeMarkdown, { async: false }));
+  html = html.replace(/&lt;br\s*\/?&gt;/gi, '<br>');
+  return sanitizeHTML(html);
+};
+
+const refreshRenderedMarkdown = async () => {
+  if (!props.visible || (viewMode.value !== 'chunks' && viewMode.value !== 'merged')) return;
+  const seq = ++markdownRenderSeq;
+  const nextMergedContent = mergedContent.value ? await renderMarkdownToHTML(mergedContent.value) : '';
+  if (seq !== markdownRenderSeq) return;
+  const nextChunkContent = new Map<string, string>();
+  for (const item of (props.details?.md || [])) {
+    const chunkContent = item?.content || '';
+    if (!chunkContent) continue;
+    nextChunkContent.set(chunkContent, await renderMarkdownToHTML(chunkContent));
+    if (seq !== markdownRenderSeq) return;
+  }
+  const nextParentContent = new Map<string, string>();
+  for (const [parentId, parentContent] of parentContextCache.value.entries()) {
+    if (!parentContent) continue;
+    nextParentContent.set(parentId, await renderMarkdownToHTML(parentContent));
+    if (seq !== markdownRenderSeq) return;
+  }
+  renderedMergedContent.value = nextMergedContent;
+  renderedChunkContent.value = nextChunkContent;
+  renderedParentContent.value = nextParentContent;
+  await runMarkdownPostRenderPipeline();
+};
+
+const getRenderedChunkHTML = (content: string) => renderedChunkContent.value.get(content || '') || '';
+const getRenderedParentHTML = (item: any) => renderedParentContent.value.get(item?.parent_chunk_id) || '';
 
 /**
- * 根据 start_at 和 end_at 字段合并有 overlap 的 chunks
- * 返回合并后的完整文档内容
- * 实现逻辑与后端 Go 代码保持一致
+ * 閺嶈宓?start_at 閸?end_at 鐎涙顔岄崥鍫濊嫙閺?overlap 閻?chunks
+ * 鏉╂柨娲栭崥鍫濊嫙閸氬海娈戠€瑰本鏆ｉ弬鍥ㄣ€傞崘鍛啇
+ * 鐎圭偟骞囬柅鏄忕帆娑撳骸鎮楃粩?Go 娴狅絿鐖滄穱婵囧瘮娑撯偓閼?
  */
 const mergeChunks = (chunks: any[]): string => {
   if (!chunks || chunks.length === 0) return '';
   
-  // 按 start_at 排序
+  // 閹?start_at 閹烘帒绨?
   const sortedChunks = [...chunks].sort((a, b) => {
     const startA = a.start_at ?? a.chunk_index ?? 0;
     const startB = b.start_at ?? b.chunk_index ?? 0;
     return startA - startB;
   });
   
-  // 初始化合并结果，第一个 chunk 直接加入
+  // 閸掓繂顫愰崠鏍ф値楠炲墎绮ㄩ弸婊愮礉缁楊兛绔存稉?chunk 閻╁瓨甯撮崝鐘插弳
   const mergedChunks: Array<{
     content: string;
     start_at: number;
@@ -95,7 +152,7 @@ const mergeChunks = (chunks: any[]): string => {
     end_at: sortedChunks[0].end_at ?? 0
   }];
   
-  // 从第二个 chunk 开始遍历
+  // 娴犲海顑囨禍灞奸嚋 chunk 瀵偓婵浜堕崢?
   for (let i = 1; i < sortedChunks.length; i++) {
     const currentChunk = sortedChunks[i];
     const lastChunk = mergedChunks[mergedChunks.length - 1];
@@ -104,7 +161,7 @@ const mergeChunks = (chunks: any[]): string => {
     const currentEndAt = currentChunk.end_at ?? 0;
     const currentContent = currentChunk.content || '';
     
-    // 如果当前 chunk 的起始位置在最后一个 chunk 的结束位置之后，直接添加
+    // 婵″倹鐏夎ぐ鎾冲 chunk 閻ㄥ嫯鎹ｆ慨瀣╃秴缂冾喖婀張鈧崥搴濈娑?chunk 閻ㄥ嫮绮ㄩ弶鐔剁秴缂冾喕绠ｉ崥搴礉閻╁瓨甯村ǎ璇插
     if (currentStartAt > lastChunk.end_at) {
       mergedChunks.push({
         content: currentContent,
@@ -114,23 +171,23 @@ const mergeChunks = (chunks: any[]): string => {
       continue;
     }
     
-    // 合并重叠的 chunks
+    // 閸氬牆鑻熼柌宥呭綌閻?chunks
     if (currentEndAt > lastChunk.end_at) {
-      // 将内容转换为字符数组以正确处理多字节字符
+      // 鐏忓棗鍞寸€圭娴嗛幑顫礋鐎涙顑侀弫鎵矋娴犮儲顒滅涵顔碱槱閻炲棗顦跨€涙濡€涙顑?
       const contentRunes = Array.from(currentContent);
       const contentLength = contentRunes.length;
       
-      // 计算偏移量：内容长度 - (当前结束位置 - 上一个结束位置)
+      // 鐠侊紕鐣婚崑蹇曅╅柌蹇ョ窗閸愬懎顔愰梹鍨 - (瑜版挸澧犵紒鎾存将娴ｅ秶鐤?- 娑撳﹣绔存稉顏嗙波閺夌喍缍呯純?
       const offset = contentLength - (currentEndAt - lastChunk.end_at);
       
-      // 拼接非重叠部分
+      // 閹峰吋甯撮棃鐐哄櫢閸欑娀鍎撮崚?
       const newContent = contentRunes.slice(offset).join('');
       lastChunk.content = lastChunk.content + newContent;
       lastChunk.end_at = currentEndAt;
     }
   }
   
-  // 合并所有段落，用双换行符连接
+  // 閸氬牆鑻熼幍鈧張澶嬵唽閽€鏂ょ礉閻劌寮婚幑銏ｎ攽缁楋箒绻涢幒?
   return mergedChunks.map(chunk => chunk.content).join('\n\n');
 };
 
@@ -172,53 +229,7 @@ const checkImage = (url: string): Promise<boolean> => {
     img.src = url;
   });
 };
-renderer.image = function ({href, title, text}) {
-  if (!isValidImageURL(href)) {
-    return `<p>${t('error.invalidImageLink')}</p>`;
-  }
-
-  const safeImage = createSafeImage(href, text || '', title || '');
-  return `<figure>
-                ${safeImage}
-                <figcaption style="text-align: left;">${text || ''}</figcaption>
-            </figure>`;
-};
-
-// 自定义代码块渲染器，只显示语言标签
-renderer.code = function ({text, lang}) {
-  // Mermaid 图表处理
-  if (lang === 'mermaid') {
-    // 生成唯一ID
-    const id = `mermaid-${++mermaidRenderCount}`;
-    // 返回带有 mermaid 类的 div，后续由 mermaid.run() 处理
-    return `<div class="mermaid" id="${id}">${text}</div>`;
-  }
-
-  let detectedLang = lang;
-  let highlighted = '';
-  if (lang && hljs.getLanguage(lang)) {
-    try {
-      highlighted = hljs.highlight(text, { language: lang }).value;
-    } catch (e) {
-      highlighted = hljs.highlightAuto(text).value;
-      detectedLang = hljs.highlightAuto(text).language || lang;
-    }
-  } else {
-    const auto = hljs.highlightAuto(text);
-    highlighted = auto.value;
-    detectedLang = auto.language || lang;
-  }
-  const displayLang = detectedLang || 'Code';
-  return `
-    <div class="code-block-wrapper">
-      <div class="code-block-header">
-        <span class="code-block-lang">${displayLang}</span>
-      </div>
-      <pre class="code-block-pre"><code class="hljs language-${detectedLang || ''}">${highlighted}</code></pre>
-    </div>
-  `;
-};
-// 监听 chunks 变化，自动更新合并内容
+// 閻╂垵鎯?chunks 閸欐ê瀵查敍宀冨殰閸斻劍娲块弬鏉挎値楠炶泛鍞寸€?
 watch(() => props.details?.md, (newChunks) => {
   if (newChunks && newChunks.length > 0) {
     mergedContent.value = mergeChunks(newChunks);
@@ -242,14 +253,10 @@ const canPreview = (): boolean => {
   return !!ft && previewSupportedTypes.has(ft);
 };
 
-// 当文档详情加载完成时，file 类型自动切换到「预览」
+// 瑜版挻鏋冨锝堫嚊閹懎濮炴潪钘夌暚閹存劖妞傞敍瀹杋le 缁鐎烽懛顏勫З閸掑洦宕查崚鑸偓宀勵暕鐟欏牄鈧?
 watch(() => props.details?.id, (newId) => {
   if (!newId) return;
-  if (props.details?.type === 'file' && canPreview()) {
-    viewMode.value = 'preview';
-  } else {
-    viewMode.value = 'merged';
-  }
+  viewMode.value = 'merged';
 });
 
 const isTextFile = (fileType?: string): boolean => {
@@ -275,111 +282,27 @@ const runMarkdownPostRenderPipeline = async () => {
       }
     })
   }
-  // 渲染 Mermaid 图表
-  await renderMermaidDiagrams();
+  await renderMermaidInContainer(mdContentWrap.value);
 };
 
-watch(() => props.details.md, (newVal) => {
-  runMarkdownPostRenderPipeline();
+watch(() => props.details.md, async () => {
+  await refreshRenderedMarkdown();
 }, { immediate: true, deep: true })
 
-watch(() => viewMode.value, (mode) => {
+watch(() => viewMode.value, async (mode) => {
   if ((mode === 'chunks' || mode === 'merged') && props.visible) {
-    runMarkdownPostRenderPipeline();
+    await refreshRenderedMarkdown();
   }
 });
 
-watch(() => props.visible, (visible) => {
+watch(() => props.visible, async (visible) => {
   if (visible && (viewMode.value === 'chunks' || viewMode.value === 'merged')) {
-    runMarkdownPostRenderPipeline();
+    await refreshRenderedMarkdown();
   }
 });
 
-// 渲染 Mermaid 图表的函数
-const renderMermaidDiagrams = async () => {
-  try {
-    const mermaidElements = mdContentWrap.value?.querySelectorAll<HTMLElement>('.mermaid');
-    console.log('[Mermaid] Found mermaid elements:', mermaidElements?.length);
-    if (mermaidElements && mermaidElements.length > 0) {
-      await mermaid.run({
-        nodes: mermaidElements
-      });
-      console.log('[Mermaid] Rendering complete');
-      // 渲染完成后绑定点击事件
-      nextTick(() => {
-        bindMermaidClickEvents();
-      });
-    }
-  } catch (error) {
-    console.error('Mermaid rendering error:', error);
-  }
-};
+// 鐎瑰鍙忛崷鏉款槱閻?Markdown 閸愬懎顔愰敍鍫滃▏閻?marked閿?
 
-// Mermaid 点击处理函数 - 必须在 bindMermaidClickEvents 之前定义
-const handleMermaidClick = (e: Event) => {
-  e.stopPropagation();
-  const target = e.currentTarget as HTMLElement;
-  const svg = target.querySelector('svg');
-  if (svg) {
-    openMermaidFullscreen(svg.outerHTML);
-  }
-};
-
-// 为 Mermaid 容器绑定点击全屏事件（绑定在 div 上，不是 SVG 上）
-const bindMermaidClickEvents = () => {
-  if (!mdContentWrap.value) {
-    console.log('[Mermaid] mdContentWrap is null');
-    return;
-  }
-  // 绑定在 .mermaid div 上，而不是 SVG 上
-  const mermaidDivs = mdContentWrap.value.querySelectorAll<HTMLElement>('.mermaid');
-  console.log('[Mermaid] Found mermaid divs:', mermaidDivs.length);
-  mermaidDivs.forEach((div, index) => {
-    const divEl = div as HTMLElement;
-    divEl.style.cursor = 'pointer';
-    // 移除旧的事件监听器（避免重复绑定）
-    divEl.removeEventListener('click', handleMermaidClick);
-    divEl.addEventListener('click', handleMermaidClick);
-    console.log(`[Mermaid] Bound click event to div ${index}`);
-  });
-};
-
-// 安全地处理 Markdown 内容（使用 marked）
-const processMarkdown = (markdownText: string): string => {
-  if (!markdownText || typeof markdownText !== 'string') return '';
-
-  // 先还原原始文本中的 HTML 实体，让它们作为普通字符参与渲染
-  let processedText = markdownText
-    .replace(/&#39;/g, "'")
-    .replace(/&#x27;/gi, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&#34;/g, '"')
-    .replace(/&#x22;/gi, '"')
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
-
-  // 处理被 <p> 包裹的表格行，转换为正常的表格行，并在前后补空行
-  processedText = processedText.replace(/<p>\s*(\|[\s\S]*?\|)\s*<\/p>/gi, '\n$1\n');
-
-  // 保留表格单元格中的 <br>，不转成换行，避免打散表格；其他区域原样交给 marked 处理
-
-  // 安全预处理
-  const safeMarkdown = safeMarkdownToHTML(processedText);
-
-  // 使用标记渲染
-  marked.use({ renderer });
-  let html = marked.parse(safeMarkdown, { async: false }) as string;
-
-  // 还原被转义的 <br>
-  html = html.replace(/&lt;br\s*\/?&gt;/gi, '<br>');
-
-  // 最终安全清理
-  let result = sanitizeHTML(html);
-  
-  return result;
-};
 const handleClose = () => {
   emit("closeDoc", false);
   if (doc) {
@@ -388,15 +311,15 @@ const handleClose = () => {
   viewMode.value = 'merged';
 };
 
-// 获取显示标题
+// 閼惧嘲褰囬弰鍓с仛閺嶅洭顣?
 const getDisplayTitle = () => {
   if (!props.details.title) return '';
   if (props.details.type === 'file') {
-    // 文件类型去掉扩展名
+    // 閺傚洣娆㈢猾璇茬€烽崢缁樺竴閹碘晛鐫嶉崥?
     const lastDotIndex = props.details.title.lastIndexOf(".");
     return lastDotIndex > 0 ? props.details.title.substring(0, lastDotIndex) : props.details.title;
   }
-  // URL和手动创建直接返回标题
+  // URL閸滃本澧滈崝銊ュ灡瀵よ櫣娲块幒銉ㄧ箲閸ョ偞鐖ｆ０?
   return props.details.title;
 };
 
@@ -417,7 +340,7 @@ const getChannelLabel = (channel: string) => {
   return key ? t(key) : t('knowledgeBase.channelUnknown');
 };
 
-// 获取类型标签
+// 閼惧嘲褰囩猾璇茬€烽弽鍥╊劮
 const getTypeLabel = () => {
   switch (props.details.type) {
     case 'url':
@@ -431,7 +354,7 @@ const getTypeLabel = () => {
   }
 };
 
-// 获取类型主题色
+// 閼惧嘲褰囩猾璇茬€锋稉濠氼暯閼?
 const getTypeTheme = () => {
   switch (props.details.type) {
     case 'url':
@@ -445,7 +368,7 @@ const getTypeTheme = () => {
   }
 };
 
-// 获取内容标签
+// 閼惧嘲褰囬崘鍛啇閺嶅洨顒?
 const getContentLabel = () => {
   switch (props.details.type) {
     case 'url':
@@ -458,7 +381,7 @@ const getContentLabel = () => {
   }
 };
 
-// 获取时间标签
+// 閼惧嘲褰囬弮鍫曟？閺嶅洨顒?
 const getTimeLabel = () => {
   switch (props.details.type) {
     case 'url':
@@ -471,7 +394,7 @@ const getTimeLabel = () => {
   }
 };
 
-// 获取Chunk样式类
+// 閼惧嘲褰嘋hunk閺嶅嘲绱＄猾?
 const normalizeChunkIndex = (index: string | number) => Number(index) || 0;
 const getChunkDisplayIndex = (index: string | number) => normalizeChunkIndex(index) + 1;
 
@@ -479,7 +402,7 @@ const getChunkClass = (index: string | number) => {
   return normalizeChunkIndex(index) % 2 !== 0 ? 'chunk-odd' : 'chunk-even';
 };
 
-// 获取Chunk元数据
+// 閼惧嘲褰嘋hunk閸忓啯鏆熼幑?
 const getChunkMeta = (item: any) => {
   if (!item) return '';
   const parts = [];
@@ -492,22 +415,22 @@ const getChunkMeta = (item: any) => {
   return parts.join(' · ');
 };
 
-// 生成的问题类型
+// 閻㈢喐鍨氶惃鍕６妫版琚崹?
 interface GeneratedQuestion {
   id: string;
   question: string;
 }
 
-// 解析生成的问题
+// 鐟欙絾鐎介悽鐔稿灇閻ㄥ嫰妫舵０?
 const getGeneratedQuestions = (item: any): GeneratedQuestion[] => {
   if (!item || !item.metadata) return [];
   try {
     const metadata = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
     const questions = metadata.generated_questions || [];
-    // 兼容旧格式（字符串数组）和新格式（对象数组）
+    // 閸忕厧顔愰弮褎鐗稿蹇ョ礄鐎涙顑佹稉鍙夋殶缂佸嫸绱氶崪灞炬煀閺嶇厧绱￠敍鍫濐嚠鐠炩剝鏆熺紒鍕剁礆
     return questions.map((q: string | GeneratedQuestion, index: number) => {
       if (typeof q === 'string') {
-        // 旧格式：字符串，生成临时ID
+        // 閺冄勭壐瀵骏绱扮€涙顑佹稉璇х礉閻㈢喐鍨氭稉瀛樻ID
         return { id: `legacy-${index}`, question: q };
       }
       return q;
@@ -517,7 +440,7 @@ const getGeneratedQuestions = (item: any): GeneratedQuestion[] => {
   }
 };
 
-// 展开状态管理
+// 鐏炴洖绱戦悩鑸碘偓浣侯吀閻?
 const expandedChunks = ref<Set<string | number>>(new Set());
 
 const toggleQuestions = (index: string | number) => {
@@ -526,23 +449,23 @@ const toggleQuestions = (index: string | number) => {
   } else {
     expandedChunks.value.add(index);
   }
-  // 触发响应式更新
+  // 鐟欙箑褰傞崫宥呯安瀵繑娲块弬?
   expandedChunks.value = new Set(expandedChunks.value);
 };
 
 const isExpanded = (index: string | number) => expandedChunks.value.has(index);
 
-// 删除中的状态
+// 閸掔娀娅庢稉顓犳畱閻樿埖鈧?
 const deletingQuestion = ref<{ chunkIndex: string | number; questionId: string } | null>(null);
 
-// 删除生成的问题
+// 閸掔娀娅庨悽鐔稿灇閻ㄥ嫰妫舵０?
 const handleDeleteQuestion = async (item: any, chunkIndex: string | number, question: GeneratedQuestion) => {
   if (!item || !item.id) {
     MessagePlugin.error(t('common.error'));
     return;
   }
 
-  // 检查是否是旧格式数据（无法删除）
+  // 濡偓閺屻儲妲搁崥锔芥Ц閺冄勭壐瀵繑鏆熼幑顕嗙礄閺冪姵纭堕崚鐘绘珟閿?
   if (question.id.startsWith('legacy-')) {
     MessagePlugin.warning(t('knowledgeBase.legacyQuestionCannotDelete'));
     return;
@@ -560,7 +483,7 @@ const handleDeleteQuestion = async (item: any, chunkIndex: string | number, ques
         await deleteGeneratedQuestion(item.id, question.id);
         MessagePlugin.success(t('common.deleteSuccess'));
         
-        // 更新本地数据
+        // 閺囧瓨鏌婇張顒€婀撮弫鐗堝祦
         const metadata = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
         if (metadata && metadata.generated_questions) {
           const idx = metadata.generated_questions.findIndex((q: GeneratedQuestion) => q.id === question.id);
@@ -570,7 +493,7 @@ const handleDeleteQuestion = async (item: any, chunkIndex: string | number, ques
           item.metadata = typeof item.metadata === 'string' ? JSON.stringify(metadata) : metadata;
         }
         
-        // 通知父组件刷新数据
+        // 闁氨鐓￠悥鍓佺矋娴犺泛鍩涢弬鐗堟殶閹?
         emit('questionDeleted', { chunkId: item.id, questionId: question.id });
       } catch (error: any) {
         MessagePlugin.error(error?.message || t('common.deleteFailed'));
@@ -584,12 +507,12 @@ const handleDeleteQuestion = async (item: any, chunkIndex: string | number, ques
   });
 };
 
-// 检查是否正在删除某个问题
+// 濡偓閺屻儲妲搁崥锔筋劀閸︺劌鍨归梽銈嗙厙娑擃亪妫舵０?
 const isDeleting = (chunkIndex: string | number, questionId: string) => {
   return deletingQuestion.value?.chunkIndex === chunkIndex && deletingQuestion.value?.questionId === questionId;
 };
 
-// 父 Chunk 上下文展开状态
+// 閻?Chunk 娑撳﹣绗呴弬鍥х潔瀵偓閻樿埖鈧?
 const parentContextExpanded = ref<Set<string | number>>(new Set());
 const parentContextCache = ref<Map<string, string>>(new Map());
 const parentContextLoading = ref<Set<string | number>>(new Set());
@@ -626,7 +549,7 @@ const toggleParentContext = async (item: any, index: string | number) => {
   
   parentContextExpanded.value.add(index);
   parentContextExpanded.value = new Set(parentContextExpanded.value);
-  await runMarkdownPostRenderPipeline();
+  await refreshRenderedMarkdown();
 };
 
 const getParentContent = (item: any) => {
@@ -687,7 +610,7 @@ const handleDetailsScroll = () => {
         </div>
       </template>
       
-      <!-- 文件类型专属区域 -->
+      <!-- 閺傚洣娆㈢猾璇茬€锋稉鎾崇潣閸栧搫鐓?-->
       <div v-if="details.type === 'file'" class="doc_box">
         <a :href="url" style="display: none" ref="down" :download="details.title"></a>
         <span class="label">{{ $t('knowledgeBase.fileName') }}</span>
@@ -699,7 +622,7 @@ const handleDetailsScroll = () => {
         </div>
       </div>
       
-      <!-- URL类型专属区域 -->
+      <!-- URL缁鐎锋稉鎾崇潣閸栧搫鐓?-->
       <div v-else-if="details.type === 'url'" class="url_box">
         <span class="label">{{ $t('knowledgeBase.urlSource') }}</span>
         <div class="url_link_box">
@@ -711,7 +634,7 @@ const handleDetailsScroll = () => {
         </div>
       </div>
       
-      <!-- 手动创建类型专属区域 -->
+      <!-- 閹靛濮╅崚娑樼紦缁鐎锋稉鎾崇潣閸栧搫鐓?-->
       <div v-else-if="details.type === 'manual'" class="manual_box">
         <span class="label">{{ $t('knowledgeBase.documentTitle') }}</span>
         <div class="download_box">
@@ -749,7 +672,6 @@ const handleDetailsScroll = () => {
                 {{ $t('preview.tab') }}
               </t-button>
               <t-button 
-                v-if="!canPreview()"
                 size="small" 
                 :variant="viewMode === 'merged' ? 'base' : 'outline'" 
                 :theme="viewMode === 'merged' ? 'primary' : 'default'"
@@ -772,13 +694,13 @@ const handleDetailsScroll = () => {
         </div>
       </div>
       
-      <!-- 合并视图 -->
+      <!-- 閸氬牆鑻熺憴鍡楁禈 -->
       <div v-if="viewMode === 'merged'">
         <div v-if="!mergedContent" class="no_content">{{ $t('common.noData') }}</div>
-        <div v-else class="md-content" v-html="processMarkdown(mergedContent)"></div>
+        <div v-else class="md-content" v-html="renderedMergedContent"></div>
       </div>
       
-      <!-- 分块视图 -->
+      <!-- 閸掑棗娼＄憴鍡楁禈 -->
       <div v-else-if="viewMode === 'chunks'">
         <div v-if="details.md.length == 0" class="no_content">{{ $t('common.noData') }}</div>
         <div v-else class="chunk-list">
@@ -809,9 +731,9 @@ const handleDetailsScroll = () => {
                 <span class="chunk-meta">{{ getChunkMeta(item) }}</span>
               </div>
             </div>
-            <div class="md-content" v-html="processMarkdown(item.content)"></div>
+            <div class="md-content" v-html="getRenderedChunkHTML(item.content)"></div>
             
-            <!-- 父 Chunk 上下文展开 -->
+            <!-- 閻?Chunk 娑撳﹣绗呴弬鍥х潔瀵偓 -->
             <div v-if="hasParentChunk(item)" class="parent-context-section">
               <div class="parent-context-toggle" @click="toggleParentContext(item, index)">
                 <t-icon v-if="!parentContextLoading.has(index)" :name="isParentExpanded(index) ? 'chevron-down' : 'chevron-right'" size="14px" />
@@ -819,11 +741,11 @@ const handleDetailsScroll = () => {
                 <span>{{ $t('knowledgeBase.viewParentContext') }}</span>
               </div>
               <div v-show="isParentExpanded(index)" class="parent-context-content">
-                <div class="md-content" v-html="processMarkdown(getParentContent(item))"></div>
+                <div class="md-content" v-html="getRenderedParentHTML(item)"></div>
               </div>
             </div>
             
-            <!-- 生成的问题展示 -->
+            <!-- 閻㈢喐鍨氶惃鍕６妫版ê鐫嶇粈?-->
             <div v-if="getGeneratedQuestions(item).length > 0" class="questions-section">
               <div class="questions-toggle" @click="toggleQuestions(index)">
                 <t-icon :name="isExpanded(index) ? 'chevron-down' : 'chevron-right'" size="14px" />
@@ -856,7 +778,7 @@ const handleDetailsScroll = () => {
         </div>
       </div>
       
-      <!-- 文档预览视图 -->
+      <!-- 閺傚洦銆傛０鍕潔鐟欏棗娴?-->
       <div v-else-if="viewMode === 'preview'">
         <DocumentPreview
           :knowledgeId="details.id"
@@ -877,19 +799,19 @@ const handleDetailsScroll = () => {
 @import "./css/markdown.less";
 
 :deep(.t-drawer .t-drawer__content-wrapper) {
-  width: min(654px, 85vw) !important; // 减少到85%视口宽度，给左侧留更多空间
+  width: min(654px, 85vw) !important; // 閸戝繐鐨崚?5%鐟欏棗褰涚€硅棄瀹抽敍宀€绮板锔挎櫠閻ｆ瑦娲挎径姘扁敄闂?
   max-width: 654px !important;
 }
 
-// 在小屏幕上进一步调整
+// 閸︺劌鐨仦蹇撶娑撳﹨绻樻稉鈧銉ㄧ殶閺?
 @media (max-width: 768px) {
   :deep(.t-drawer .t-drawer__content-wrapper) {
-    width: 90vw !important; // 小屏幕上使用90%宽度
+    width: 90vw !important; // 鐏忓繐鐫嗛獮鏇氱瑐娴ｈ法鏁?0%鐎硅棄瀹?
     max-width: none !important;
   }
 }
 
-// 代码块样式
+// 娴狅絿鐖滈崸妤佺壉瀵?
 :deep(.code-block-wrapper) {
   margin: 12px 0;
   border: 1px solid var(--td-component-border);
@@ -964,7 +886,7 @@ const handleDetailsScroll = () => {
   margin-bottom: 8px;
 }
 
-// 文件下载区域
+// 閺傚洣娆㈡稉瀣祰閸栧搫鐓?
 .download_box {
   display: flex;
   align-items: center;
@@ -997,7 +919,7 @@ const handleDetailsScroll = () => {
   }
 }
 
-// URL链接区域
+// URL闁剧偓甯撮崠鍝勭厵
 .url_link_box {
   border-radius: 4px;
   border: 1px solid var(--td-success-color-focus);
@@ -1038,7 +960,7 @@ const handleDetailsScroll = () => {
   }
 }
 
-// 手动创建标题区域
+// 閹靛濮╅崚娑樼紦閺嶅洭顣介崠鍝勭厵
 .manual_title_box {
   border-radius: 4px;
   border: 1px solid var(--td-component-border);
@@ -1124,7 +1046,7 @@ const handleDetailsScroll = () => {
   text-align: center;
 }
 
-// Chunk列表样式
+// Chunk閸掓銆冮弽宄扮础
 .chunk-list {
   display: flex;
   flex-direction: column;
@@ -1178,7 +1100,7 @@ const handleDetailsScroll = () => {
   }
 }
 
-// 父 Chunk 上下文样式
+// 閻?Chunk 娑撳﹣绗呴弬鍥ㄧ壉瀵?
 .parent-context-section {
   margin-top: 10px;
   padding-top: 8px;
@@ -1214,7 +1136,7 @@ const handleDetailsScroll = () => {
   }
 }
 
-// 生成的问题样式
+// 閻㈢喐鍨氶惃鍕６妫版ɑ鐗卞?
 .questions-section {
   margin-top: 12px;
   padding-top: 10px;
@@ -1292,7 +1214,7 @@ const handleDetailsScroll = () => {
   color: var(--td-text-color-primary);
 }
 
-// 保留旧样式作为兼容（已被chunk-item替代）
+// 娣囨繄鏆€閺冄勭壉瀵繋缍旀稉鍝勫悑鐎圭櫢绱欏鑼额潶chunk-item閺囧じ鍞敍?
 .content {
   word-break: break-word;
   padding: 4px;

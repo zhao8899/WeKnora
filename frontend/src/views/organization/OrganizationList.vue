@@ -40,6 +40,36 @@
           <p class="header-subtitle">{{ $t('organization.subtitle') }}</p>
         </div>
       </div>
+      <div class="space-workflow-banner">
+        <div class="space-workflow-main">
+          <div class="space-workflow-status">
+            <span class="space-workflow-pill" :class="`status-${spaceWorkflowStatus.tone}`">
+              {{ spaceWorkflowStatus.label }}
+            </span>
+            <div class="space-workflow-copy">
+              <h3>共享空间当前状态</h3>
+              <p>{{ spaceWorkflowStatus.description }}</p>
+            </div>
+          </div>
+          <div class="space-workflow-actions">
+            <t-button theme="primary" @click="handleJoinOrganization">
+              加入空间
+            </t-button>
+            <t-button v-if="canCreateOrganization" variant="outline" @click="handleCreateOrganization">
+              创建空间
+            </t-button>
+            <t-button variant="text" theme="primary" @click="spaceSelection = 'joined'">
+              查看已加入空间
+            </t-button>
+          </div>
+        </div>
+        <div class="space-workflow-metrics">
+          <div v-for="item in spaceWorkflowMetrics" :key="item.label" class="space-workflow-metric">
+            <span class="space-workflow-metric-label">{{ item.label }}</span>
+            <strong class="space-workflow-metric-value">{{ item.value }}</strong>
+          </div>
+        </div>
+      </div>
       <div class="org-list-main">
     <!-- 卡片网格 -->
     <div v-if="filteredOrganizations.length > 0" class="org-card-wrap">
@@ -124,15 +154,15 @@
                 </div>
               </t-tooltip>
               <t-tooltip :content="$t('organization.invite.knowledgeBases')" placement="top">
-                <div class="feature-badge stat-kb">
+                <div class="feature-badge stat-kb clickable-resource" @click.stop="handleOpenOrganizationResource(org, 'knowledge')">
                   <t-icon name="folder" size="14px" />
-                  <span class="badge-count">{{ org.share_count ?? 0 }}</span>
+                  <span class="badge-count">{{ getOrganizationKnowledgeCount(org) }}</span>
                 </div>
               </t-tooltip>
               <t-tooltip :content="$t('organization.invite.agents')" placement="top">
-                <div class="feature-badge stat-agent">
+                <div class="feature-badge stat-agent clickable-resource" @click.stop="handleOpenOrganizationResource(org, 'agent')">
                   <img src="@/assets/img/agent-green.svg" class="stat-agent-icon" alt="" aria-hidden="true" />
-                  <span class="badge-count">{{ org.agent_share_count ?? 0 }}</span>
+                  <span class="badge-count">{{ getOrganizationAgentCount(org) }}</span>
                 </div>
               </t-tooltip>
             </div>
@@ -169,8 +199,9 @@
       </div>
     </div>
 
-    <!-- Organization Settings Modal (用于创建和编辑组织) -->
+    <!-- Organization Settings Modal (用于创建和编辑共享空间) -->
     <OrganizationSettingsModal
+      v-if="showSettingsModal"
       :visible="showSettingsModal"
       :org-id="settingsOrgId"
       :mode="settingsMode"
@@ -224,7 +255,7 @@
       </div>
     </t-dialog>
 
-    <!-- 加入组织 / 邀请预览弹框（菜单与邀请链接共用同一弹框） -->
+    <!-- 加入共享空间 / 邀请预览弹框（菜单与邀请链接共用同一弹框） -->
     <Teleport to="body">
       <Transition name="modal">
         <div v-if="showInvitePreview" class="invite-preview-overlay" @click.self="closeInvitePreview">
@@ -563,17 +594,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { defineAsyncComponent, ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useAuthStore } from '@/stores/auth'
 import { useOrganizationStore } from '@/stores/organization'
 import type { Organization, OrganizationPreview, SearchableOrganizationItem } from '@/api/organization'
 import { previewOrganization, joinOrganization, submitJoinRequest, searchSearchableOrganizations, joinOrganizationById } from '@/api/organization'
 import { useI18n } from 'vue-i18n'
-import OrganizationSettingsModal from './OrganizationSettingsModal.vue'
 import SpaceAvatar from '@/components/SpaceAvatar.vue'
 import ListSpaceSidebar from '@/components/ListSpaceSidebar.vue'
+const OrganizationSettingsModal = defineAsyncComponent(() => import('./OrganizationSettingsModal.vue'))
 
 interface OrgWithUI extends Organization {
   showMore?: boolean
@@ -753,12 +784,12 @@ watch([searchableList, searchLoading], () => {
 // 监听菜单快捷操作事件
 const handleOrganizationDialogEvent = ((event: CustomEvent<{ type: 'create' | 'join' }>) => {
   if (event.detail?.type === 'create') {
-    // 创建组织使用 SettingsModal
+    // 创建共享空间使用 SettingsModal
     settingsOrgId.value = ''
     settingsMode.value = 'create'
     showSettingsModal.value = true
   } else if (event.detail?.type === 'join') {
-    // 加入组织使用与邀请链接相同的预览弹框，先显示输入邀请码步骤
+    // 加入共享空间使用与邀请链接相同的预览弹框，先显示输入邀请码步骤
     joinInputCode.value = ''
     inviteCode.value = ''
     invitePreviewData.value = null
@@ -781,6 +812,50 @@ const organizations = ref<OrgWithUI[]>([])
 
 const createdCount = computed(() => organizations.value.filter(o => o.is_owner).length)
 const joinedCount = computed(() => organizations.value.filter(o => !o.is_owner).length)
+const sharedKnowledgeBaseCount = computed(() =>
+  organizations.value.reduce((sum, org) => sum + (org.share_count ?? 0), 0)
+)
+const pendingReviewCount = computed(() =>
+  organizations.value.reduce((sum, org) => sum + (org.pending_join_request_count ?? 0), 0)
+)
+
+const spaceWorkflowStatus = computed(() => {
+  if (organizations.value.length === 0) {
+    return {
+      label: '待加入',
+      tone: 'pending',
+      description: '当前还没有共享空间，先通过邀请码或空间搜索加入已有团队空间。',
+    }
+  }
+
+  if (pendingReviewCount.value > 0) {
+    return {
+      label: '待处理',
+      tone: 'warning',
+      description: `当前有 ${pendingReviewCount.value} 条待处理申请，适合先处理空间协作请求。`,
+    }
+  }
+
+  if (sharedKnowledgeBaseCount.value === 0) {
+    return {
+      label: '待共享',
+      tone: 'pending',
+      description: '空间已建立，但还没有共享知识内容，下一步适合共享知识库给团队。',
+    }
+  }
+
+  return {
+    label: '可协作',
+    tone: 'ready',
+    description: '共享空间和知识内容已经建立，可以继续在团队内稳定协作使用。',
+  }
+})
+
+const spaceWorkflowMetrics = computed(() => [
+  { label: '空间总数', value: organizations.value.length },
+  { label: '已加入', value: joinedCount.value },
+  { label: '共享知识库', value: sharedKnowledgeBaseCount.value },
+])
 
 const filteredOrganizations = computed(() => {
   if (spaceSelection.value === 'created') return organizations.value.filter(o => o.is_owner)
@@ -799,7 +874,7 @@ const emptyStateDesc = computed(() => {
   if (spaceSelection.value === 'created') {
     return canCreateOrganization.value
       ? t('organization.emptyCreatedDesc')
-      : '当前没有你可管理的共享空间，空间创建由管理员或空间负责人统一维护。'
+      : '当前没有你可管理的共享空间，空间创建由空间负责人统一维护。'
   }
   if (spaceSelection.value === 'joined') return t('organization.emptyJoinedDesc')
   return canCreateOrganization.value
@@ -831,7 +906,7 @@ const onVisibleChange = (visible: boolean, org: OrgWithUI) => {
   }
 }
 
-// 创建组织
+// 创建共享空间
 function handleCreateOrganization() {
   if (!canCreateOrganization.value) return
   settingsOrgId.value = ''
@@ -839,7 +914,7 @@ function handleCreateOrganization() {
   showSettingsModal.value = true
 }
 
-// 加入组织
+// 加入共享空间
 function handleJoinOrganization() {
   joinInputCode.value = ''
   inviteCode.value = ''
@@ -858,6 +933,7 @@ function handleCardClick(org: OrgWithUI) {
     return
   }
   if (!canManageOrganization(org)) {
+    handleOpenOrganizationResource(org)
     return
   }
   settingsOrgId.value = org.id
@@ -869,8 +945,31 @@ function canManageOrganization(org: OrgWithUI) {
   return org.is_owner || org.my_role === 'admin'
 }
 
+function getOrganizationKnowledgeCount(org: OrgWithUI) {
+  return orgStore.resourceCounts?.knowledge_bases?.by_organization?.[org.id] ?? org.share_count ?? 0
+}
+
+function getOrganizationAgentCount(org: OrgWithUI) {
+  return orgStore.resourceCounts?.agents?.by_organization?.[org.id] ?? org.agent_share_count ?? 0
+}
+
+function handleOpenOrganizationResource(org: OrgWithUI, preferred?: 'knowledge' | 'agent') {
+  const knowledgeCount = getOrganizationKnowledgeCount(org)
+  const agentCount = getOrganizationAgentCount(org)
+
+  if ((preferred === 'knowledge' && knowledgeCount > 0) || (!preferred && knowledgeCount > 0)) {
+    router.push({ path: '/platform/knowledge-bases', query: { space: org.id } })
+    return
+  }
+  if ((preferred === 'agent' && agentCount > 0) || (!preferred && agentCount > 0)) {
+    router.push({ path: '/platform/agents', query: { space: org.id } })
+    return
+  }
+  MessagePlugin.info('该空间暂无可查看的知识库或智能体')
+}
+
 function handleSettingsSaved() {
-  orgStore.fetchOrganizations()
+  orgStore.fetchOrganizations({ force: true })
 }
 
 
@@ -943,7 +1042,7 @@ async function handleInvitePreview(code: string) {
   }
 }
 
-// 确认加入组织（区分直接加入 vs 需要审核，支持邀请码和搜索两种方式）
+// 确认加入共享空间（区分直接加入 vs 需要审核，支持邀请码和搜索两种方式）
 async function confirmJoinOrganization() {
   if (!invitePreviewData.value || invitePreviewData.value.is_already_member) return
   
@@ -958,7 +1057,7 @@ async function confirmJoinOrganization() {
   
   inviteJoining.value = true
   try {
-    // 需要审核的情况：提交申请（带申请角色与可选说明）
+    // 需要审核的情况：提交申请（带申请空间权限与可选说明）
     if (invitePreviewData.value.require_approval) {
       const result = await submitJoinRequest({
         invite_code: inviteCode.value,
@@ -985,8 +1084,8 @@ async function confirmJoinOrganization() {
         invitePreviewData.value = null
         // 清除 URL 中的 invite_code 参数
         router.replace({ path: route.path, query: {} })
-        // 刷新组织列表
-        orgStore.fetchOrganizations()
+        // 刷新共享空间列表
+        orgStore.fetchOrganizations({ force: true })
       } else {
         MessagePlugin.error(result.message || t('organization.invite.joinFailed'))
       }
@@ -1185,7 +1284,7 @@ async function joinBySearchOrg() {
         MessagePlugin.success(t('organization.invite.requestSubmitted'))
       } else {
         MessagePlugin.success(t('organization.invite.joinSuccess'))
-        orgStore.fetchOrganizations()
+        orgStore.fetchOrganizations({ force: true })
       }
       showInvitePreview.value = false
       invitePreviewData.value = null
@@ -1295,6 +1394,110 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.space-workflow-banner {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 12px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  background: linear-gradient(180deg, var(--td-bg-color-container) 0%, var(--td-bg-color-secondarycontainer) 100%);
+  flex-shrink: 0;
+}
+
+.space-workflow-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.space-workflow-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.space-workflow-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+
+  &.status-warning {
+    color: #b65c00;
+    background: rgba(255, 152, 0, 0.12);
+  }
+
+  &.status-pending {
+    color: var(--td-text-color-secondary);
+    background: var(--td-bg-color-page);
+  }
+
+  &.status-ready {
+    color: var(--td-brand-color-active);
+    background: rgba(7, 192, 95, 0.12);
+  }
+}
+
+.space-workflow-copy {
+  h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--td-text-color-primary);
+  }
+
+  p {
+    margin: 6px 0 0;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--td-text-color-secondary);
+    max-width: 560px;
+  }
+}
+
+.space-workflow-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.space-workflow-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 240px;
+}
+
+.space-workflow-metric {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(7, 192, 95, 0.05);
+}
+
+.space-workflow-metric-label {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+
+.space-workflow-metric-value {
+  font-size: 22px;
+  color: var(--td-text-color-primary);
 }
 
 .org-join-btn {
@@ -1675,6 +1878,10 @@ onUnmounted(() => {
   cursor: default;
   transition: background 0.2s ease;
 
+  &.clickable-resource {
+    cursor: pointer;
+  }
+
   .t-icon {
     flex-shrink: 0;
   }
@@ -1725,7 +1932,7 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-// 右下角：创建者/角色 合并标签（带图标）
+// 右下角：创建者/空间权限合并标签（带图标）
 .bottom-right {
   display: flex;
   align-items: center;
@@ -2754,6 +2961,32 @@ onUnmounted(() => {
 .modal-leave-from {
   .invite-preview-modal {
     transform: scale(1) translateY(0);
+  }
+}
+
+@media (max-width: 1045px) {
+  .space-workflow-banner,
+  .space-workflow-main {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .space-workflow-actions {
+    justify-content: flex-start;
+  }
+
+  .space-workflow-metrics {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 750px) {
+  .space-workflow-status {
+    flex-direction: column;
+  }
+
+  .space-workflow-metrics {
+    grid-template-columns: 1fr;
   }
 }
 </style>

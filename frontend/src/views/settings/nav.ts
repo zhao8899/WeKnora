@@ -5,6 +5,7 @@ export type SettingsNavItem = {
   label: string
   icon: string
   adminOnly?: boolean
+  tenantOnly?: boolean
   children?: Array<{
     key: string
     label: string
@@ -22,6 +23,7 @@ export function getSettingsNavItems(t: TranslateFn, isAdmin = false): SettingsNa
       key: 'models',
       label: t('settings.modelConfig'),
       icon: 'control-platform',
+      adminOnly: true,
       children: [
         { key: 'chat', label: t('modelSettings.chat.title') },
         { key: 'embedding', label: t('modelSettings.embedding.title') },
@@ -38,12 +40,26 @@ export function getSettingsNavItems(t: TranslateFn, isAdmin = false): SettingsNa
     {
       key: 'agent',
       label: t('settings.agentConfig'),
-      icon: 'chat'
+      icon: 'chat',
+      adminOnly: true
     },
     {
       key: 'websearch',
       label: t('settings.webSearchConfig'),
-      icon: 'internet'
+      icon: 'internet',
+      adminOnly: true
+    },
+    {
+      key: 'vectorstore',
+      label: '向量库管理',
+      icon: 'database',
+      adminOnly: true
+    },
+    {
+      key: 'langfuse',
+      label: 'Langfuse',
+      icon: 'chart',
+      adminOnly: true
     },
     {
       key: 'parser',
@@ -77,20 +93,32 @@ export function getSettingsNavItems(t: TranslateFn, isAdmin = false): SettingsNa
     {
       key: 'tenant',
       label: t('settings.tenantInfo'),
-      icon: 'user'
+      icon: 'user',
+      tenantOnly: true
     },
     {
       key: 'api',
       label: t('settings.apiInfo'),
-      icon: 'code'
+      icon: 'code',
+      tenantOnly: true
     },
     {
       key: 'knowledge-health',
       label: t('settings.health.title'),
       icon: 'chart-bubble',
       adminOnly: true
+    },
+    {
+      key: 'evaluation',
+      label: t('settings.evaluation.title'),
+      icon: 'chart',
+      adminOnly: true
     }
   ]
 
-  return isAdmin ? allItems : allItems.filter(item => !item.adminOnly)
+  if (isAdmin) {
+    return allItems.filter(item => !item.tenantOnly)
+  }
+
+  return allItems.filter(item => !item.adminOnly)
 }

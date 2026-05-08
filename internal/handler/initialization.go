@@ -109,6 +109,8 @@ type KBModelConfigRequest struct {
 	// 存储引擎选择（"local" | "minio" | "cos"），影响文档上传与文档内图片存储，参数从全局设置读取
 	StorageProvider string `json:"storageProvider"`
 
+	IndexingStrategy *types.IndexingStrategy `json:"indexingStrategy"`
+
 	// 知识图谱配置
 	NodeExtract struct {
 		Enabled   bool                  `json:"enabled"`
@@ -324,6 +326,10 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 		}
 	}
 	kb.SetStorageProvider(provider)
+
+	if req.IndexingStrategy != nil {
+		kb.IndexingStrategy = *req.IndexingStrategy
+	}
 
 	// 更新知识图谱配置
 	if req.NodeExtract.Enabled {

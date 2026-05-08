@@ -24,6 +24,8 @@ import {
   listSharedAgents
 } from '@/api/organization'
 
+const ORG_CACHE_TTL_MS = 30_000
+
 export const useOrganizationStore = defineStore('organization', () => {
   // State
   const organizations = ref<Organization[]>([])
@@ -38,6 +40,11 @@ export const useOrganizationStore = defineStore('organization', () => {
   const resourceCounts = ref<ResourceCountsByOrg | null>(null)
   /** 用于去重：同一时刻只允许一次 GET /organizations 请求 */
   let fetchOrganizationsPromise: Promise<void> | null = null
+  let fetchSharedKnowledgeBasesPromise: Promise<SharedKnowledgeBase[]> | null = null
+  let fetchSharedAgentsPromise: Promise<SharedAgentInfo[]> | null = null
+  let organizationsFetchedAt = 0
+  let sharedKnowledgeBasesFetchedAt = 0
+  let sharedAgentsFetchedAt = 0
 
   // Computed
   const myOrganizations = computed(() => organizations.value)
@@ -61,7 +68,19 @@ export const useOrganizationStore = defineStore('organization', () => {
    * Fetch all organizations the user belongs to.
    * 去重：并发调用只发一次请求，共用同一 Promise。
    */
-  async function fetchOrganizations() {
+  const isFresh = (timestamp: number) => timestamp > 0 && Date.now() - timestamp < ORG_CACHE_TTL_MS
+
+  function invalidateOrganizationsCache() {
+    organizationsFetchedAt = 0
+  }
+
+  function invalidateSharedResourcesCache() {
+    sharedKnowledgeBasesFetchedAt = 0
+    sharedAgentsFetchedAt = 0
+  }
+
+  async function fetchOrganizations(options: { force?: boolean } = {}) {
+    if (!options.force && isFresh(organizationsFetchedAt)) return
     if (fetchOrganizationsPromise) return fetchOrganizationsPromise
     loading.value = true
     error.value = null
@@ -71,13 +90,16 @@ export const useOrganizationStore = defineStore('organization', () => {
         if (response.success && response.data) {
           organizations.value = response.data.organizations
           resourceCounts.value = response.data.resource_counts ?? null
+          organizationsFetchedAt = Date.now()
         } else {
           resourceCounts.value = null
+          organizationsFetchedAt = 0
           error.value = response.message || 'Failed to fetch organizations'
         }
       } catch (e: any) {
         error.value = e.message || 'Failed to fetch organizations'
         resourceCounts.value = null
+        organizationsFetchedAt = 0
       } finally {
         loading.value = false
         fetchOrganizationsPromise = null
@@ -96,6 +118,7 @@ export const useOrganizationStore = defineStore('organization', () => {
       const response = await createOrganization({ name, description })
       if (response.success && response.data) {
         organizations.value.unshift(response.data)
+        organizationsFetchedAt = Date.now()
         return response.data
       } else {
         error.value = response.message || 'Failed to create organization'
@@ -125,6 +148,7 @@ export const useOrganizationStore = defineStore('organization', () => {
         if (currentOrganization.value?.id === id) {
           currentOrganization.value = response.data
         }
+        organizationsFetchedAt = Date.now()
         return response.data
       } else {
         error.value = response.message || 'Failed to update organization'
@@ -151,6 +175,8 @@ export const useOrganizationStore = defineStore('organization', () => {
         if (currentOrganization.value?.id === id) {
           currentOrganization.value = null
         }
+        invalidateOrganizationsCache()
+        invalidateSharedResourcesCache()
         return true
       } else {
         error.value = response.message || 'Failed to delete organization'
@@ -202,6 +228,7 @@ export const useOrganizationStore = defineStore('organization', () => {
         if (!exists) {
           organizations.value.unshift(response.data)
         }
+        organizationsFetchedAt = Date.now()
         return response.data
       } else {
         error.value = response.message || 'Failed to join organization'
@@ -228,6 +255,8 @@ export const useOrganizationStore = defineStore('organization', () => {
         if (currentOrganization.value?.id === id) {
           currentOrganization.value = null
         }
+        invalidateOrganizationsCache()
+        invalidateSharedResourcesCache()
         return true
       } else {
         error.value = response.message || 'Failed to leave organization'
@@ -345,41 +374,64 @@ export const useOrganizationStore = defineStore('organization', () => {
   /**
    * Fetch shared knowledge bases
    */
-  async function fetchSharedKnowledgeBases() {
+  async function fetchSharedKnowledgeBases(options: { force?: boolean } = {}) {
+    if (!options.force && isFresh(sharedKnowledgeBasesFetchedAt)) {
+      return sharedKnowledgeBases.value
+    }
+    if (fetchSharedKnowledgeBasesPromise) return fetchSharedKnowledgeBasesPromise
     loading.value = true
     error.value = null
-    try {
-      const response = await listSharedKnowledgeBases()
-      if (response.success && response.data) {
-        // Filter out shares whose knowledge_base was deleted (null)
-        sharedKnowledgeBases.value = response.data.filter(s => s.knowledge_base != null)
-        return sharedKnowledgeBases.value
-      } else {
-        error.value = response.message || 'Failed to fetch shared knowledge bases'
+    fetchSharedKnowledgeBasesPromise = (async () => {
+      try {
+        const response = await listSharedKnowledgeBases()
+        if (response.success && response.data) {
+          // Filter out shares whose knowledge_base was deleted (null)
+          sharedKnowledgeBases.value = response.data.filter(s => s.knowledge_base != null)
+          sharedKnowledgeBasesFetchedAt = Date.now()
+          return sharedKnowledgeBases.value
+        } else {
+          sharedKnowledgeBasesFetchedAt = 0
+          error.value = response.message || 'Failed to fetch shared knowledge bases'
+          return []
+        }
+      } catch (e: any) {
+        sharedKnowledgeBasesFetchedAt = 0
+        error.value = e.message || 'Failed to fetch shared knowledge bases'
         return []
+      } finally {
+        loading.value = false
+        fetchSharedKnowledgeBasesPromise = null
       }
-    } catch (e: any) {
-      error.value = e.message || 'Failed to fetch shared knowledge bases'
-      return []
-    } finally {
-      loading.value = false
-    }
+    })()
+    return fetchSharedKnowledgeBasesPromise
   }
 
   /**
    * Fetch shared agents (shared to me through organizations)
    */
-  async function fetchSharedAgents() {
-    try {
-      const response = await listSharedAgents()
-      if (response.success && response.data) {
-        sharedAgents.value = response.data.filter(s => s.agent != null)
-        return sharedAgents.value
-      }
-      return []
-    } catch (e: any) {
-      return []
+  async function fetchSharedAgents(options: { force?: boolean } = {}) {
+    if (!options.force && isFresh(sharedAgentsFetchedAt)) {
+      return sharedAgents.value
     }
+    if (fetchSharedAgentsPromise) return fetchSharedAgentsPromise
+    fetchSharedAgentsPromise = (async () => {
+      try {
+        const response = await listSharedAgents()
+        if (response.success && response.data) {
+          sharedAgents.value = response.data.filter(s => s.agent != null)
+          sharedAgentsFetchedAt = Date.now()
+          return sharedAgents.value
+        }
+        sharedAgentsFetchedAt = 0
+        return []
+      } catch (e: any) {
+        sharedAgentsFetchedAt = 0
+        return []
+      } finally {
+        fetchSharedAgentsPromise = null
+      }
+    })()
+    return fetchSharedAgentsPromise
   }
 
   /**
@@ -430,6 +482,9 @@ export const useOrganizationStore = defineStore('organization', () => {
     resourceCounts.value = null
     previewData.value = null
     error.value = null
+    organizationsFetchedAt = 0
+    sharedKnowledgeBasesFetchedAt = 0
+    sharedAgentsFetchedAt = 0
   }
 
   return {
@@ -468,6 +523,8 @@ export const useOrganizationStore = defineStore('organization', () => {
     getKBPermission,
     canEditKB,
     canManageKB,
+    invalidateOrganizationsCache,
+    invalidateSharedResourcesCache,
     clearState
   }
 })

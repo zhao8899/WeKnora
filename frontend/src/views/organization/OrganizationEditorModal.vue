@@ -32,7 +32,7 @@
             <!-- 右侧内容区域 -->
             <div class="settings-content">
               <div class="content-wrapper">
-                <!-- 创建组织 - 基本信息 -->
+                <!-- 创建共享空间 - 基本信息 -->
                 <div v-if="mode === 'create'" v-show="currentSection === 'basic'" class="section">
                   <div class="section-content">
                     <div class="section-header">
@@ -67,7 +67,7 @@
                   </div>
                 </div>
 
-                <!-- 创建组织 - 权限说明 -->
+                <!-- 创建共享空间 - 权限说明 -->
                 <div v-if="mode === 'create'" v-show="currentSection === 'permissions'" class="section">
                   <div class="section-content">
                     <div class="section-header">
@@ -139,7 +139,7 @@
                   </div>
                 </div>
 
-                <!-- 加入组织 -->
+                <!-- 加入共享空间 -->
                 <div v-if="mode === 'join'" v-show="currentSection === 'join'" class="section">
                   <div class="section-content">
                     <div class="section-header">
@@ -249,7 +249,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useOrganizationStore } from '@/stores/organization'
 import { useI18n } from 'vue-i18n'
 import type { OrganizationPreview } from '@/api/organization'
@@ -713,7 +713,7 @@ watch(() => props.mode, () => {
   }
 }
 
-// 加入组织样式
+// 加入共享空间样式
 .join-illustration {
   text-align: center;
   padding: 24px 0 32px;

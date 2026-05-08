@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { ref, computed, watch, nextTick, onMounted, type ComponentPublicInstance } from 'vue'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 import { useUIStore } from '@/stores/ui'
 import {
@@ -10,7 +10,9 @@ import {
   validateConnection,
   validateCredentials,
   listResources,
+  getConnectorTypes,
   deleteDataSource,
+  type ConnectorMeta,
   type DataSource,
   type Resource,
 } from '@/api/datasource'
@@ -80,6 +82,8 @@ const schedulePresets = computed(() => [
 // --- Connector definitions ---
 interface ConnectorDef {
   type: string
+  name: string
+  description: string
   available: boolean
   docUrl: string
   permissionDocUrl: string
@@ -87,7 +91,8 @@ interface ConnectorDef {
   requiredPermissions: string[]
   fields: {
     key: string
-    labelKey: string
+    labelKey?: string
+    label?: string
     placeholder: string
     secret?: boolean
     required?: boolean
@@ -96,9 +101,13 @@ interface ConnectorDef {
   }[]
 }
 
-const connectorDefs = computed<ConnectorDef[]>(() => [
+const connectorMetaMap = ref<Record<string, ConnectorMeta>>({})
+
+const baseConnectorDefs: ConnectorDef[] = [
   {
     type: 'feishu',
+    name: 'Feishu (飞书)',
+    description: t('datasource.connectorDesc.feishu'),
     available: true,
     docUrl: 'https://open.feishu.cn/app',
     permissionDocUrl: 'https://open.feishu.cn/document/server-docs/docs/wiki-v2/wiki-overview',
@@ -116,6 +125,8 @@ const connectorDefs = computed<ConnectorDef[]>(() => [
   },
   {
     type: 'web_crawler',
+    name: 'Web Crawler (Sitemap)',
+    description: t('datasource.connectorDesc.web_crawler'),
     available: true,
     docUrl: 'https://www.sitemaps.org/protocol.html',
     permissionDocUrl: '',
@@ -148,6 +159,8 @@ const connectorDefs = computed<ConnectorDef[]>(() => [
   },
   {
     type: 'rss',
+    name: 'RSS / Atom Feed',
+    description: t('datasource.connectorDesc.rss'),
     available: true,
     docUrl: 'https://validator.w3.org/feed/',
     permissionDocUrl: '',
@@ -172,6 +185,8 @@ const connectorDefs = computed<ConnectorDef[]>(() => [
   },
   {
     type: 'notion',
+    name: 'Notion',
+    description: t('datasource.connectorDesc.notion'),
     available: false,
     docUrl: 'https://www.notion.so/my-integrations',
     permissionDocUrl: '',
@@ -183,16 +198,29 @@ const connectorDefs = computed<ConnectorDef[]>(() => [
   },
   {
     type: 'yuque',
-    available: false,
+    name: 'Yuque (语雀)',
+    description: t('datasource.connectorDesc.yuque'),
+    available: true,
     docUrl: 'https://www.yuque.com/settings/tokens',
     permissionDocUrl: '',
     permissionPageUrl: '',
     requiredPermissions: [],
     fields: [
       { key: 'api_token', labelKey: 'datasource.field.apiToken', placeholder: '', secret: true },
+      { key: 'base_url', label: 'Base URL', placeholder: 'https://www.yuque.com', required: false },
     ],
   },
-])
+]
+
+const connectorDefs = computed<ConnectorDef[]>(() => baseConnectorDefs.map((def) => {
+  const meta = connectorMetaMap.value[def.type]
+  return {
+    ...def,
+    available: meta?.available ?? def.available,
+    name: meta?.name || def.name,
+    description: meta?.description || def.description,
+  }
+}))
 
 
 const currentDef = computed(() => connectorDefs.value.find(d => d.type === form.value.type))
@@ -231,6 +259,10 @@ function getFieldValue(field: ConnectorDef['fields'][number]) {
     return typeof value === 'string' ? value : ''
   }
   return typeof value === 'string' ? value : ''
+}
+
+function fieldLabel(field: ConnectorDef['fields'][number]) {
+  return field.label || (field.labelKey ? t(field.labelKey) : field.key)
 }
 
 function setFieldValue(field: ConnectorDef['fields'][number], value: string) {
@@ -369,7 +401,7 @@ watch(visible, (v) => {
 function selectType(def: ConnectorDef) {
   if (!def.available) return
   form.value.type = def.type
-  form.value.name = t(`datasource.connector.${def.type}`)
+  form.value.name = def.name
   step.value = 1
 }
 
@@ -381,7 +413,7 @@ async function testConnection() {
     const value = getFieldBucket(f)[f.key]
     const hasValue = Array.isArray(value) ? value.length > 0 : !!String(value || '').trim()
     if (required && !hasValue) {
-      MessagePlugin.warning(`${t(f.labelKey)} ${t('datasource.isRequired')}`)
+      MessagePlugin.warning(`${fieldLabel(f)} ${t('datasource.isRequired')}`)
       return
     }
   }
@@ -468,7 +500,7 @@ function validateStep1Fields(): boolean {
     const value = getFieldBucket(f)[f.key]
     const hasValue = Array.isArray(value) ? value.length > 0 : !!String(value || '').trim()
     if (required && !hasValue) {
-      MessagePlugin.warning(`${t(f.labelKey)} ${t('datasource.isRequired')}`)
+      MessagePlugin.warning(`${fieldLabel(f)} ${t('datasource.isRequired')}`)
       return false
     }
   }
@@ -555,11 +587,55 @@ async function handleClose() {
 const resourceTypeLabelMap: Record<string, string> = {
   wiki_space: 'datasource.resourceType.wikiSpace',
   doc_category: 'datasource.resourceType.docCategory',
+  page: 'Page',
+  database: 'Database',
+  book: 'Book',
+  feed: 'Feed',
+  web_page: 'Web page',
 }
 
 function resourceTypeLabel(type: string): string {
   const key = resourceTypeLabelMap[type]
-  return key ? t(key) : type
+  if (!key) return type
+  return key.startsWith('datasource.') ? t(key) : key
+}
+
+const resourceMap = computed(() => new Map(resources.value.map(resource => [resource.external_id, resource])))
+const orderedResources = computed(() => [...resources.value].sort((a, b) => {
+  const depthA = resourceDepth(a)
+  const depthB = resourceDepth(b)
+  if (depthA !== depthB) return depthA - depthB
+  return a.name.localeCompare(b.name)
+}))
+
+function resourceDepth(resource: Resource) {
+  let depth = 0
+  let parentId = resource.parent_id || ''
+  const visited = new Set<string>()
+  while (parentId) {
+    if (visited.has(parentId)) break
+    visited.add(parentId)
+    const parent = resourceMap.value.get(parentId)
+    if (!parent) break
+    depth += 1
+    parentId = parent.parent_id || ''
+  }
+  return depth
+}
+
+function resourceMetaBadges(resource: Resource) {
+  const badges: string[] = []
+  const metadata = resource.metadata || {}
+  if (typeof metadata.public === 'number') {
+    badges.push(metadata.public > 0 ? 'public' : 'private')
+  }
+  if (typeof metadata.book_type === 'string' && metadata.book_type) {
+    badges.push(metadata.book_type)
+  }
+  if (typeof metadata.visibility === 'string' && metadata.visibility) {
+    badges.push(metadata.visibility)
+  }
+  return badges
 }
 
 const stepTitles = computed(() => [
@@ -568,6 +644,26 @@ const stepTitles = computed(() => [
   t('datasource.step.resources'),
   t('datasource.step.strategy'),
 ])
+
+async function loadConnectorTypes() {
+  try {
+    const res = await getConnectorTypes()
+    const items = res?.data || res || []
+    const next: Record<string, ConnectorMeta> = {}
+    for (const item of items) {
+      if (item?.type) {
+        next[item.type] = item
+      }
+    }
+    connectorMetaMap.value = next
+  } catch {
+    connectorMetaMap.value = {}
+  }
+}
+
+onMounted(() => {
+  loadConnectorTypes()
+})
 </script>
 
 <template>
@@ -602,10 +698,15 @@ const stepTitles = computed(() => [
         >
           <div class="ds-type-header">
             <DataSourceTypeIcon :type="def.type" :size="20" />
-            <span class="ds-type-name">{{ t(`datasource.connector.${def.type}`) }}</span>
+            <span class="ds-type-name">{{ def.name }}</span>
             <span v-if="!def.available" class="ds-type-soon">{{ t('datasource.comingSoon') }}</span>
           </div>
-          <div class="ds-type-desc">{{ t(`datasource.connectorDesc.${def.type}`) }}</div>
+          <div class="ds-type-desc">{{ def.description }}</div>
+          <div class="ds-type-meta">
+            <span class="ds-type-chip">{{ def.type }}</span>
+            <span v-if="def.available" class="ds-type-chip available">{{ t('datasource.available') }}</span>
+            <span v-if="!def.available" class="ds-type-chip muted">{{ t('datasource.comingSoon') }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -681,7 +782,7 @@ const stepTitles = computed(() => [
         :ref="(el) => setFieldRef(field.key, el)"
         :class="['form-item', { 'is-highlighted': highlightedFocusHint === field.key }]"
       >
-        <label class="form-label">{{ t(field.labelKey) }}</label>
+        <label class="form-label">{{ fieldLabel(field) }}</label>
         <t-input
           v-if="field.kind !== 'multiline-list'"
           :value="getFieldValue(field)"
@@ -728,9 +829,9 @@ const stepTitles = computed(() => [
     <div v-if="step === 2" class="ds-step-content">
       <p class="form-tip">{{ t('datasource.resourceHint') }}</p>
       <div v-if="loadingResources" style="text-align:center;padding:20px"><t-loading /></div>
-      <div v-else-if="resources.length > 0" class="ds-resource-list">
+      <div v-else-if="orderedResources.length > 0" class="ds-resource-list">
         <div
-          v-for="r in resources"
+          v-for="r in orderedResources"
           :key="r.external_id"
           :class="['ds-resource-row', { selected: selectedResourceIds.includes(r.external_id) }]"
           @click="toggleResource(r.external_id)"
@@ -740,11 +841,13 @@ const stepTitles = computed(() => [
             @click.stop
             @change="toggleResource(r.external_id)"
           />
-          <div class="ds-resource-info">
+          <div class="ds-resource-info" :style="{ paddingLeft: `${resourceDepth(r) * 14}px` }">
             <div class="ds-resource-name">{{ r.name }}</div>
             <div class="ds-resource-meta">
               <span class="ds-resource-type">{{ resourceTypeLabel(r.type) }}</span>
               <span v-if="r.description" class="ds-resource-desc">{{ r.description }}</span>
+              <span v-for="badge in resourceMetaBadges(r)" :key="badge" class="ds-resource-badge">{{ badge }}</span>
+              <span v-if="r.has_children" class="ds-resource-badge has-children">tree</span>
             </div>
           </div>
         </div>
@@ -882,6 +985,33 @@ const stepTitles = computed(() => [
 .ds-type-name { font-size: 13px; font-weight: 600; }
 .ds-type-soon { font-size: 10px; color: var(--td-text-color-placeholder); background: var(--td-bg-color-component); padding: 1px 6px; border-radius: 3px; }
 .ds-type-desc { font-size: 11px; color: var(--td-text-color-secondary); line-height: 1.5; }
+
+.ds-type-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.ds-type-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-component);
+}
+
+.ds-type-chip.available {
+  color: var(--td-success-color);
+  background: var(--td-success-color-1);
+}
+
+.ds-type-chip.muted {
+  color: var(--td-text-color-placeholder);
+}
 
 /* --- Step 1: collapsible prereq --- */
 .ds-prereq-bar {
@@ -1120,6 +1250,22 @@ const stepTitles = computed(() => [
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ds-resource-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--td-bg-color-component);
+  color: var(--td-text-color-placeholder);
+  line-height: 18px;
+}
+
+.ds-resource-badge.has-children {
+  color: var(--td-brand-color);
+  background: var(--td-brand-color-light);
 }
 
 /* --- Step 2: empty state --- */

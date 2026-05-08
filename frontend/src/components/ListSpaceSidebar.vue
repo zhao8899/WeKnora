@@ -156,7 +156,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { Icon as TIcon } from 'tdesign-vue-next'
+import { Icon as TIcon } from 'tdesign-vue-next/es/icon'
 import SpaceAvatar from './SpaceAvatar.vue'
 import { useOrganizationStore } from '@/stores/organization'
 

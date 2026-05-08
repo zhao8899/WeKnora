@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/gorm"
@@ -10,6 +11,13 @@ import (
 
 type AnalyticsRepository struct {
 	db *gorm.DB
+}
+
+type analyticsFilterColumns struct {
+	KnowledgeID string
+	SessionID   string
+	MessageID   string
+	TenantID    string
 }
 
 func NewAnalyticsRepository(db *gorm.DB) *AnalyticsRepository {
@@ -71,7 +79,57 @@ func sourceHealthStatusCase(
 	)
 }
 
-func coverageGapsQuery() string {
+func buildAnalyticsFilterClause(
+	filter *types.AnalyticsFilter,
+	columns analyticsFilterColumns,
+) (string, []interface{}) {
+	if filter == nil {
+		return "", nil
+	}
+
+	clauses := make([]string, 0, 3)
+	args := make([]interface{}, 0, 4)
+
+	if filter.KnowledgeBaseID != nil && columns.KnowledgeID != "" {
+		existsClause := fmt.Sprintf(
+			`EXISTS (
+				SELECT 1
+				FROM knowledges k_filter
+				WHERE k_filter.id = %s
+				  AND k_filter.deleted_at IS NULL
+				  AND k_filter.knowledge_base_id = ?
+			)`,
+			columns.KnowledgeID,
+		)
+		if columns.TenantID != "" {
+			existsClause = strings.Replace(
+				existsClause,
+				"AND k_filter.deleted_at IS NULL",
+				fmt.Sprintf("AND k_filter.tenant_id = %s\n\t\t\t\t  AND k_filter.deleted_at IS NULL", columns.TenantID),
+				1,
+			)
+		}
+		clauses = append(clauses, existsClause)
+		args = append(args, *filter.KnowledgeBaseID)
+	}
+
+	if filter.SessionID != "" && columns.SessionID != "" {
+		clauses = append(clauses, columns.SessionID+" = ?")
+		args = append(args, filter.SessionID)
+	}
+
+	if filter.MessageID != "" && columns.MessageID != "" {
+		clauses = append(clauses, columns.MessageID+" = ?")
+		args = append(args, filter.MessageID)
+	}
+
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return " AND " + strings.Join(clauses, " AND "), args
+}
+
+func coverageGapsQuery(filterSQL string) string {
 	return fmt.Sprintf(`
 		WITH answer_stats AS (
 			SELECT
@@ -120,6 +178,7 @@ func coverageGapsQuery() string {
 			WHERE answer.role = 'assistant'
 			  AND answer.deleted_at IS NULL
 			  AND answer.created_at >= NOW() - INTERVAL '30 days'
+			  %s
 			GROUP BY answer.id, answer.session_id, answer.created_at, question.content, answer.content
 		)
 		SELECT
@@ -138,10 +197,10 @@ func coverageGapsQuery() string {
 		WHERE evidence_strength_score < 0.4 OR source_health_score < 0.4 OR source_count = 0
 		ORDER BY evidence_strength_score ASC, source_health_score ASC, source_count ASC, answer_created_at DESC
 		LIMIT ?
-	`, evidenceStrengthLabelCase("evidence_strength_score"), evidenceStrengthLabelCase("evidence_strength_score"), sourceHealthLabelCase("source_health_score"))
+	`, filterSQL, evidenceStrengthLabelCase("evidence_strength_score"), evidenceStrengthLabelCase("evidence_strength_score"), sourceHealthLabelCase("source_health_score"))
 }
 
-func staleDocumentsQuery() string {
+func staleDocumentsQuery(filterSQL string) string {
 	scoreExpr := sourceHealthScoreExpr("k.source_weight", "k.freshness_flag", "fs.down_feedback_count", "fs.expired_feedback_count")
 	return fmt.Sprintf(`
 		WITH feedback_stats AS (
@@ -169,6 +228,7 @@ func staleDocumentsQuery() string {
 			LEFT JOIN feedback_stats fs ON fs.knowledge_id = k.id
 			WHERE k.tenant_id = ?
 			  AND k.deleted_at IS NULL
+			  %s
 		)
 		SELECT
 			knowledge_id,
@@ -188,10 +248,10 @@ func staleDocumentsQuery() string {
 		   OR expired_feedback_count > 0
 		ORDER BY source_health_score ASC, freshness_flag DESC, expired_feedback_count DESC, down_feedback_count DESC, last_feedback_at DESC NULLS LAST
 		LIMIT ?
-	`, scoreExpr, sourceHealthLabelCase("source_health_score"), sourceHealthStatusCase("source_health_score", "freshness_flag", "down_feedback_count", "expired_feedback_count"))
+	`, scoreExpr, filterSQL, sourceHealthLabelCase("source_health_score"), sourceHealthStatusCase("source_health_score", "freshness_flag", "down_feedback_count", "expired_feedback_count"))
 }
 
-func citationHeatmapQuery() string {
+func citationHeatmapQuery(filterSQL string) string {
 	scoreExpr := sourceHealthScoreExpr("k.source_weight", "k.freshness_flag", "fs.down_feedback_count", "fs.expired_feedback_count")
 	return fmt.Sprintf(`
 		WITH feedback_stats AS (
@@ -221,17 +281,98 @@ func citationHeatmapQuery() string {
 		WHERE dal.tenant_id = ?
 		  AND dal.created_at >= NOW() - INTERVAL '30 days'
 		  AND k.deleted_at IS NULL
+		  %s
 		GROUP BY k.id, k.title, k.source_weight, k.freshness_flag, fs.down_feedback_count, fs.expired_feedback_count
 		ORDER BY cited_count DESC, source_health_score ASC, reranked_count DESC, retrieved_count DESC, k.title ASC
 		LIMIT ?
-	`, scoreExpr, sourceHealthLabelCase(scoreExpr), sourceHealthStatusCase(scoreExpr, "k.freshness_flag", "fs.down_feedback_count", "fs.expired_feedback_count"))
+	`, scoreExpr, sourceHealthLabelCase(scoreExpr), sourceHealthStatusCase(scoreExpr, "k.freshness_flag", "fs.down_feedback_count", "fs.expired_feedback_count"), filterSQL)
+}
+
+func unansweredQuestionsQuery(filterSQL string) string {
+	return fmt.Sprintf(`
+		WITH user_questions AS (
+			SELECT
+				user_msg.id AS message_id,
+				user_msg.session_id,
+				user_msg.content AS question,
+				user_msg.created_at AS question_created_at,
+				(
+					SELECT answer.id
+					FROM messages answer
+					WHERE answer.session_id = user_msg.session_id
+					  AND answer.role = 'assistant'
+					  AND answer.deleted_at IS NULL
+					  AND answer.created_at >= user_msg.created_at
+					ORDER BY answer.created_at ASC
+					LIMIT 1
+				) AS answer_message_id,
+				(
+					SELECT answer.created_at
+					FROM messages answer
+					WHERE answer.session_id = user_msg.session_id
+					  AND answer.role = 'assistant'
+					  AND answer.deleted_at IS NULL
+					  AND answer.created_at >= user_msg.created_at
+					ORDER BY answer.created_at ASC
+					LIMIT 1
+				) AS answer_created_at
+			FROM messages user_msg
+			INNER JOIN sessions s ON s.id = user_msg.session_id AND s.tenant_id = ?
+			WHERE user_msg.role = 'user'
+			  AND user_msg.deleted_at IS NULL
+			  AND user_msg.created_at >= NOW() - INTERVAL '30 days'
+		),
+		question_with_sources AS (
+			SELECT
+				uq.message_id,
+				uq.session_id,
+				uq.question,
+				uq.answer_message_id,
+				uq.answer_created_at,
+				uq.question_created_at,
+				COUNT(ae.id) AS source_count
+			FROM user_questions uq
+			LEFT JOIN answer_evidence ae
+			  ON ae.answer_message_id = uq.answer_message_id
+			 AND ae.tenant_id = ?
+			WHERE 1 = 1
+			  %s
+			GROUP BY uq.message_id, uq.session_id, uq.question, uq.answer_message_id, uq.answer_created_at, uq.question_created_at
+		)
+		SELECT
+			qws.message_id,
+			qws.session_id,
+			qws.question,
+			qws.answer_created_at,
+			qws.source_count,
+			freq.question_freq,
+			freq.last_question_at
+		FROM question_with_sources qws
+		INNER JOIN (
+			SELECT
+				question,
+				COUNT(*) AS question_freq,
+				MAX(question_created_at) AS last_question_at
+			FROM question_with_sources
+			GROUP BY question
+		) freq ON freq.question = qws.question
+		WHERE qws.answer_message_id IS NULL OR qws.source_count = 0
+		ORDER BY freq.question_freq DESC, freq.last_question_at DESC, qws.question_created_at DESC
+		LIMIT ?
+	`, filterSQL)
 }
 
 func (r *AnalyticsRepository) HotQuestions(
-	ctx context.Context, tenantID uint64, limit int,
+	ctx context.Context, tenantID uint64, limit int, filter *types.AnalyticsFilter,
 ) ([]*types.HotQuestion, error) {
+	filterSQL, filterArgs := buildAnalyticsFilterClause(filter, analyticsFilterColumns{
+		KnowledgeID: "dal.knowledge_id",
+		SessionID:   "answer.session_id",
+		MessageID:   "answer.id",
+		TenantID:    "dal.tenant_id",
+	})
 	var rows []*types.HotQuestion
-	err := r.db.WithContext(ctx).Raw(`
+	query := fmt.Sprintf(`
 		SELECT
 			answer.id AS message_id,
 			answer.session_id,
@@ -257,33 +398,80 @@ func (r *AnalyticsRepository) HotQuestions(
 		  AND dal.created_at >= NOW() - INTERVAL '30 days'
 		  AND answer.role = 'assistant'
 		  AND answer.deleted_at IS NULL
+		  %s
 		GROUP BY answer.id, answer.session_id, question.content, answer.content
 		ORDER BY retrieved_count DESC, reranked_count DESC, cited_count DESC, last_access_at DESC
 		LIMIT ?
-	`, tenantID, tenantID, limit).Scan(&rows).Error
+	`, filterSQL)
+	args := []interface{}{tenantID, tenantID}
+	args = append(args, filterArgs...)
+	args = append(args, limit)
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error
 	return rows, err
 }
 
 func (r *AnalyticsRepository) CoverageGaps(
-	ctx context.Context, tenantID uint64, limit int,
+	ctx context.Context, tenantID uint64, limit int, filter *types.AnalyticsFilter,
 ) ([]*types.CoverageGap, error) {
+	filterSQL, filterArgs := buildAnalyticsFilterClause(filter, analyticsFilterColumns{
+		KnowledgeID: "ae.source_knowledge_id",
+		SessionID:   "answer.session_id",
+		MessageID:   "answer.id",
+		TenantID:    "s.tenant_id",
+	})
 	var rows []*types.CoverageGap
-	err := r.db.WithContext(ctx).Raw(coverageGapsQuery(), tenantID, tenantID, limit).Scan(&rows).Error
+	args := []interface{}{tenantID, tenantID}
+	args = append(args, filterArgs...)
+	args = append(args, limit)
+	err := r.db.WithContext(ctx).Raw(coverageGapsQuery(filterSQL), args...).Scan(&rows).Error
 	return rows, err
 }
 
 func (r *AnalyticsRepository) StaleDocuments(
-	ctx context.Context, tenantID uint64, limit int,
+	ctx context.Context, tenantID uint64, limit int, filter *types.AnalyticsFilter,
 ) ([]*types.StaleDocument, error) {
+	filterSQL, filterArgs := buildAnalyticsFilterClause(filter, analyticsFilterColumns{
+		KnowledgeID: "k.id",
+		TenantID:    "k.tenant_id",
+	})
 	var rows []*types.StaleDocument
-	err := r.db.WithContext(ctx).Raw(staleDocumentsQuery(), tenantID, tenantID, limit).Scan(&rows).Error
+	args := []interface{}{tenantID, tenantID}
+	args = append(args, filterArgs...)
+	args = append(args, limit)
+	err := r.db.WithContext(ctx).Raw(staleDocumentsQuery(filterSQL), args...).Scan(&rows).Error
 	return rows, err
 }
 
 func (r *AnalyticsRepository) CitationHeatmap(
-	ctx context.Context, tenantID uint64, limit int,
+	ctx context.Context, tenantID uint64, limit int, filter *types.AnalyticsFilter,
 ) ([]*types.CitationHeat, error) {
+	filterSQL, filterArgs := buildAnalyticsFilterClause(filter, analyticsFilterColumns{
+		KnowledgeID: "k.id",
+		SessionID:   "dal.session_id",
+		MessageID:   "dal.message_id",
+		TenantID:    "dal.tenant_id",
+	})
 	var rows []*types.CitationHeat
-	err := r.db.WithContext(ctx).Raw(citationHeatmapQuery(), tenantID, tenantID, limit).Scan(&rows).Error
+	args := []interface{}{tenantID, tenantID}
+	args = append(args, filterArgs...)
+	args = append(args, limit)
+	err := r.db.WithContext(ctx).Raw(citationHeatmapQuery(filterSQL), args...).Scan(&rows).Error
+	return rows, err
+}
+
+func (r *AnalyticsRepository) UnansweredQuestions(
+	ctx context.Context, tenantID uint64, limit int, filter *types.AnalyticsFilter,
+) ([]*types.UnansweredQuestion, error) {
+	filterSQL, filterArgs := buildAnalyticsFilterClause(filter, analyticsFilterColumns{
+		KnowledgeID: "ae.source_knowledge_id",
+		SessionID:   "uq.session_id",
+		MessageID:   "uq.message_id",
+		TenantID:    "",
+	})
+	var rows []*types.UnansweredQuestion
+	args := []interface{}{tenantID, tenantID}
+	args = append(args, filterArgs...)
+	args = append(args, limit)
+	err := r.db.WithContext(ctx).Raw(unansweredQuestionsQuery(filterSQL), args...).Scan(&rows).Error
 	return rows, err
 }

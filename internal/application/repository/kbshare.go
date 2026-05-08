@@ -168,7 +168,7 @@ func (r *kbShareRepository) ListSharedKBsForUser(ctx context.Context, userID str
 	return shares, nil
 }
 
-// CountSharesByKnowledgeBaseID counts the number of organizations a knowledge base is shared with
+// CountSharesByKnowledgeBaseID counts the number of shared spaces a knowledge base is shared with
 func (r *kbShareRepository) CountSharesByKnowledgeBaseID(ctx context.Context, kbID string) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&types.KnowledgeBaseShare{}).

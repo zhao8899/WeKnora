@@ -78,6 +78,37 @@
         </div>
       </div>
 
+      <div v-if="kbInfo" class="faq-workflow-banner">
+        <div class="faq-workflow-main">
+          <div class="faq-workflow-status">
+            <span class="faq-workflow-pill" :class="`status-${faqWorkflowStatus.tone}`">
+              {{ faqWorkflowStatus.label }}
+            </span>
+            <div class="faq-workflow-copy">
+              <h3>FAQ 知识库当前状态</h3>
+              <p>{{ faqWorkflowStatus.description }}</p>
+            </div>
+          </div>
+          <div class="faq-workflow-actions">
+            <t-button theme="primary" @click="handlePrimaryWorkflowAction">
+              {{ primaryWorkflowActionLabel }}
+            </t-button>
+            <t-button v-if="canEdit" variant="outline" @click="openImportDialog">
+              批量导入
+            </t-button>
+            <t-button v-if="canManage" variant="text" theme="primary" @click="handleOpenKBSettings">
+              查看设置
+            </t-button>
+          </div>
+        </div>
+        <div class="faq-workflow-metrics">
+          <div v-for="item in faqWorkflowMetrics" :key="item.label" class="faq-workflow-metric">
+            <span class="faq-workflow-metric-label">{{ item.label }}</span>
+            <strong class="faq-workflow-metric-value">{{ item.value }}</strong>
+          </div>
+        </div>
+      </div>
+
       <!-- 导入结果统计（持久化显示） -->
       <div v-if="importResult && importResult.display_status === 'open' && !importState.taskId" class="faq-import-result-card">
         <div class="import-result-content">
@@ -1211,12 +1242,16 @@
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted, computed, nextTick, onUnmounted, h } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
-import { MessagePlugin, DialogPlugin, Icon as TIcon } from 'tdesign-vue-next'
-import type { FormRules, FormInstanceFunctions } from 'tdesign-vue-next'
+import { DialogPlugin } from 'tdesign-vue-next/es/dialog'
+import { Icon as TIcon } from 'tdesign-vue-next/es/icon'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
+import type { FormRules, FormInstanceFunctions } from 'tdesign-vue-next/es/form/type'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useOrganizationStore } from '@/stores/organization'
+import { useSettingsStore } from '@/stores/settings'
+import { BUILTIN_QUICK_ANSWER_ID } from '@/api/agent'
 import {
   listFAQEntries,
   upsertFAQEntries,
@@ -1236,10 +1271,11 @@ import {
   getFAQImportProgress,
   updateFAQImportResultDisplayStatus,
 } from '@/api/knowledge-base'
-import * as XLSX from 'xlsx'
 import Papa from 'papaparse'
 import FAQTagTooltip from '@/components/FAQTagTooltip.vue'
 import { useUIStore } from '@/stores/ui'
+
+type XLSXModule = typeof import('xlsx')
 
 interface FAQEntry {
   id: number
@@ -1284,6 +1320,15 @@ const router = useRouter()
 const uiStore = useUIStore()
 const authStore = useAuthStore()
 const orgStore = useOrganizationStore()
+const settingsStore = useSettingsStore()
+let xlsxModulePromise: Promise<XLSXModule> | null = null
+
+const loadXLSX = async (): Promise<XLSXModule> => {
+  if (!xlsxModulePromise) {
+    xlsxModulePromise = import('xlsx')
+  }
+  return xlsxModulePromise
+}
 
 // Permission control: check if current user owns this KB or has edit/manage permission
 const isOwner = computed(() => {
@@ -1556,6 +1601,57 @@ const importResult = ref<{
   display_status: string
 } | null>(null)
 
+const faqWorkflowStatus = computed(() => {
+  if (!kbInfo.value) {
+    return {
+      label: '加载中',
+      tone: 'pending',
+      description: '正在读取 FAQ 知识库信息。',
+    }
+  }
+
+  if (importState.taskStatus?.status === 'running') {
+    return {
+      label: '导入中',
+      tone: 'processing',
+      description: `当前正在处理 ${importState.taskStatus.total} 条 FAQ，请等待导入完成。`,
+    }
+  }
+
+  if ((overallFAQTotal.value || 0) === 0) {
+    return {
+      label: '待录入',
+      tone: 'pending',
+      description: '当前 FAQ 知识库还没有条目，先新增 FAQ 或批量导入内容。',
+    }
+  }
+
+  if ((importResult.value?.failed_count || 0) > 0) {
+    return {
+      label: '部分异常',
+      tone: 'warning',
+      description: `最近一次导入有 ${importResult.value?.failed_count || 0} 条失败，建议下载失败原因后补齐内容。`,
+    }
+  }
+
+  return {
+    label: '可问答',
+    tone: 'ready',
+    description: 'FAQ 条目已具备基础规模，可以直接开始可信问答验证效果。',
+  }
+})
+
+const faqWorkflowMetrics = computed(() => [
+  { label: 'FAQ 总数', value: overallFAQTotal.value || 0 },
+  { label: '当前页条目', value: entries.value.length },
+  { label: '失败条目', value: importResult.value?.failed_count || 0 },
+])
+
+const primaryWorkflowActionLabel = computed(() => {
+  if ((overallFAQTotal.value || 0) === 0 && canEdit.value) return '新增 FAQ'
+  return '去提问'
+})
+
 // Search test state
 const searchDrawerVisible = ref(false)
 const searching = ref(false)
@@ -1824,6 +1920,23 @@ const handleOpenKBSettings = () => {
 const handleKnowledgeDropdownSelect = (data: { value: string }) => {
   if (!data?.value || data.value === props.kbId) return
   router.push(`/platform/knowledge-bases/${data.value}`)
+}
+
+const handleAskCurrentFAQ = () => {
+  if (!props.kbId) return
+  settingsStore.selectAgent(BUILTIN_QUICK_ANSWER_ID)
+  settingsStore.selectKnowledgeBases([props.kbId])
+  settingsStore.clearFiles()
+  router.push('/platform/creatChat')
+}
+
+const handlePrimaryWorkflowAction = () => {
+  if ((overallFAQTotal.value || 0) === 0 && canEdit.value) {
+    openEditor()
+    return
+  }
+
+  handleAskCurrentFAQ()
 }
 
 const handleFaqMenuAction = (event: Event) => {
@@ -2382,6 +2495,7 @@ const parseCSVFile = async (file: File): Promise<FAQEntryPayload[]> => {
 }
 
 const parseExcelFile = async (file: File): Promise<FAQEntryPayload[]> => {
+  const XLSX = await loadXLSX()
   const data = await file.arrayBuffer()
   const workbook = XLSX.read(data, { type: 'array' })
   const sheetName = workbook.SheetNames[0]
@@ -2926,7 +3040,8 @@ const downloadCSVExample = () => {
 }
 
 // 下载 Excel 示例
-const downloadExcelExample = () => {
+const downloadExcelExample = async () => {
+  const XLSX = await loadXLSX()
   const worksheet = XLSX.utils.json_to_sheet(
     exampleData.map((item) => ({
       '分类(必填)': item.tag_name || '',
@@ -3904,6 +4019,140 @@ watch(() => entries.value.map(e => ({
     font-size: 14px;
     font-weight: 400;
     line-height: 20px;
+  }
+}
+
+.faq-workflow-banner {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 18px 0 16px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  background: linear-gradient(180deg, var(--td-bg-color-container) 0%, var(--td-bg-color-secondarycontainer) 100%);
+}
+
+.faq-workflow-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.faq-workflow-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.faq-workflow-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+
+  &.status-warning {
+    color: #b65c00;
+    background: rgba(255, 152, 0, 0.12);
+  }
+
+  &.status-processing {
+    color: var(--td-brand-color);
+    background: rgba(0, 82, 217, 0.1);
+  }
+
+  &.status-pending {
+    color: var(--td-text-color-secondary);
+    background: var(--td-bg-color-page);
+  }
+
+  &.status-ready {
+    color: var(--td-brand-color-active);
+    background: rgba(7, 192, 95, 0.12);
+  }
+}
+
+.faq-workflow-copy {
+  h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--td-text-color-primary);
+  }
+
+  p {
+    margin: 6px 0 0;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--td-text-color-secondary);
+    max-width: 560px;
+  }
+}
+
+.faq-workflow-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.faq-workflow-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 240px;
+}
+
+.faq-workflow-metric {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(7, 192, 95, 0.05);
+}
+
+.faq-workflow-metric-label {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+
+.faq-workflow-metric-value {
+  font-size: 22px;
+  color: var(--td-text-color-primary);
+}
+
+@media (max-width: 1045px) {
+  .faq-workflow-banner,
+  .faq-workflow-main {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .faq-workflow-actions {
+    justify-content: flex-start;
+  }
+
+  .faq-workflow-metrics {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 750px) {
+  .faq-workflow-status {
+    flex-direction: column;
+  }
+
+  .faq-workflow-metrics {
+    grid-template-columns: 1fr;
   }
 }
 

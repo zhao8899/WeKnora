@@ -106,9 +106,9 @@ type ChatConfig struct {
 func NewChat(config *ChatConfig, ollamaService *ollama.OllamaService) (Chat, error) {
 	switch strings.ToLower(string(config.Source)) {
 	case string(types.ModelSourceLocal):
-		return NewOllamaChat(config, ollamaService)
+		return wrapChatLangfuse(NewOllamaChat(config, ollamaService))
 	case string(types.ModelSourceRemote):
-		return NewRemoteChat(config)
+		return wrapChatLangfuse(NewRemoteChat(config))
 	default:
 		return nil, fmt.Errorf("unsupported chat model source: %s", config.Source)
 	}

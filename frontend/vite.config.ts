@@ -29,6 +29,28 @@ export default defineConfig({
     vue(),
     vueJsx(),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+
+          if (id.includes('katex')) return 'vendor-katex'
+          if (id.includes('xlsx')) return 'vendor-xlsx'
+          if (id.includes('docx-preview')) return 'vendor-docx-preview'
+          if (id.includes('@vue-office/pptx')) return 'vendor-pptx-preview'
+          if (id.includes('tdesign-vue-next') && id.includes('/locale/')) return undefined
+          if (id.includes('tdesign-vue-next') || id.includes('tdesign-icons-vue-next')) {
+            return 'vendor-tdesign'
+          }
+          if (id.includes('highlight.js')) return 'vendor-highlight'
+          if (id.includes('marked')) return 'vendor-marked'
+          if (id.includes('dompurify')) return 'vendor-dompurify'
+          return undefined
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

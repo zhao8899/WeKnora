@@ -76,6 +76,14 @@
                   <WebSearchSettings />
                 </div>
 
+                <div v-if="currentSection === 'vectorstore'" class="section">
+                  <VectorStoreSettings />
+                </div>
+
+                <div v-if="currentSection === 'langfuse'" class="section">
+                  <LangfuseSettings />
+                </div>
+
                 <div v-if="currentSection === 'parser'" class="section">
                   <ParserEngineSettings :active-sub-section="currentSubSection || undefined" />
                 </div>
@@ -99,6 +107,10 @@
                 <div v-if="currentSection === 'knowledge-health'" class="section">
                   <KnowledgeHealthDashboard />
                 </div>
+
+                <div v-if="currentSection === 'evaluation'" class="section">
+                  <EvaluationSettings />
+                </div>
               </div>
             </div>
           </div>
@@ -109,23 +121,27 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
 import GeneralSettings from './GeneralSettings.vue'
-import ModelSettings from './ModelSettings.vue'
-import OllamaSettings from './OllamaSettings.vue'
-import ParserEngineSettings from './ParserEngineSettings.vue'
-import StorageEngineSettings from './StorageEngineSettings.vue'
-import SystemInfo from './SystemInfo.vue'
-import TenantInfo from './TenantInfo.vue'
-import ApiInfo from './ApiInfo.vue'
-import AgentSettings from './AgentSettings.vue'
-import WebSearchSettings from './WebSearchSettings.vue'
-import KnowledgeHealthDashboard from './KnowledgeHealthDashboard.vue'
 import { getSettingsNavItems, type SettingsNavItem } from './nav'
+
+const ModelSettings = defineAsyncComponent(() => import('./ModelSettings.vue'))
+const OllamaSettings = defineAsyncComponent(() => import('./OllamaSettings.vue'))
+const ParserEngineSettings = defineAsyncComponent(() => import('./ParserEngineSettings.vue'))
+const StorageEngineSettings = defineAsyncComponent(() => import('./StorageEngineSettings.vue'))
+const SystemInfo = defineAsyncComponent(() => import('./SystemInfo.vue'))
+const TenantInfo = defineAsyncComponent(() => import('./TenantInfo.vue'))
+const ApiInfo = defineAsyncComponent(() => import('./ApiInfo.vue'))
+const AgentSettings = defineAsyncComponent(() => import('./AgentSettings.vue'))
+const WebSearchSettings = defineAsyncComponent(() => import('./WebSearchSettings.vue'))
+const VectorStoreSettings = defineAsyncComponent(() => import('./VectorStoreSettings.vue'))
+const LangfuseSettings = defineAsyncComponent(() => import('./LangfuseSettings.vue'))
+const KnowledgeHealthDashboard = defineAsyncComponent(() => import('./KnowledgeHealthDashboard.vue'))
+const EvaluationSettings = defineAsyncComponent(() => import('./EvaluationSettings.vue'))
 
 const route = useRoute()
 const router = useRouter()

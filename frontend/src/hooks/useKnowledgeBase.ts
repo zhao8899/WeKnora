@@ -1,7 +1,7 @@
 import { ref, reactive } from "vue";
 import { storeToRefs } from "pinia";
 import { formatStringDate, kbFileTypeVerification } from "../utils/index";
-import { MessagePlugin } from "tdesign-vue-next";
+import { MessagePlugin } from "tdesign-vue-next/es/message";
 import {
   uploadKnowledgeFile,
   listKnowledgeFiles,

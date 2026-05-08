@@ -268,7 +268,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, onUnmounted, nextTick } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { checkOllamaModels, checkRemoteModel, testEmbeddingModel, checkRerankModel, listOllamaModels, downloadOllamaModel, getDownloadProgress, checkOllamaStatus, listModelProviders, type OllamaModelInfo, type ModelProviderOption } from '@/api/initialization'
 import { useI18n } from 'vue-i18n'
 import { useUIStore } from '@/stores/ui'

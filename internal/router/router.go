@@ -22,6 +22,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/handler/session"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/middleware"
+	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 
@@ -66,6 +67,8 @@ type RouterParams struct {
 	UsageHandler             *handler.UsageHandler
 	ConfidenceHandler        *handler.ConfidenceHandler
 	AnalyticsHandler         *handler.AnalyticsHandler
+	VectorStoreHandler       *handler.VectorStoreHandler
+	WikiPageHandler          *handler.WikiPageHandler
 }
 
 // NewRouter 创建新的路由
@@ -126,6 +129,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.Config))
+	r.Use(langfuse.GinMiddleware())
 
 	// 文件服务：统一代理本地/MinIO/COS/TOS存储后端（需要认证）
 	serveFiles(r)
@@ -161,9 +165,49 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterUsageRoutes(v1, params.UsageHandler)
 		RegisterConfidenceRoutes(v1, params.ConfidenceHandler)
 		RegisterAnalyticsRoutes(v1, params.AnalyticsHandler)
+		RegisterVectorStoreRoutes(v1, params.VectorStoreHandler)
+		RegisterWikiRoutes(v1, params.WikiPageHandler)
+		RegisterChunkerDebugRoutes(v1)
 	}
 
 	return r
+}
+
+func RegisterWikiRoutes(r *gin.RouterGroup, h *handler.WikiPageHandler) {
+	wiki := r.Group("/knowledgebase/:kb_id/wiki")
+	{
+		wiki.GET("/pages", h.ListPages)
+		wiki.POST("/pages", h.CreatePage)
+		wiki.GET("/pages/*slug", h.GetPage)
+		wiki.PUT("/pages/*slug", h.UpdatePage)
+		wiki.DELETE("/pages/*slug", h.DeletePage)
+		wiki.GET("/index", h.GetIndex)
+		wiki.GET("/log", h.GetLog)
+		wiki.GET("/graph", h.GetGraph)
+		wiki.GET("/stats", h.GetStats)
+		wiki.GET("/search", h.SearchPages)
+		wiki.POST("/rebuild-links", h.RebuildLinks)
+	}
+}
+
+// RegisterChunkerDebugRoutes wires the read-only chunker preview endpoint.
+func RegisterChunkerDebugRoutes(r *gin.RouterGroup) {
+	r.POST("/chunker/preview", handler.PreviewChunking)
+}
+
+// RegisterVectorStoreRoutes registers CRUD routes for vector store configurations.
+func RegisterVectorStoreRoutes(r *gin.RouterGroup, h *handler.VectorStoreHandler) {
+	stores := r.Group("/vector-stores")
+	{
+		stores.GET("/types", h.ListStoreTypes)
+		stores.POST("/test", h.TestStoreRaw)
+		stores.POST("", h.CreateStore)
+		stores.GET("", h.ListStores)
+		stores.GET("/:id", h.GetStore)
+		stores.PUT("/:id", h.UpdateStore)
+		stores.DELETE("/:id", h.DeleteStore)
+		stores.POST("/:id/test", h.TestStoreByID)
+	}
 }
 
 // RegisterChunkRoutes 注册分块相关的路由
@@ -456,6 +500,8 @@ func RegisterSystemRoutes(r *gin.RouterGroup, handler *handler.SystemHandler) {
 	systemRoutes := r.Group("/system")
 	{
 		systemRoutes.GET("/info", handler.GetSystemInfo)
+		systemRoutes.GET("/langfuse", handler.GetLangfuseStatus)
+		systemRoutes.POST("/langfuse/check", handler.CheckLangfuse)
 		systemRoutes.GET("/parser-engines", handler.ListParserEngines)
 		systemRoutes.POST("/parser-engines/check", handler.CheckParserEngines)
 		systemRoutes.POST("/docreader/reconnect", handler.ReconnectDocReader)
@@ -842,5 +888,6 @@ func RegisterAnalyticsRoutes(r *gin.RouterGroup, h *handler.AnalyticsHandler) {
 		analytics.GET("/coverage-gaps", h.GetCoverageGaps)
 		analytics.GET("/stale-documents", h.GetStaleDocuments)
 		analytics.GET("/citation-heatmap", h.GetCitationHeatmap)
+		analytics.GET("/unanswered-questions", h.GetUnansweredQuestions)
 	}
 }

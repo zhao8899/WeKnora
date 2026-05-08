@@ -1,12 +1,9 @@
-import mermaid from 'mermaid';
 import type {Tokens} from 'marked';
 import {openMermaidFullscreen} from "@/utils/mermaidViewer.ts";
-import hljs from "highlight.js";
-import "highlight.js/styles/github.css";
-
-hljs.registerAliases("mermaid", { languageName: "plaintext" });
+import {loadHighlightJs} from "@/utils/highlightRuntime";
 
 let mermaidInitialized = false;
+let mermaidModulePromise: Promise<any> | null = null;
 
 const MERMAID_CONFIG = {
   startOnLoad: false,
@@ -36,15 +33,25 @@ const MERMAID_CONFIG = {
   },
 };
 
-export const ensureMermaidInitialized = () => {
-  if (mermaidInitialized) return;
+const loadMermaid = async () => {
+  if (!mermaidModulePromise) {
+    mermaidModulePromise = import('mermaid').then((mod) => mod.default);
+  }
+  const mermaid = await mermaidModulePromise;
+  if (mermaidInitialized) return mermaid;
   mermaid.initialize(MERMAID_CONFIG as any);
   mermaidInitialized = true;
+  return mermaid;
+};
+
+export const ensureMermaidInitialized = async () => {
+  await loadMermaid();
 };
 
 let mermaidCount = 0;
 
-export const createMermaidCodeRenderer = (idPrefix: string) => {
+export const createMermaidCodeRenderer = async (idPrefix: string) => {
+  const hljs = await loadHighlightJs();
   return ({text, lang}: Tokens.Code) => {
     let highlighted = '';
     let highlightLang: string = lang || 'Code';
@@ -74,6 +81,9 @@ export const renderMermaidInContainer = async (
 ) => {
   if (!rootElement) return 0;
   const mermaidElements = rootElement.querySelectorAll<HTMLElement>('pre[data-mermaid="false"]');
+  if (mermaidElements.length === 0) return 0;
+
+  const mermaid = await loadMermaid();
   for (const el of mermaidElements) {
     try{
         const code = el.innerText;

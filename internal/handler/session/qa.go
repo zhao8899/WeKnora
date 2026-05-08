@@ -403,8 +403,21 @@ func (h *Handler) KnowledgeQA(c *gin.Context) {
 		return
 	}
 
+	if !hasKnowledgeTargets(reqCtx) {
+		logger.Warnf(reqCtx.ctx, "KnowledgeQA rejected empty knowledge scope, session ID: %s", reqCtx.sessionID)
+		c.Error(errors.NewBadRequestError("Trusted QA requires at least one knowledge_base_id or knowledge_id"))
+		return
+	}
+
 	// Execute normal mode QA, generate title unless disabled
 	h.executeQA(reqCtx, qaModeNormal, !request.DisableTitle)
+}
+
+func hasKnowledgeTargets(reqCtx *qaRequestContext) bool {
+	if reqCtx == nil {
+		return false
+	}
+	return len(reqCtx.knowledgeBaseIDs) > 0 || len(reqCtx.knowledgeIDs) > 0
 }
 
 // AgentQA godoc

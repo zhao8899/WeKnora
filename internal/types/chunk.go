@@ -3,6 +3,7 @@
 package types
 
 import (
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -153,4 +154,20 @@ type Chunk struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	// Soft delete marker, supports data recovery
 	DeletedAt gorm.DeletedAt `json:"deleted_at"               gorm:"index"`
+	// ContextHeader is in-memory-only context such as a Markdown heading
+	// breadcrumb. It is prepended when embedding but is not persisted.
+	ContextHeader string `json:"-" gorm:"-"`
+}
+
+// EmbeddingContent returns the chunk text with optional context prepended for
+// vector indexing. Stored Content remains the original source slice.
+func (c *Chunk) EmbeddingContent() string {
+	if c == nil {
+		return ""
+	}
+	body := strings.TrimSpace(c.Content)
+	if c.ContextHeader == "" {
+		return body
+	}
+	return c.ContextHeader + "\n\n" + body
 }

@@ -164,7 +164,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 import { useOrganizationStore } from '@/stores/organization'
 import { shareKnowledgeBase, listKBShares, removeShare, updateSharePermission } from '@/api/organization'
@@ -247,7 +247,9 @@ async function handleShare() {
       MessagePlugin.success(t('organization.share.shareSuccess'))
       selectedOrgId.value = ''
       selectedPermission.value = 'viewer'
-      await loadShares()
+      orgStore.invalidateSharedResourcesCache()
+      orgStore.invalidateOrganizationsCache()
+      await Promise.all([loadShares(), orgStore.fetchOrganizations({ force: true })])
     } else {
       MessagePlugin.error(result.message || t('organization.share.shareFailed'))
     }
@@ -268,7 +270,8 @@ async function handleUpdatePermission(share: KnowledgeBaseShare, newPermission: 
     })
     if (result.success) {
       MessagePlugin.success(t('organization.roleUpdated'))
-      await loadShares()
+      orgStore.invalidateSharedResourcesCache()
+      await Promise.all([loadShares(), orgStore.fetchOrganizations({ force: true })])
     } else {
       MessagePlugin.error(result.message || t('organization.roleUpdateFailed'))
     }
@@ -283,7 +286,9 @@ async function handleUnshare(share: KnowledgeBaseShare) {
     const result = await removeShare(props.kbId, share.id)
     if (result.success) {
       MessagePlugin.success(t('organization.share.unshareSuccess'))
-      await loadShares()
+      orgStore.invalidateSharedResourcesCache()
+      orgStore.invalidateOrganizationsCache()
+      await Promise.all([loadShares(), orgStore.fetchOrganizations({ force: true })])
     } else {
       MessagePlugin.error(result.message || t('organization.share.unshareFailed'))
     }

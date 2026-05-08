@@ -232,15 +232,15 @@ func (AgentShare) TableName() string {
 
 // SharedAgentInfo represents a shared agent with additional sharing info
 type SharedAgentInfo struct {
-	Agent             *CustomAgent  `json:"agent"`
-	ShareID           string        `json:"share_id"`
-	OrganizationID    string        `json:"organization_id"`
-	OrgName           string        `json:"org_name"`
-	Permission        OrgMemberRole `json:"permission"`
-	SourceTenantID    uint64        `json:"source_tenant_id"`
-	SharedAt          time.Time     `json:"shared_at"`
-	SharedByUserID    string        `json:"shared_by_user_id,omitempty"`
-	SharedByUsername  string        `json:"shared_by_username,omitempty"`
+	Agent            *CustomAgent  `json:"agent"`
+	ShareID          string        `json:"share_id"`
+	OrganizationID   string        `json:"organization_id"`
+	OrgName          string        `json:"org_name"`
+	Permission       OrgMemberRole `json:"permission"`
+	SourceTenantID   uint64        `json:"source_tenant_id"`
+	SharedAt         time.Time     `json:"shared_at"`
+	SharedByUserID   string        `json:"shared_by_user_id,omitempty"`
+	SharedByUsername string        `json:"shared_by_username,omitempty"`
 	// DisabledByMe: current tenant has hidden this shared agent from their conversation dropdown (per-user preference)
 	DisabledByMe bool `json:"disabled_by_me"`
 }
@@ -256,7 +256,7 @@ type SourceFromAgentInfo struct {
 // When SourceFromAgent is set, the KB is from a shared agent's config (no direct KB share); show as read-only and "来自智能体 XXX".
 type OrganizationSharedKnowledgeBaseItem struct {
 	SharedKnowledgeBaseInfo
-	IsMine          bool                `json:"is_mine"`
+	IsMine          bool                 `json:"is_mine"`
 	SourceFromAgent *SourceFromAgentInfo `json:"source_from_agent,omitempty"`
 }
 
@@ -323,26 +323,26 @@ type JoinOrganizationRequest struct {
 type SubmitJoinRequestRequest struct {
 	InviteCode string        `json:"invite_code" binding:"required,min=8,max=32"`
 	Message    string        `json:"message" binding:"max=500"`
-	Role       OrgMemberRole `json:"role"` // Optional: role the applicant requests (admin/editor/viewer); default viewer
+	Role       OrgMemberRole `json:"role"` // Optional requested shared-space permission (admin/editor/viewer); not platform role
 }
 
 // ReviewJoinRequestRequest represents a request to review a join request
 type ReviewJoinRequestRequest struct {
 	Approved bool          `json:"approved"`
 	Message  string        `json:"message" binding:"max=500"`
-	Role     OrgMemberRole `json:"role"` // Optional: role to assign when approving; overrides applicant's requested role
+	Role     OrgMemberRole `json:"role"` // Optional shared-space permission to assign when approving; not platform role
 }
 
 // RequestRoleUpgradeRequest represents a request to upgrade role in an organization
 type RequestRoleUpgradeRequest struct {
-	RequestedRole OrgMemberRole `json:"requested_role" binding:"required"` // The role user wants to upgrade to
+	RequestedRole OrgMemberRole `json:"requested_role" binding:"required"` // Requested shared-space permission; not platform role
 	Message       string        `json:"message" binding:"max=500"`         // Optional message explaining the reason
 }
 
 // InviteMemberRequest represents a request to directly invite a user to organization
 type InviteMemberRequest struct {
 	UserID string        `json:"user_id" binding:"required"` // User ID to invite
-	Role   OrgMemberRole `json:"role" binding:"required"`    // Role to assign: admin/editor/viewer
+	Role   OrgMemberRole `json:"role" binding:"required"`    // Shared-space permission to assign: admin/editor/viewer; not platform role
 }
 
 // ShareKnowledgeBaseRequest represents a request to share a knowledge base
@@ -370,9 +370,9 @@ type OrganizationResponse struct {
 	Searchable              bool       `json:"searchable"`
 	MemberLimit             int        `json:"member_limit"` // 0 = unlimited
 	MemberCount             int        `json:"member_count"`
-	ShareCount              int        `json:"share_count"`                // 共享到该组织的知识库数量
-	AgentShareCount         int        `json:"agent_share_count"`        // 共享到该组织的智能体数量
-	PendingJoinRequestCount int        `json:"pending_join_request_count"` // 待审批加入申请数（仅管理员可见）
+	ShareCount              int        `json:"share_count"`                // 共享到该共享空间的知识库数量
+	AgentShareCount         int        `json:"agent_share_count"`          // 共享到该共享空间的智能体数量
+	PendingJoinRequestCount int        `json:"pending_join_request_count"` // 待审批加入申请数（仅具备 admin 空间权限的成员可见）
 	IsOwner                 bool       `json:"is_owner"`
 	MyRole                  string     `json:"my_role,omitempty"`
 	HasPendingUpgrade       bool       `json:"has_pending_upgrade"` // 当前用户是否有待处理的权限升级申请
@@ -406,8 +406,8 @@ type KnowledgeBaseShareResponse struct {
 	SharedByUsername  string    `json:"shared_by_username"`
 	SourceTenantID    uint64    `json:"source_tenant_id"`
 	Permission        string    `json:"permission"`     // Share permission (what the space was granted: viewer/editor)
-	MyRoleInOrg       string    `json:"my_role_in_org"` // Current user's role in this organization (admin/editor/viewer)
-	MyPermission      string    `json:"my_permission"`  // Effective permission for current user = min(Permission, MyRoleInOrg)
+	MyRoleInOrg       string    `json:"my_role_in_org"` // Current user's shared-space permission (admin/editor/viewer)
+	MyPermission      string    `json:"my_permission"`  // Effective permission = min(share permission, user space permission)
 	CreatedAt         time.Time `json:"created_at"`
 	RequireApproval   bool      `json:"require_approval"`
 }
@@ -427,10 +427,10 @@ type AgentShareResponse struct {
 	MyPermission     string    `json:"my_permission,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 	// Agent scope summary for list display (from agent config when available)
-	ScopeKB        string `json:"scope_kb,omitempty"`        // "all" | "selected" | "none"
+	ScopeKB        string `json:"scope_kb,omitempty"`       // "all" | "selected" | "none"
 	ScopeKBCount   int    `json:"scope_kb_count,omitempty"` // when selected
 	ScopeWebSearch bool   `json:"scope_web_search,omitempty"`
-	ScopeMCP       string `json:"scope_mcp,omitempty"`        // "all" | "selected" | "none"
+	ScopeMCP       string `json:"scope_mcp,omitempty"`       // "all" | "selected" | "none"
 	ScopeMCPCount  int    `json:"scope_mcp_count,omitempty"` // when selected
 	// Agent avatar (emoji or icon name) for list display
 	AgentAvatar string `json:"agent_avatar,omitempty"`
@@ -438,8 +438,8 @@ type AgentShareResponse struct {
 
 // ListOrganizationsResponse represents the response for listing organizations
 type ListOrganizationsResponse struct {
-	Organizations  []OrganizationResponse     `json:"organizations"`
-	Total          int64                      `json:"total"`
+	Organizations  []OrganizationResponse       `json:"organizations"`
+	Total          int64                        `json:"total"`
 	ResourceCounts *ResourceCountsByOrgResponse `json:"resource_counts,omitempty"` // 各空间内知识库/智能体数量，供列表侧栏展示
 }
 
@@ -462,7 +462,7 @@ type SearchableOrganizationItem struct {
 	MemberCount     int    `json:"member_count"`
 	MemberLimit     int    `json:"member_limit"` // 0 = unlimited
 	ShareCount      int    `json:"share_count"`
-	AgentShareCount int    `json:"agent_share_count"` // 共享到该组织的智能体数量
+	AgentShareCount int    `json:"agent_share_count"` // 共享到该共享空间的智能体数量
 	IsAlreadyMember bool   `json:"is_already_member"`
 	RequireApproval bool   `json:"require_approval"`
 }
@@ -477,7 +477,7 @@ type ListSearchableOrganizationsResponse struct {
 type JoinByOrganizationIDRequest struct {
 	OrganizationID string        `json:"organization_id" binding:"required"`
 	Message        string        `json:"message" binding:"max=500"` // Optional message for join request
-	Role           OrgMemberRole `json:"role"`                      // Optional: requested role (admin/editor/viewer); default viewer
+	Role           OrgMemberRole `json:"role"`                      // Optional requested shared-space permission; not platform role
 }
 
 // JoinRequestResponse represents a join request in API responses

@@ -95,6 +95,12 @@ export interface KBModelConfigRequest {
     }
     /** 存储引擎选择："local" | "minio" | "cos"，影响文档上传与文档内图片存储 */
     storageProvider?: string
+    indexingStrategy?: {
+        vector_enabled: boolean
+        keyword_enabled: boolean
+        wiki_enabled?: boolean
+        knowledge_graph_enabled?: boolean
+    }
     nodeExtract: {
         enabled: boolean
         text: string

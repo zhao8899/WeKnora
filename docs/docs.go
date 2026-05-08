@@ -19,144 +19,6 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/chat/answer/{message_id}/confidence": {
-            "get": {
-                "security": [
-                    {
-                        "Bearer": []
-                    },
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Returns evidence strength, source health, and cited evidence details for an assistant answer",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "chat"
-                ],
-                "summary": "Get answer confidence details",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Assistant message ID",
-                        "name": "message_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Confidence details",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "data": {
-                                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.AnswerConfidenceResponse"
-                                },
-                                "success": {
-                                    "type": "boolean"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    },
-                    "404": {
-                        "description": "Message not found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal server error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
-        "/chat/answer/{message_id}/feedback": {
-            "post": {
-                "security": [
-                    {
-                        "Bearer": []
-                    },
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Submits up, down, or expired feedback for a cited source in an assistant answer",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "chat"
-                ],
-                "summary": "Submit source feedback",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Assistant message ID",
-                        "name": "message_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Source feedback payload",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_handler.SourceFeedbackRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Feedback accepted",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "success": {
-                                    "type": "boolean"
-                                }
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    },
-                    "404": {
-                        "description": "Message or evidence not found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal server error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
-                        }
-                    }
-                }
-            }
-        },
         "/agents": {
             "get": {
                 "security": [
@@ -1507,6 +1369,133 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "令牌无效",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/chat/answer/{message_id}/confidence": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns evidence strength, source health, and cited evidence details for an assistant answer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "Get answer confidence details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Assistant message ID",
+                        "name": "message_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Confidence details",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Message not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/chat/answer/{message_id}/feedback": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Submits up, down, or expired feedback for a cited source in an assistant answer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "Submit source feedback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Assistant message ID",
+                        "name": "message_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Source feedback payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.SourceFeedbackRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Feedback accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Message or evidence not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -4328,7 +4317,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "将知识库共享到指定组织",
+                "description": "将知识库共享到指定共享空间",
                 "consumes": [
                     "application/json"
                 ],
@@ -4338,7 +4327,7 @@ const docTemplate = `{
                 "tags": [
                     "知识库共享"
                 ],
-                "summary": "共享知识库到组织",
+                "summary": "共享知识库到共享空间",
                 "parameters": [
                     {
                         "type": "string",
@@ -5915,6 +5904,69 @@ const docTemplate = `{
                 }
             }
         },
+        "/messages/{session_id}/{id}/feedback": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "对指定 AI 回复提交点赞或踩的质量反馈",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "消息"
+                ],
+                "summary": "提交消息质量反馈",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "消息ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "反馈内容",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.FeedbackMessageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "参数错误",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/models": {
             "get": {
                 "security": [
@@ -6193,14 +6245,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "获取当前用户所属的所有组织，并附带各空间内知识库/智能体数量",
+                "description": "获取当前用户所属的所有共享空间，并附带各空间内知识库/智能体数量",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "获取我的组织列表",
+                "summary": "获取我的共享空间列表",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -6216,7 +6268,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "创建新的组织，创建者自动成为管理员",
+                "description": "创建新的共享空间，创建者自动成为空间负责人",
                 "consumes": [
                     "application/json"
                 ],
@@ -6224,12 +6276,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "创建组织",
+                "summary": "创建共享空间",
                 "parameters": [
                     {
-                        "description": "组织信息",
+                        "description": "共享空间信息",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6262,7 +6314,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "使用邀请码加入组织",
+                "description": "使用邀请码加入共享空间",
                 "consumes": [
                     "application/json"
                 ],
@@ -6270,9 +6322,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "通过邀请码加入组织",
+                "summary": "通过邀请码加入共享空间",
                 "parameters": [
                     {
                         "description": "邀请码",
@@ -6316,7 +6368,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
                 "summary": "通过空间 ID 加入（可搜索空间）",
                 "parameters": [
@@ -6354,7 +6406,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "对需要审核的组织提交加入申请",
+                "description": "对需要审核的共享空间提交加入申请",
                 "consumes": [
                     "application/json"
                 ],
@@ -6362,7 +6414,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
                 "summary": "提交加入申请",
                 "parameters": [
@@ -6400,14 +6452,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "通过邀请码获取组织基本信息（不加入）",
+                "description": "通过邀请码获取共享空间基本信息（不加入）",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "通过邀请码预览组织",
+                "summary": "通过邀请码预览共享空间",
                 "parameters": [
                     {
                         "type": "string",
@@ -6446,7 +6498,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
                 "summary": "搜索可加入的空间",
                 "parameters": [
@@ -6482,18 +6534,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "根据ID获取组织详情",
+                "description": "根据 ID 获取共享空间详情",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "获取组织详情",
+                "summary": "获取共享空间详情",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6521,7 +6573,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "更新组织信息（需要管理员权限）",
+                "description": "更新共享空间信息（需要空间负责人权限）",
                 "consumes": [
                     "application/json"
                 ],
@@ -6529,13 +6581,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "更新组织",
+                "summary": "更新共享空间",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6572,15 +6624,15 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "删除组织（仅组织创建者可操作）",
+                "description": "删除共享空间（仅空间创建者可操作）",
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "删除组织",
+                "summary": "删除共享空间",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6610,7 +6662,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "管理员直接添加用户为组织成员",
+                "description": "空间负责人直接添加用户为共享空间成员",
                 "consumes": [
                     "application/json"
                 ],
@@ -6618,13 +6670,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
                 "summary": "邀请成员",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6669,18 +6721,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "生成新的组织邀请码（需要管理员权限）",
+                "description": "生成新的共享空间邀请码（需要空间负责人权限）",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
                 "summary": "生成邀请码",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6710,18 +6762,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "获取组织的待审核加入申请（仅管理员）",
+                "description": "获取共享空间的待审核加入申请（仅具备 admin 空间权限的成员）",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
                 "summary": "获取待审核加入申请列表",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6751,7 +6803,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "通过或拒绝加入申请（仅管理员）",
+                "description": "通过或拒绝加入申请（仅具备 admin 空间权限的成员）",
                 "consumes": [
                     "application/json"
                 ],
@@ -6759,13 +6811,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
                 "summary": "审核加入申请",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6811,15 +6863,15 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "退出指定组织",
+                "description": "退出指定共享空间",
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "退出组织",
+                "summary": "退出共享空间",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6849,18 +6901,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "获取组织的所有成员",
+                "description": "获取共享空间的所有成员",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "获取组织成员列表",
+                "summary": "获取共享空间成员列表",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6883,7 +6935,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "更新组织成员的角色（需要管理员权限）",
+                "description": "更新共享空间成员的空间权限（需要空间负责人权限）",
                 "consumes": [
                     "application/json"
                 ],
@@ -6891,13 +6943,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "更新成员角色",
+                "summary": "更新成员空间权限",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6910,7 +6962,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "角色信息",
+                        "description": "空间权限信息",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6941,15 +6993,15 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "从组织中移除成员（需要管理员权限）",
+                "description": "从共享空间中移除成员（需要空间负责人权限）",
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
                 "summary": "移除成员",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -6986,7 +7038,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "现有成员申请更高权限",
+                "description": "现有成员申请更高空间权限",
                 "consumes": [
                     "application/json"
                 ],
@@ -6994,13 +7046,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "申请权限升级",
+                "summary": "申请空间权限升级",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -7039,18 +7091,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "搜索用户（排除已有成员）用于邀请加入组织",
+                "description": "搜索用户（排除已有成员）用于邀请加入共享空间",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
                 "summary": "搜索可邀请的用户",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -7099,13 +7151,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
                 "summary": "获取空间内全部智能体（含我共享的）",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -7134,13 +7186,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
                 "summary": "获取空间内全部知识库（含我共享的、含智能体携带的）",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -7164,18 +7216,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "获取共享到指定组织的所有知识库",
+                "description": "获取共享到指定共享空间的所有知识库",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "组织管理"
+                    "共享空间管理"
                 ],
-                "summary": "获取组织的共享知识库列表",
+                "summary": "获取共享空间的共享知识库列表",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "组织ID",
+                        "description": "共享空间 ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -7872,7 +7924,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "获取通过组织共享给当前用户的所有知识库",
+                "description": "获取通过共享空间共享给当前用户的所有知识库",
                 "produces": [
                     "application/json"
                 ],
@@ -8702,30 +8754,56 @@ const docTemplate = `{
                 }
             }
         },
-        "/web-search/providers": {
+        "/usage/daily-trend": {
             "get": {
                 "security": [
                     {
                         "Bearer": []
-                    },
-                    {
-                        "ApiKeyAuth": []
                     }
-                ],
-                "description": "Returns the list of available web search providers from configuration",
-                "consumes": [
-                    "application/json"
                 ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "web-search"
+                    "使用量审计"
                 ],
-                "summary": "Get available web search providers",
+                "summary": "获取每日使用量趋势",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "天数（默认30）",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "List of providers",
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/usage/stats": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "使用量审计"
+                ],
+                "summary": "获取使用量统计汇总",
+                "responses": {
+                    "200": {
+                        "description": "OK",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -8827,94 +8905,6 @@ const docTemplate = `{
                 "ErrAgentInvalidTemperature"
             ]
         },
-        "github_com_Tencent_WeKnora_internal_types.AnswerConfidenceEvidenceItem": {
-            "type": "object",
-            "properties": {
-                "chunk_id": {
-                    "type": "string"
-                },
-                "current_feedback": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "knowledge_base_id": {
-                    "type": "string"
-                },
-                "knowledge_id": {
-                    "type": "string"
-                },
-                "match_type": {
-                    "type": "string"
-                },
-                "position": {
-                    "type": "integer"
-                },
-                "rerank_score": {
-                    "type": "number"
-                },
-                "retrieval_score": {
-                    "type": "number"
-                },
-                "source_channel": {
-                    "type": "string"
-                },
-                "source_type": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_Tencent_WeKnora_internal_types.AnswerConfidenceResponse": {
-            "type": "object",
-            "properties": {
-                "confidence_label": {
-                    "type": "string"
-                },
-                "confidence_score": {
-                    "type": "number"
-                },
-                "evidence_status": {
-                    "type": "string"
-                },
-                "evidence_strength_label": {
-                    "type": "string"
-                },
-                "evidence_strength_score": {
-                    "type": "number"
-                },
-                "evidences": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.AnswerConfidenceEvidenceItem"
-                    }
-                },
-                "message_id": {
-                    "type": "string"
-                },
-                "reference_count": {
-                    "type": "integer"
-                },
-                "source_count": {
-                    "type": "integer"
-                },
-                "source_health_label": {
-                    "type": "string"
-                },
-                "source_health_score": {
-                    "type": "number"
-                },
-                "source_type_counts": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "integer"
-                    }
-                }
-            }
-        },
         "github_com_Tencent_WeKnora_internal_types.AgentConfig": {
             "type": "object",
             "properties": {
@@ -8960,6 +8950,10 @@ const docTemplate = `{
                 },
                 "max_iterations": {
                     "description": "Maximum number of ReAct iterations",
+                    "type": "integer"
+                },
+                "max_parallel_tool_calls": {
+                    "description": "Maximum number of tool calls to execute concurrently when parallel execution is enabled.\nValues \u003c= 0 fall back to the engine default.",
                     "type": "integer"
                 },
                 "max_tool_output_chars": {
@@ -9013,12 +9007,16 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "temperature": {
-                    "description": "LLM temperature for agent",
+                    "description": "LLM temperature for agent (0–1, default 0.3)",
                     "type": "number"
                 },
                 "thinking": {
                     "description": "Whether to enable thinking mode (for models that support extended thinking)",
                     "type": "boolean"
+                },
+                "top_p": {
+                    "description": "Nucleus sampling probability mass (0–1, 0 = disabled/use model default)",
+                    "type": "number"
                 },
                 "use_custom_system_prompt": {
                     "description": "Whether to use custom system prompt instead of default",
@@ -9031,6 +9029,10 @@ const docTemplate = `{
                 "web_search_max_results": {
                     "description": "Maximum number of web search results (default: 5)",
                     "type": "integer"
+                },
+                "web_search_provider_id": {
+                    "description": "WebSearchProviderEntity ID (resolved from agent config)",
+                    "type": "string"
                 }
             }
         },
@@ -9381,6 +9383,10 @@ const docTemplate = `{
                     "description": "===== Agent Mode Settings =====\nMaximum iterations for ReAct loop (only for agent type)",
                     "type": "integer"
                 },
+                "max_parallel_tool_calls": {
+                    "description": "Maximum number of tool calls that may execute concurrently",
+                    "type": "integer"
+                },
                 "mcp_selection_mode": {
                     "description": "MCP service selection mode: \"all\" = all enabled MCP services, \"selected\" = specific services, \"none\" = no MCP",
                     "type": "string"
@@ -9398,6 +9404,10 @@ const docTemplate = `{
                 },
                 "multi_turn_enabled": {
                     "description": "===== Multi-turn Conversation Settings =====\nWhether multi-turn conversation is enabled",
+                    "type": "boolean"
+                },
+                "parallel_tool_calls": {
+                    "description": "Whether independent safe tool calls can run in parallel",
                     "type": "boolean"
                 },
                 "rerank_model_id": {
@@ -9473,6 +9483,14 @@ const docTemplate = `{
                     "description": "VLM model ID for image analysis (optional, falls back to tenant-level VLM)",
                     "type": "string"
                 },
+                "web_fetch_enabled": {
+                    "description": "Whether to auto-fetch full page content for reranked web search results",
+                    "type": "boolean"
+                },
+                "web_fetch_top_n": {
+                    "description": "Max number of pages to fetch after rerank (default: 3)",
+                    "type": "integer"
+                },
                 "web_search_enabled": {
                     "description": "===== Web Search Settings =====\nWhether web search is enabled",
                     "type": "boolean"
@@ -9480,6 +9498,10 @@ const docTemplate = `{
                 "web_search_max_results": {
                     "description": "Maximum web search results",
                     "type": "integer"
+                },
+                "web_search_provider_id": {
+                    "description": "WebSearchProviderID references a specific WebSearchProviderEntity.\nIf empty, the tenant's default provider (is_default=true) is used.",
+                    "type": "string"
                 }
             }
         },
@@ -9868,7 +9890,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "role": {
-                    "description": "Role to assign: admin/editor/viewer",
+                    "description": "Shared-space permission to assign: admin/editor/viewer; not platform role",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
@@ -9896,7 +9918,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
-                    "description": "Optional: requested role (admin/editor/viewer); default viewer",
+                    "description": "Optional requested shared-space permission; not platform role",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
@@ -9953,6 +9975,10 @@ const docTemplate = `{
                     "description": "Error message of the knowledge",
                     "type": "string"
                 },
+                "external_id": {
+                    "description": "ExternalID stores the stable upstream identifier used by datasource sync.",
+                    "type": "string"
+                },
                 "file_hash": {
                     "description": "File hash of the knowledge",
                     "type": "string"
@@ -9972,6 +9998,10 @@ const docTemplate = `{
                 "file_type": {
                     "description": "File type of the knowledge",
                     "type": "string"
+                },
+                "freshness_flag": {
+                    "description": "FreshnessFlag marks sources that recently received negative feedback and may need review.",
+                    "type": "boolean"
                 },
                 "id": {
                     "description": "Unique identifier of the knowledge",
@@ -10010,6 +10040,10 @@ const docTemplate = `{
                 "source": {
                     "description": "Source of the knowledge (e.g. URL address for url type, \"manual\" for manual type)",
                     "type": "string"
+                },
+                "source_weight": {
+                    "description": "SourceWeight adjusts retrieval preference using recent source-level feedback.",
+                    "type": "number"
                 },
                 "storage_size": {
                     "description": "Storage size of the knowledge",
@@ -10141,7 +10175,7 @@ const docTemplate = `{
                     ]
                 },
                 "share_count": {
-                    "description": "ShareCount indicates the number of organizations this knowledge base is shared with (not stored in database)",
+                    "description": "ShareCount indicates the number of shared spaces this knowledge base is shared with (not stored in database)",
                     "type": "integer"
                 },
                 "storage_config": {
@@ -10240,11 +10274,11 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "my_permission": {
-                    "description": "Effective permission for current user = min(Permission, MyRoleInOrg)",
+                    "description": "Effective permission = min(share permission, user space permission)",
                     "type": "string"
                 },
                 "my_role_in_org": {
-                    "description": "Current user's role in this organization (admin/editor/viewer)",
+                    "description": "Current user's shared-space permission (admin/editor/viewer)",
                     "type": "string"
                 },
                 "organization_id": {
@@ -10637,6 +10671,17 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "execution_meta": {
+                    "description": "ExecutionMeta stores runtime execution metadata for assistant messages.\nUsed for auditing, troubleshooting, and future analytics.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "feedback": {
+                    "description": "Feedback stores user quality signal: \"\" (none), \"like\", or \"dislike\"",
+                    "type": "string"
+                },
                 "id": {
                     "description": "Unique identifier for the message",
                     "type": "string"
@@ -10945,7 +10990,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "agent_share_count": {
-                    "description": "共享到该组织的智能体数量",
+                    "description": "共享到该共享空间的智能体数量",
                     "type": "integer"
                 },
                 "avatar": {
@@ -10993,7 +11038,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "pending_join_request_count": {
-                    "description": "待审批加入申请数（仅管理员可见）",
+                    "description": "待审批加入申请数（仅具备 admin 空间权限的成员可见）",
                     "type": "integer"
                 },
                 "require_approval": {
@@ -11003,7 +11048,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "share_count": {
-                    "description": "共享到该组织的知识库数量",
+                    "description": "共享到该共享空间的知识库数量",
                     "type": "integer"
                 },
                 "updated_at": {
@@ -11137,7 +11182,7 @@ const docTemplate = `{
                     "maxLength": 500
                 },
                 "requested_role": {
-                    "description": "The role user wants to upgrade to",
+                    "description": "Requested shared-space permission; not platform role",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
@@ -11329,7 +11374,7 @@ const docTemplate = `{
                     "maxLength": 500
                 },
                 "role": {
-                    "description": "Optional: role to assign when approving; overrides applicant's requested role",
+                    "description": "Optional shared-space permission to assign when approving; not platform role",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
@@ -11643,7 +11688,7 @@ const docTemplate = `{
                     "maxLength": 500
                 },
                 "role": {
-                    "description": "Optional: role the applicant requests (admin/editor/viewer); default viewer",
+                    "description": "Optional requested shared-space permission (admin/editor/viewer); not platform role",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.OrgMemberRole"
@@ -11750,6 +11795,14 @@ const docTemplate = `{
         "github_com_Tencent_WeKnora_internal_types.Tenant": {
             "type": "object",
             "properties": {
+                "agent_config": {
+                    "description": "Deprecated: AgentConfig is deprecated, use CustomAgent (builtin-smart-reasoning) config instead.\nThis field is kept for backward compatibility and will be removed in future versions.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.AgentConfig"
+                        }
+                    ]
+                },
                 "api_key": {
                     "description": "API key",
                     "type": "string"
@@ -12071,7 +12124,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "api_key": {
-                    "description": "API密钥（如果需要）",
+                    "description": "Deprecated: Use WebSearchProviderEntity.Parameters.APIKey instead.",
                     "type": "string"
                 },
                 "blacklist": {
@@ -12106,7 +12159,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "provider": {
-                    "description": "搜索引擎提供商ID",
+                    "description": "Deprecated: Use WebSearchProviderEntity.Parameters.APIKey instead.",
                     "type": "string"
                 },
                 "rerank_model_id": {
@@ -12176,6 +12229,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "is_builtin": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -12237,6 +12293,22 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "internal_handler.FeedbackMessageRequest": {
+            "type": "object",
+            "required": [
+                "feedback"
+            ],
+            "properties": {
+                "feedback": {
+                    "description": "Feedback value: \"like\" or \"dislike\"",
+                    "type": "string",
+                    "enum": [
+                        "like",
+                        "dislike"
+                    ]
                 }
             }
         },
@@ -12466,6 +12538,24 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.SourceFeedbackRequest": {
+            "type": "object",
+            "required": [
+                "evidence_id",
+                "feedback"
+            ],
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "evidence_id": {
+                    "type": "string"
+                },
+                "feedback": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handler.StorageCheckRequest": {
             "type": "object",
             "properties": {
@@ -12608,6 +12698,9 @@ const docTemplate = `{
             "properties": {
                 "description": {
                     "type": "string"
+                },
+                "is_builtin": {
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string"
@@ -12837,24 +12930,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "internal_handler.SourceFeedbackRequest": {
-            "type": "object",
-            "required": [
-                "evidence_id",
-                "feedback"
-            ],
-            "properties": {
-                "comment": {
-                    "type": "string"
-                },
-                "evidence_id": {
-                    "type": "string"
-                },
-                "feedback": {
-                    "type": "string"
                 }
             }
         }

@@ -118,7 +118,7 @@
                       </div>
                     </div>
 
-                    <!-- 邀请成员 (仅管理员可见) -->
+                    <!-- 邀请成员（仅空间负责人可见） -->
                     <div v-if="isAdmin && orgId" class="setting-row setting-row-vertical">
                       <div class="setting-info full-width">
                         <label>{{ $t('organization.settings.inviteMembers') }}</label>
@@ -288,7 +288,7 @@
                           <span class="perm-item has"><t-icon name="check" size="12px" />{{ $t('organization.editor.viewerPerm1') }}</span>
                           <span class="perm-item has"><t-icon name="check" size="12px" />{{ $t('organization.editor.editorPerm1') }}</span>
                           <span class="perm-item has"><t-icon name="check" size="12px" />{{ $t('organization.editor.useSharedAgentsPerm') }}</span>
-                          <span class="perm-item no"><t-icon name="close" size="12px" />{{ $t('organization.editor.shareKBPerm') }}</span>
+                          <span class="perm-item has"><t-icon name="check" size="12px" />{{ $t('organization.editor.shareKBPerm') }}</span>
                           <span class="perm-item no"><t-icon name="close" size="12px" />{{ $t('organization.editor.adminPerm1') }}</span>
                         </div>
                       </div>
@@ -307,7 +307,7 @@
                         </div>
                       </div>
                     </div>
-                    <!-- 申请权限升级按钮（非管理员可见） -->
+                    <!-- 申请权限升级按钮（非空间负责人可见） -->
                     <div v-if="canRequestUpgrade" class="permissions-upgrade-action">
                       <t-button 
                         variant="outline" 
@@ -735,7 +735,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 import {
   getOrganization,
@@ -862,14 +862,14 @@ const isAdmin = computed(() => {
   return orgInfo.value?.my_role === 'admin' || orgInfo.value?.is_owner
 })
 
-// 是否可以申请权限升级（非管理员成员可申请）
+// 是否可以申请权限升级（非空间负责人可申请）
 const canRequestUpgrade = computed(() => {
   if (isCreateMode.value || !props.orgId) return false
   const myRole = orgInfo.value?.my_role
   return myRole && myRole !== 'admin'
 })
 
-// 可申请的角色选项（比当前角色高的角色）
+// 可申请的空间权限选项（比当前权限高）
 const upgradeRoleOptions = computed(() => {
   const myRole = orgInfo.value?.my_role || 'viewer'
   const options = []
@@ -906,7 +906,7 @@ const navItems = computed(() => {
   const items: { key: string; icon: string; label: string; badge?: number }[] = [
     { key: 'basic', icon: 'info-circle', label: t('organization.editor.navBasic') },
   ]
-  // 只有在编辑已有组织时才显示成员管理、加入申请（仅管理员）、共享知识库
+  // 只有在编辑已有空间时才显示成员管理、加入申请（仅空间负责人）、共享知识库
   if (props.orgId && !isCreateMode.value) {
     items.push({ key: 'members', icon: 'user', label: t('organization.manageMembers') })
     if (isAdmin.value) {
@@ -1421,6 +1421,8 @@ const handleRemoveShare = async (share: KnowledgeBaseShare) => {
     const res = await removeShare(share.knowledge_base_id, share.id)
     if (res.success) {
       MessagePlugin.success(t('organization.settings.removeShareSuccess'))
+      orgStore.invalidateSharedResourcesCache()
+      orgStore.invalidateOrganizationsCache()
       sharedKnowledgeBases.value = sharedKnowledgeBases.value.filter(s => s.id !== share.id)
     } else {
       MessagePlugin.error(res.message || t('organization.settings.removeShareFailed'))
@@ -1436,6 +1438,8 @@ const handleRemoveAgentShare = async (share: AgentShareResponse) => {
     const res = await removeAgentShare(share.agent_id, share.id)
     if (res.success) {
       MessagePlugin.success(t('organization.settings.removeShareSuccess'))
+      orgStore.invalidateSharedResourcesCache()
+      orgStore.invalidateOrganizationsCache()
       sharedAgents.value = sharedAgents.value.filter(s => s.id !== share.id)
     } else {
       MessagePlugin.error(res.message || t('organization.settings.removeShareFailed'))

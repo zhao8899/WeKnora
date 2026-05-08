@@ -12,10 +12,15 @@
                         <span class="surface-mode-label">{{ t('chatSurface.trustedQaLabel') }}</span>
                         <span class="surface-mode-desc">{{ t('chatSurface.trustedQaDesc') }}</span>
                     </button>
-                    <button type="button" class="surface-mode-card" :class="{ active: currentSurfaceMode === 'deep-research' }" @click="switchChatMode('deep-research')">
-                        <span class="surface-mode-label">{{ t('chatSurface.deepResearchLabel') }}</span>
-                        <span class="surface-mode-desc">{{ t('chatSurface.deepResearchDesc') }}</span>
-                    </button>
+                </div>
+                <div v-if="messagesList.length === 0 && !loading && showAdvancedModeNotice" class="advanced-mode-notice">
+                    <div class="advanced-mode-copy">
+                        <span class="advanced-mode-title">当前已启用高级模式</span>
+                        <span class="advanced-mode-desc">普通租户首页默认只保留可信问答。你仍可继续使用当前高级模式，或切回可信问答。</span>
+                    </div>
+                    <t-button size="small" theme="primary" variant="outline" @click="switchChatMode('trusted-qa')">
+                        切回可信问答
+                    </t-button>
                 </div>
                 <div v-if="messagesList.length === 0 && !loading" class="suggested-questions-container" :class="{ 'has-questions': suggestedQuestions.length > 0 }">
                     <transition name="sq-fade">
@@ -74,7 +79,8 @@
             ></InputField>
         </div>
     </div>
-    <KnowledgeBaseEditorModal 
+    <KnowledgeBaseEditorModal
+        v-if="uiStore.showKBEditorModal"
         :visible="uiStore.showKBEditorModal"
         :mode="uiStore.kbEditorMode"
         :kb-id="uiStore.currentKBId || undefined"
@@ -85,7 +91,7 @@
 </template>
 <script setup>
 import { storeToRefs } from 'pinia';
-import { computed, ref, onMounted, onUnmounted, nextTick, watch, reactive, onBeforeUnmount } from 'vue';
+import { computed, defineAsyncComponent, ref, onMounted, onUnmounted, nextTick, watch, reactive, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import InputField from '../../components/Input-field.vue';
 import botmsg from './components/botmsg.vue';
@@ -95,19 +101,20 @@ import { getSuggestedQuestions } from "@/api/agent/index";
 import { useStream } from '../../api/chat/streame'
 import { useMenuStore } from '@/stores/menu';
 import { useSettingsStore } from '@/stores/settings';
-import { MessagePlugin } from 'tdesign-vue-next';
+import { MessagePlugin } from 'tdesign-vue-next/es/message';
 import { useI18n } from 'vue-i18n';
 import { useUIStore } from '@/stores/ui';
-import KnowledgeBaseEditorModal from '@/views/knowledge/KnowledgeBaseEditorModal.vue';
 import { useKnowledgeBaseCreationNavigation } from '@/hooks/useKnowledgeBaseCreationNavigation';
 import { normalizeSuggestedQuestions } from '@/utils/suggestedQuestions';
 import { applyChatSurfaceMode, resolveChatSurfaceMode } from '@/utils/chatSurfaceMode';
+const KnowledgeBaseEditorModal = defineAsyncComponent(() => import('@/views/knowledge/KnowledgeBaseEditorModal.vue'));
 const usemenuStore = useMenuStore();
 const useSettingsStoreInstance = useSettingsStore();
 const uiStore = useUIStore();
 const { navigateToKnowledgeBaseList } = useKnowledgeBaseCreationNavigation();
 const { t } = useI18n();
 const currentSurfaceMode = computed(() => resolveChatSurfaceMode(useSettingsStoreInstance));
+const showAdvancedModeNotice = computed(() => currentSurfaceMode.value === 'deep-research');
 const { menuArr, isFirstSession, firstQuery, firstMentionedItems, firstModelId, firstImageFiles } = storeToRefs(usemenuStore);
 const { output, onChunk, isStreaming, isLoading, error, startStream, stopStream } = useStream();
 const route = useRoute();
@@ -1217,12 +1224,44 @@ onBeforeRouteUpdate((to, from, next) => {
 
 .surface-mode-strip {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     max-width: 800px;
     margin: 0 auto;
     width: 100%;
     padding: 24px 16px 0;
+}
+
+.advanced-mode-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    max-width: 800px;
+    margin: 12px auto 0;
+    width: calc(100% - 32px);
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 152, 0, 0.24);
+    background: linear-gradient(180deg, rgba(255, 152, 0, 0.08) 0%, rgba(255, 152, 0, 0.03) 100%);
+}
+
+.advanced-mode-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.advanced-mode-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+}
+
+.advanced-mode-desc {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--td-text-color-secondary);
 }
 
 .surface-mode-card {
@@ -1331,6 +1370,11 @@ onBeforeRouteUpdate((to, from, next) => {
 @media (max-width: 750px) {
     .surface-mode-strip {
         grid-template-columns: 1fr;
+    }
+
+    .advanced-mode-notice {
+        flex-direction: column;
+        align-items: flex-start;
     }
 }
 </style>

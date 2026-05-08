@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
+import { defineAsyncComponent, ref, onMounted, onBeforeUnmount } from 'vue'
+import { DialogPlugin } from 'tdesign-vue-next/es/dialog'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useI18n } from 'vue-i18n'
 import {
   listDataSources,
@@ -11,9 +12,9 @@ import {
   type DataSource,
 } from '@/api/datasource'
 import { humanizeCron, relativeTime } from '@/utils/cronHumanize'
-import DataSourceEditorDialog from './DataSourceEditorDialog.vue'
-import DataSourceSyncLogs from './DataSourceSyncLogs.vue'
 import DataSourceTypeIcon from './DataSourceTypeIcon.vue'
+const DataSourceEditorDialog = defineAsyncComponent(() => import('./DataSourceEditorDialog.vue'))
+const DataSourceSyncLogs = defineAsyncComponent(() => import('./DataSourceSyncLogs.vue'))
 
 const props = defineProps<{ kbId: string }>()
 const emit = defineEmits<{ (e: 'count', value: number): void }>()
@@ -635,6 +636,7 @@ onBeforeUnmount(stopPolling)
     </div>
 
     <DataSourceEditorDialog
+      v-if="editorVisible"
       v-model:visible="editorVisible"
       :kb-id="kbId"
       :data-source="editingDs"
@@ -643,6 +645,7 @@ onBeforeUnmount(stopPolling)
     />
 
     <DataSourceSyncLogs
+      v-if="logsVisible"
       v-model:visible="logsVisible"
       :data-source-id="logsDsId"
       :data-source-name="logsDsName"

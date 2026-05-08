@@ -81,7 +81,7 @@ import { ref, computed, onMounted, watch, onUnmounted, nextTick } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { searchTenants, type TenantInfo } from '@/api/tenant'
 import { useI18n } from 'vue-i18n'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 
 const { t } = useI18n()
 const authStore = useAuthStore()

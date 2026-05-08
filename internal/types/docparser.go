@@ -61,12 +61,13 @@ type DocParserVLMConfig struct {
 }
 
 type ParsedChunk struct {
-	Content string
-	Seq     int
-	Start   int
-	End     int
-	Images  []ParsedImage
-	ChunkID string // populated by processChunks with the actual DB UUID
+	Content       string
+	ContextHeader string
+	Seq           int
+	Start         int
+	End           int
+	Images        []ParsedImage
+	ChunkID       string // populated by processChunks with the actual DB UUID
 
 	// ParentIndex is set when using parent-child chunking strategy.
 	// -1 (or unset/0 for flat chunks) means this is a top-level chunk.

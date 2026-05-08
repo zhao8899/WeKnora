@@ -100,7 +100,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { MessagePlugin } from 'tdesign-vue-next';
+import { MessagePlugin } from 'tdesign-vue-next/es/message';
 import { useI18n } from 'vue-i18n';
 import { getAnswerConfidence, submitSourceFeedback } from '@/api/chat/index';
 

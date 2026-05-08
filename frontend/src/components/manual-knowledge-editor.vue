@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, nextTick, onBeforeUnmount } from 'vue'
-import { marked } from 'marked'
-import { MessagePlugin } from 'tdesign-vue-next'
+import { MessagePlugin } from 'tdesign-vue-next/es/message'
 import { useUIStore } from '@/stores/ui'
 import { listKnowledgeBases, getKnowledgeDetails, createManualKnowledge, updateManualKnowledge } from '@/api/knowledge-base'
 import { sanitizeHTML, safeMarkdownToHTML } from '@/utils/security'
 import { useI18n } from 'vue-i18n'
+
+type MarkedModule = typeof import('marked')
 
 interface KnowledgeBaseOption {
   label: string
@@ -53,6 +54,18 @@ const saving = ref(false)
 const savingAction = ref<ManualStatus>('draft')
 const activeTab = ref<'edit' | 'preview'>('edit')
 const lastUpdatedAt = ref<string>('')
+const previewHTML = ref('')
+let markedModulePromise: Promise<MarkedModule['marked']> | null = null
+
+const loadMarked = async () => {
+  if (!markedModulePromise) {
+    markedModulePromise = import('marked').then((mod) => {
+      mod.marked.use({})
+      return mod.marked
+    })
+  }
+  return markedModulePromise
+}
 
 const textareaComponent = ref<any>(null)
 const textareaElement = ref<HTMLTextAreaElement | null>(null)
@@ -377,16 +390,17 @@ const toggleEditorView = () => {
   activeTab.value = isPreviewMode.value ? 'edit' : 'preview'
 }
 
-marked.use({})
-
-const previewHTML = computed(() => {
+const updatePreviewHTML = async () => {
   if (!form.content) {
-    return `<p class="empty-preview">${t('manualEditor.preview.empty')}</p>`
+    previewHTML.value = `<p class="empty-preview">${t('manualEditor.preview.empty')}</p>`
+    return
   }
+
+  const marked = await loadMarked()
   const safeMarkdown = safeMarkdownToHTML(form.content)
   const html = marked.parse(safeMarkdown, { async: false }) as string
-  return sanitizeHTML(html)
-})
+  previewHTML.value = sanitizeHTML(html)
+}
 
 const kbDisabled = computed(() => mode.value === 'edit' && !!form.kbId)
 
@@ -649,8 +663,18 @@ watch(activeTab, (val) => {
     })
   } else {
     detachTextareaListeners()
+    void updatePreviewHTML()
   }
 })
+
+watch(
+  () => form.content,
+  () => {
+    if (activeTab.value === 'preview') {
+      void updatePreviewHTML()
+    }
+  },
+)
 
 onBeforeUnmount(() => {
   detachTextareaListeners()

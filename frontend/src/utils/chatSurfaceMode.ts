@@ -32,4 +32,6 @@ export function applyChatSurfaceMode(settingsStore: SettingsLike, mode: ChatSurf
 
   settingsStore.selectAgent(BUILTIN_QUICK_ANSWER_ID);
   settingsStore.toggleAgent(false);
+  settingsStore.toggleWebSearch?.(false);
+  settingsStore.toggleMemory?.(false);
 }

@@ -294,6 +294,12 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 		if config.FAQConfig != nil {
 			kb.FAQConfig = config.FAQConfig
 		}
+		if config.IndexingStrategy != nil {
+			kb.IndexingStrategy = *config.IndexingStrategy
+		}
+		if config.WikiConfig != nil {
+			kb.WikiConfig = *config.WikiConfig
+		}
 	}
 	kb.UpdatedAt = time.Now()
 	kb.EnsureDefaults()
@@ -592,7 +598,9 @@ func (s *knowledgeBaseService) CopyKnowledgeBase(ctx context.Context,
 			VLMConfig:             sourceKB.VLMConfig,
 			StorageProviderConfig: sourceKB.StorageProviderConfig,
 			StorageConfig:         sourceKB.StorageConfig,
+			VectorStoreID:         sourceKB.VectorStoreID,
 			FAQConfig:             faqConfig,
+			IndexingStrategy:      sourceKB.IndexingStrategy,
 		}
 		targetKB.EnsureDefaults()
 		if err := s.repo.CreateKnowledgeBase(ctx, targetKB); err != nil {

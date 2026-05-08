@@ -76,6 +76,6 @@ WeKnora API 按功能分为以下几类：
 | 初始化管理 | 知识库模型配置与 Ollama 管理 | [initialization.md](./initialization.md) |
 | 系统管理 | 系统信息、解析引擎、存储引擎 | [system.md](./system.md) |
 | MCP 服务 | MCP 工具服务管理 | [mcp-service.md](./mcp-service.md) |
-| 组织管理 | 组织、成员、知识库/智能体共享 | [organization.md](./organization.md) |
+| 共享空间管理 | 共享空间、成员、知识库/智能体共享 | [organization.md](./organization.md) |
 | Skills | 预装智能体技能 | [skill.md](./skill.md) |
 | 网络搜索 | 网络搜索服务商 | [web-search.md](./web-search.md) |

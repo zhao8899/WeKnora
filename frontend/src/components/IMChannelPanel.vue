@@ -1,10 +1,147 @@
 <template>
   <div class="section-content">
+    <div class="panel-toolbar">
+      <div class="toolbar-copy">
+        <div class="toolbar-title">IM 运营面板</div>
+        <div class="toolbar-subtitle">租户总览、当前智能体配置、渠道命令提示与连接状态一起看</div>
+      </div>
+      <div class="toolbar-controls">
+        <t-input
+          v-model="searchQuery"
+          clearable
+          size="small"
+          placeholder="搜索名称 / 智能体 / 平台"
+          class="toolbar-input"
+        />
+        <t-select v-model="platformFilter" size="small" clearable class="toolbar-select" placeholder="平台">
+          <t-option value="all" label="全部平台" />
+          <t-option value="wecom" :label="$t('agentEditor.im.wecom')" />
+          <t-option value="feishu" :label="$t('agentEditor.im.feishu')" />
+          <t-option value="slack" :label="$t('agentEditor.im.slack')" />
+          <t-option value="telegram" :label="$t('agentEditor.im.telegram')" />
+          <t-option value="dingtalk" :label="$t('agentEditor.im.dingtalk')" />
+          <t-option value="mattermost" :label="$t('agentEditor.im.mattermost')" />
+          <t-option value="wechat" :label="$t('agentEditor.im.wechat')" />
+        </t-select>
+        <t-select v-model="statusFilter" size="small" clearable class="toolbar-select" placeholder="状态">
+          <t-option value="all" label="全部状态" />
+          <t-option value="enabled" label="仅启用" />
+          <t-option value="disabled" label="仅停用" />
+        </t-select>
+      </div>
+    </div>
+
+    <div class="command-hint">
+      <div class="command-hint-header">
+        <span class="command-hint-title">Slash 命令</span>
+        <span class="command-hint-subtitle">IM 端已经支持这些运营常用命令</span>
+      </div>
+      <div class="command-tags">
+        <span class="command-tag">/help</span>
+        <span class="command-tag">/search 关键词</span>
+        <span class="command-tag">/info</span>
+        <span class="command-tag">/clear</span>
+        <span class="command-tag">/stop</span>
+      </div>
+    </div>
+
+    <!-- Tenant overview -->
+    <div class="channels-section overview-section">
+      <div class="channels-header">
+        <span class="channels-title">租户级 IM Channels 概览</span>
+        <span class="channels-count">{{ filteredOverviewChannels.length }}</span>
+        <t-button
+          variant="text"
+          theme="default"
+          size="small"
+          class="refresh-btn"
+          :loading="overviewLoading"
+          @click="loadOverviewChannels"
+        >
+          <t-icon name="refresh" />
+        </t-button>
+      </div>
+
+      <div v-if="overviewLoading && filteredOverviewChannels.length === 0" class="channels-loading">
+        <t-loading size="small" />
+        <span>{{ $t('common.loading') }}</span>
+      </div>
+
+      <div v-else-if="filteredOverviewChannels.length === 0" class="channels-empty">
+        <t-icon name="chat-message" class="empty-icon" />
+        <span>当前租户还没有 IM 渠道</span>
+      </div>
+
+      <div v-else class="channels-list overview-list">
+        <div v-for="channel in filteredOverviewChannels" :key="channel.id" class="channel-item overview-item">
+          <div class="channel-item-header">
+            <div class="channel-info-top overview-top">
+              <div class="channel-main">
+                <span class="platform-badge" :class="channel.platform">
+                  {{ platformLabel(channel.platform) }}
+                </span>
+                <span class="channel-name">{{ channel.name || $t('agentEditor.im.unnamed') }}</span>
+              </div>
+              <span class="source-tag">
+                <t-icon name="user" class="meta-icon" />
+                {{ channel.agent_name || channel.agent_id }}
+              </span>
+            </div>
+            <div class="channel-actions">
+              <t-button variant="text" theme="default" size="small" @click="togglePin(channel.id)">
+                <t-icon :name="isPinned(channel.id) ? 'pin-filled' : 'pin'" />
+              </t-button>
+              <t-switch
+                :value="channel.enabled"
+                size="small"
+                @change="handleToggle(channel)"
+              />
+              <t-button variant="text" theme="default" size="small" @click="editOverviewChannel(channel)">
+                <t-icon name="edit" />
+              </t-button>
+              <t-popconfirm :content="$t('agentEditor.im.deleteConfirm')" @confirm="handleDelete(channel.id)">
+                <t-button variant="text" theme="danger" size="small">
+                  <t-icon name="delete" />
+                </t-button>
+              </t-popconfirm>
+            </div>
+          </div>
+          <div class="channel-info">
+            <div class="channel-meta">
+              <span class="meta-tag">
+                <t-icon name="link" class="meta-icon" />
+                {{ modeLabel(channel.mode) }}
+              </span>
+              <span class="meta-tag">
+                <t-icon name="play-circle" class="meta-icon" />
+                {{ channel.output_mode === 'stream' ? $t('agentEditor.im.outputStream') : $t('agentEditor.im.outputFull') }}
+              </span>
+              <span v-if="channel.session_mode === 'thread'" class="meta-tag">
+                <t-icon name="chat" class="meta-icon" />
+                {{ $t('agentEditor.im.sessionModeThread') }}
+              </span>
+              <span class="meta-tag">
+                <t-icon name="user" class="meta-icon" />
+                {{ channel.agent_name || channel.agent_id }}
+              </span>
+            </div>
+            <div v-if="channel.mode === 'webhook'" class="callback-url-row">
+              <span class="url-label">{{ $t('agentEditor.im.callbackUrl') }}:</span>
+              <code class="url-value">{{ getCallbackUrl(channel) }}</code>
+              <t-button theme="default" size="small" variant="text" @click="copyUrl(channel)">
+                <t-icon name="file-copy" />
+              </t-button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Channel list header -->
     <div class="channels-section">
       <div class="channels-header">
         <span class="channels-title">{{ $t('agentEditor.im.addChannel') }}</span>
-        <span class="channels-count">{{ channels.length }}</span>
+        <span class="channels-count">{{ filteredAgentChannels.length }}</span>
       </div>
 
       <div v-if="loading" class="channels-loading">
@@ -12,13 +149,13 @@
         <span>{{ $t('common.loading') }}</span>
       </div>
 
-      <div v-else-if="channels.length === 0" class="channels-empty">
+      <div v-else-if="filteredAgentChannels.length === 0" class="channels-empty">
         <t-icon name="chat-message" class="empty-icon" />
         <span>{{ $t('agentEditor.im.empty') }}</span>
       </div>
 
       <div v-else class="channels-list">
-        <div v-for="channel in channels" :key="channel.id" class="channel-item">
+        <div v-for="channel in filteredAgentChannels" :key="channel.id" class="channel-item">
           <div class="channel-info">
             <div class="channel-info-top">
               <div class="channel-main">
@@ -30,8 +167,12 @@
             </div>
             <div class="channel-meta">
               <span class="meta-tag">
+                <t-icon name="user" class="meta-icon" />
+                当前智能体
+              </span>
+              <span class="meta-tag">
                 <t-icon name="link" class="meta-icon" />
-                {{ channel.mode }}
+                {{ modeLabel(channel.mode) }}
               </span>
               <span class="meta-tag">
                 <t-icon name="play-circle" class="meta-icon" />
@@ -51,6 +192,9 @@
             </div>
           </div>
           <div class="channel-actions">
+            <t-button variant="text" theme="default" size="small" @click="togglePin(channel.id)">
+              <t-icon :name="isPinned(channel.id) ? 'pin-filled' : 'pin'" />
+            </t-button>
             <t-switch
               :value="channel.enabled"
               size="small"
@@ -345,10 +489,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { computed, ref, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { MessagePlugin } from 'tdesign-vue-next';
-import { listIMChannels, createIMChannel, updateIMChannel, deleteIMChannel, toggleIMChannel } from '@/api/agent';
+import { MessagePlugin } from 'tdesign-vue-next/es/message';
+import { listIMChannels, listAgents, createIMChannel, updateIMChannel, deleteIMChannel, toggleIMChannel } from '@/api/agent';
 import { listKnowledgeBases } from '@/api/knowledge-base';
 import type { IMChannel } from '@/api/agent';
 
@@ -359,12 +503,36 @@ const props = defineProps<{
 }>();
 
 const channels = ref<IMChannel[]>([]);
+const overviewChannels = ref<IMChannelOverview[]>([]);
 const loading = ref(false);
+const overviewLoading = ref(false);
 const showCreateDialog = ref(false);
 const editingChannel = ref<IMChannel | null>(null);
+const searchQuery = ref('');
+const platformFilter = ref<'all' | IMChannel['platform'] | 'wechat'>('all');
+const statusFilter = ref<'all' | 'enabled' | 'disabled'>('all');
+const pinnedChannelIds = ref<string[]>(loadPinnedChannelIds());
 
 // Knowledge base options for file-to-KB feature
 const knowledgeBases = ref<{ id: string; name: string }[]>([]);
+
+type IMChannelMode = 'webhook' | 'websocket' | 'longpoll';
+
+interface IMChannelOverview {
+  id: string;
+  tenant_id: number;
+  agent_id: string;
+  agent_name?: string;
+  platform: IMChannel['platform'] | 'wechat';
+  name: string;
+  enabled: boolean;
+  mode: IMChannelMode;
+  output_mode: 'stream' | 'full';
+  session_mode?: 'user' | 'thread';
+  bot_identity?: string;
+  created_at?: string;
+  updated_at?: string;
+}
 
 const defaultCredentials = (): Record<string, any> => ({});
 
@@ -385,6 +553,148 @@ function platformLabel(platform: string): string {
 
 function platformSupportsThread(platform: string): boolean {
   return ['slack', 'mattermost', 'feishu', 'telegram'].includes(platform);
+}
+
+function loadPinnedChannelIds(): string[] {
+  try {
+    const raw = localStorage.getItem('weknora-im-channel-pins');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePinnedChannelIds() {
+  localStorage.setItem('weknora-im-channel-pins', JSON.stringify(pinnedChannelIds.value));
+}
+
+function isPinned(id: string): boolean {
+  return pinnedChannelIds.value.includes(id);
+}
+
+function togglePin(id: string) {
+  const next = new Set(pinnedChannelIds.value);
+  if (next.has(id)) {
+    next.delete(id);
+    MessagePlugin.success('已取消置顶');
+  } else {
+    next.add(id);
+    MessagePlugin.success('已置顶');
+  }
+  pinnedChannelIds.value = Array.from(next);
+  savePinnedChannelIds();
+}
+
+function modeLabel(mode: string): string {
+  if (mode === 'longpoll') return 'LongPoll';
+  if (mode === 'websocket') return 'WebSocket';
+  if (mode === 'webhook') return 'Webhook';
+  return mode || '-';
+}
+
+function sortChannels<T extends { id: string; enabled: boolean; updated_at?: string; created_at?: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const pinDelta = Number(isPinned(b.id)) - Number(isPinned(a.id));
+    if (pinDelta !== 0) return pinDelta;
+    const statusDelta = Number(b.enabled) - Number(a.enabled);
+    if (statusDelta !== 0) return statusDelta;
+    const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
+    const bTime = new Date(b.updated_at || b.created_at || 0).getTime();
+    return bTime - aTime;
+  });
+}
+
+function channelSearchText(channel: {
+  name?: string;
+  platform?: string;
+  mode?: string;
+  output_mode?: string;
+  session_mode?: string;
+  agent_name?: string;
+  bot_identity?: string;
+  agent_id?: string;
+}): string {
+  return [
+    channel.name,
+    channel.platform,
+    channel.mode,
+    channel.output_mode,
+    channel.session_mode,
+    channel.agent_name,
+    channel.bot_identity,
+    channel.agent_id,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function matchesFilters(channel: {
+  name?: string;
+  platform?: string;
+  enabled?: boolean;
+  mode?: string;
+  output_mode?: string;
+  session_mode?: string;
+  agent_name?: string;
+  bot_identity?: string;
+  agent_id?: string;
+}) {
+  const q = searchQuery.value.trim().toLowerCase();
+  if (q && !channelSearchText(channel).includes(q)) {
+    return false;
+  }
+  if (platformFilter.value !== 'all' && channel.platform !== platformFilter.value) {
+    return false;
+  }
+  if (statusFilter.value === 'enabled' && !channel.enabled) {
+    return false;
+  }
+  if (statusFilter.value === 'disabled' && channel.enabled) {
+    return false;
+  }
+  return true;
+}
+
+const filteredOverviewChannels = computed(() => sortChannels(overviewChannels.value.filter(matchesFilters)));
+const filteredAgentChannels = computed(() => sortChannels(channels.value.filter(matchesFilters)));
+
+async function loadOverviewChannels() {
+  overviewLoading.value = true;
+  try {
+    const agentRes = await listAgents();
+    const agentSummaries = agentRes.data || [];
+    const settled = await Promise.allSettled(agentSummaries.map((agent) => listIMChannels(agent.id)));
+    const items: IMChannelOverview[] = [];
+
+    settled.forEach((result, index) => {
+      const agent = agentSummaries[index];
+      if (result.status !== 'fulfilled') return;
+      const rows = result.value.data || [];
+      rows.forEach((row: IMChannel) => {
+        items.push({
+          id: row.id,
+          tenant_id: agent?.tenant_id || 0,
+          agent_id: row.agent_id || agent.id,
+          agent_name: agent?.name || row.agent_id,
+          platform: row.platform as IMChannelOverview['platform'],
+          name: row.name,
+          enabled: row.enabled,
+          mode: (row.mode as IMChannelMode) || 'websocket',
+          output_mode: row.output_mode,
+          session_mode: row.session_mode,
+          bot_identity: '',
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        });
+      });
+    });
+
+    overviewChannels.value = items;
+  } catch {
+    overviewChannels.value = [];
+  } finally {
+    overviewLoading.value = false;
+  }
 }
 
 watch(
@@ -416,14 +726,15 @@ async function loadChannels() {
   } finally {
     loading.value = false;
   }
+  await loadOverviewChannels();
 }
 
-function getCallbackUrl(channel: IMChannel): string {
+function getCallbackUrl(channel: { id: string }): string {
   const base = import.meta.env.VITE_IS_DOCKER ? window.location.origin : 'http://127.0.0.1:8080';
   return `${base}/api/v1/im/callback/${channel.id}`;
 }
 
-async function copyUrl(channel: IMChannel) {
+async function copyUrl(channel: { id: string }) {
   const text = getCallbackUrl(channel);
   try {
     await navigator.clipboard.writeText(text);
@@ -457,6 +768,20 @@ function editChannel(channel: IMChannel) {
     credentials: { ...channel.credentials },
   };
   showCreateDialog.value = true;
+}
+
+async function editOverviewChannel(channel: IMChannelOverview) {
+  try {
+    const res = await listIMChannels(channel.agent_id);
+    const full = (res.data || []).find((item) => item.id === channel.id);
+    if (!full) {
+      MessagePlugin.error('未找到该渠道详情');
+      return;
+    }
+    editChannel(full);
+  } catch {
+    MessagePlugin.error(t('common.operationFailed'));
+  }
 }
 
 function resetForm() {
@@ -505,7 +830,7 @@ async function handleSave() {
   }
 }
 
-async function handleToggle(channel: IMChannel) {
+async function handleToggle(channel: { id: string }) {
   try {
     await toggleIMChannel(channel.id);
     await loadChannels();
@@ -534,6 +859,94 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.panel-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0 2px;
+}
+
+.toolbar-copy {
+  min-width: 0;
+}
+
+.toolbar-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+  line-height: 1.4;
+}
+
+.toolbar-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  line-height: 1.5;
+}
+
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.toolbar-input {
+  width: 220px;
+}
+
+.toolbar-select {
+  width: 130px;
+}
+
+.command-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--td-bg-color-secondarycontainer);
+  border: 1px solid var(--td-component-stroke);
+}
+
+.command-hint-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.command-hint-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.command-hint-subtitle {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+
+.command-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.command-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  color: var(--td-text-color-primary);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 // --- Channel list section (matches AgentShareSettings pattern) ---
@@ -613,6 +1026,11 @@ onMounted(() => {
   }
 }
 
+.overview-item {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .channel-info {
   flex: 1;
   min-width: 0;
@@ -627,10 +1045,28 @@ onMounted(() => {
   gap: 12px;
 }
 
+.overview-top {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
 .channel-main {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.source-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(7, 193, 96, 0.08);
+  color: var(--td-brand-color);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
 }
 
 .platform-badge {
@@ -669,6 +1105,11 @@ onMounted(() => {
   &.mattermost {
     background: rgba(25, 42, 77, 0.08);
     color: #192a4d;
+  }
+
+  &.wechat {
+    background: rgba(7, 193, 96, 0.08);
+    color: #07c160;
   }
 }
 
@@ -731,6 +1172,12 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.overview-section {
+  .refresh-btn {
+    margin-left: auto;
+  }
 }
 
 .add-btn {

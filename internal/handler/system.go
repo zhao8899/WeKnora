@@ -8,12 +8,14 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/service/file"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/database"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
@@ -51,6 +53,32 @@ type GetSystemInfoResponse struct {
 	GraphDatabaseEngine string `json:"graph_database_engine,omitempty"`
 	MinioEnabled        bool   `json:"minio_enabled,omitempty"`
 	DBVersion           string `json:"db_version,omitempty"`
+}
+
+type LangfuseStatusResponse struct {
+	Enabled         bool    `json:"enabled"`
+	Configured      bool    `json:"configured"`
+	Host            string  `json:"host"`
+	PublicKeyMasked string  `json:"public_key_masked,omitempty"`
+	Release         string  `json:"release,omitempty"`
+	Environment     string  `json:"environment,omitempty"`
+	FlushAt         int     `json:"flush_at"`
+	FlushInterval   string  `json:"flush_interval"`
+	QueueSize       int     `json:"queue_size"`
+	RequestTimeout  string  `json:"request_timeout"`
+	SampleRate      float64 `json:"sample_rate"`
+	Debug           bool    `json:"debug"`
+}
+
+type LangfuseCheckRequest struct {
+	Host      string `json:"host" binding:"required"`
+	PublicKey string `json:"public_key" binding:"required"`
+	SecretKey string `json:"secret_key" binding:"required"`
+}
+
+type LangfuseCheckResponse struct {
+	OK      bool   `json:"ok"`
+	Message string `json:"message"`
 }
 
 // 编译时注入的版本信息
@@ -112,6 +140,70 @@ func (h *SystemHandler) GetSystemInfo(c *gin.Context) {
 		"msg":  "success",
 		"data": response,
 	})
+}
+
+func (h *SystemHandler) GetLangfuseStatus(c *gin.Context) {
+	cfg := langfuse.LoadConfigFromEnv()
+	c.JSON(200, gin.H{
+		"code": 0,
+		"msg":  "success",
+		"data": langfuseStatusFromConfig(cfg),
+	})
+}
+
+func (h *SystemHandler) CheckLangfuse(c *gin.Context) {
+	var req LangfuseCheckRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"code": 1, "msg": "invalid request", "data": LangfuseCheckResponse{OK: false, Message: err.Error()}})
+		return
+	}
+
+	host := strings.TrimSpace(req.Host)
+	if err := secutils.ValidateURLForSSRF(host); err != nil {
+		c.JSON(200, gin.H{"code": 0, "data": LangfuseCheckResponse{OK: false, Message: fmt.Sprintf("host blocked by SSRF validation: %v", err)}})
+		return
+	}
+
+	cfg := langfuse.LoadConfigFromEnv()
+	cfg.Enabled = true
+	cfg.Host = host
+	cfg.PublicKey = strings.TrimSpace(req.PublicKey)
+	cfg.SecretKey = strings.TrimSpace(req.SecretKey)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), cfg.RequestTimeout+2*time.Second)
+	defer cancel()
+	if err := langfuse.CheckConnection(ctx, cfg); err != nil {
+		c.JSON(200, gin.H{"code": 0, "data": LangfuseCheckResponse{OK: false, Message: err.Error()}})
+		return
+	}
+	c.JSON(200, gin.H{"code": 0, "data": LangfuseCheckResponse{OK: true, Message: "connection ok"}})
+}
+
+func langfuseStatusFromConfig(cfg langfuse.Config) LangfuseStatusResponse {
+	return LangfuseStatusResponse{
+		Enabled:         cfg.Enabled,
+		Configured:      cfg.PublicKey != "" && cfg.SecretKey != "",
+		Host:            cfg.Host,
+		PublicKeyMasked: maskSecret(cfg.PublicKey),
+		Release:         cfg.Release,
+		Environment:     cfg.Environment,
+		FlushAt:         cfg.FlushAt,
+		FlushInterval:   cfg.FlushInterval.String(),
+		QueueSize:       cfg.QueueSize,
+		RequestTimeout:  cfg.RequestTimeout.String(),
+		SampleRate:      cfg.SampleRate,
+		Debug:           cfg.Debug,
+	}
+}
+
+func maskSecret(value string) string {
+	if value == "" {
+		return ""
+	}
+	if len(value) <= 8 {
+		return value[:2] + "****"
+	}
+	return value[:4] + "****" + value[len(value)-4:]
 }
 
 func (h *SystemHandler) getDocReaderConnInfo() (addr, transport string) {

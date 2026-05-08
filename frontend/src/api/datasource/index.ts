@@ -50,10 +50,11 @@ export interface ConnectorMeta {
   type: string
   name: string
   description: string
-  icon: string
+  icon?: string
   priority: number
   auth_type: string
   capabilities: string[]
+  available?: boolean
 }
 
 export interface Resource {
@@ -63,6 +64,8 @@ export interface Resource {
   description: string
   url: string
   parent_id?: string
+  has_children?: boolean
+  metadata?: Record<string, any>
 }
 
 // --- API calls ---
