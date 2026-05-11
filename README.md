@@ -393,6 +393,10 @@ On your first visit, you will be automatically redirected to the registration/lo
 
 Troubleshooting FAQ: [Troubleshooting FAQ](./docs/QA.md)
 
+Documentation index: [Docs](./docs/README.md)
+
+Project scope and commercial readiness: [Project Materials](./docs/PROJECT.md)
+
 Detailed API documentation is available at: [API Docs](./docs/api/README.md)
 
 Product plans and upcoming features: [Roadmap](./docs/ROADMAP.md)

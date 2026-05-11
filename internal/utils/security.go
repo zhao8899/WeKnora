@@ -437,21 +437,9 @@ func isSSRFSafeURL(rawURL string) (bool, string) {
 		return false, "IP-like hostname format is not allowed"
 	}
 
-	// Perform DNS resolution to check the resolved IP
-	// This prevents DNS rebinding attacks where a domain resolves to internal IPs
-	ips, err := net.LookupIP(hostname)
-	if err != nil {
-		return false, fmt.Sprintf("DNS resolution failed for hostname %s: cannot verify if it resolves to safe IP", hostname)
-	}
-
-	// Check if any resolved IP is restricted
-	for _, resolvedIP := range ips {
-		if restricted, reason := isRestrictedIP(resolvedIP); restricted {
-			return false, fmt.Sprintf("hostname %s resolves to restricted IP %s: %s", hostname, resolvedIP.String(), reason)
-		}
-	}
-
-	// Check for suspicious port numbers
+	// Check for suspicious port numbers before DNS resolution. This makes the
+	// rejection deterministic even in CI environments where public domains are
+	// intentionally resolved to restricted sinkhole ranges.
 	port := parsed.Port()
 	if port != "" {
 		// Block common internal service ports
@@ -473,6 +461,20 @@ func isSSRFSafeURL(rawURL string) (bool, string) {
 		}
 		if blockedPorts[port] {
 			return false, fmt.Sprintf("port %s is blocked for security reasons", port)
+		}
+	}
+
+	// Perform DNS resolution to check the resolved IP
+	// This prevents DNS rebinding attacks where a domain resolves to internal IPs
+	ips, err := net.LookupIP(hostname)
+	if err != nil {
+		return false, fmt.Sprintf("DNS resolution failed for hostname %s: cannot verify if it resolves to safe IP", hostname)
+	}
+
+	// Check if any resolved IP is restricted
+	for _, resolvedIP := range ips {
+		if restricted, reason := isRestrictedIP(resolvedIP); restricted {
+			return false, fmt.Sprintf("hostname %s resolves to restricted IP %s: %s", hostname, resolvedIP.String(), reason)
 		}
 	}
 

@@ -126,8 +126,10 @@ func TestSSRFSafeURL_AllowPublicDomain(t *testing.T) {
 
 	ok, reason := isSSRFSafeURL("https://example.com/path")
 	if !ok {
-		// This path depends on runtime DNS/network. If DNS is unavailable, skip to keep CI stable.
-		if strings.Contains(reason, "DNS resolution failed") {
+		// This path depends on runtime DNS/network. Some CI/sandbox networks
+		// either block DNS or sinkhole public domains into restricted ranges.
+		if strings.Contains(reason, "DNS resolution failed") ||
+			strings.Contains(reason, "resolves to restricted IP") {
 			t.Skipf("skip due to DNS unavailable in test environment: %s", reason)
 		}
 		t.Fatalf("expected public domain to be allowed, got ok=%v reason=%q", ok, reason)

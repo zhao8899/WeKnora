@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/utils"
 	"github.com/sashabaranov/go-openai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,6 +17,9 @@ import (
 
 func newTestRemoteChat(t *testing.T) *RemoteAPIChat {
 	t.Helper()
+	t.Setenv("SSRF_WHITELIST", "api.openai.com,api.moonshot.ai")
+	utils.ResetSSRFWhitelistForTest()
+	t.Cleanup(utils.ResetSSRFWhitelistForTest)
 
 	chat, err := NewRemoteAPIChat(&ChatConfig{
 		Source:    types.ModelSourceRemote,
@@ -248,6 +252,10 @@ func TestRemoteAPIChat(t *testing.T) {
 }
 
 func TestNewRemoteChat_MoonshotFixedTemperature(t *testing.T) {
+	t.Setenv("SSRF_WHITELIST", "api.moonshot.ai")
+	utils.ResetSSRFWhitelistForTest()
+	t.Cleanup(utils.ResetSSRFWhitelistForTest)
+
 	chatInstance, err := NewRemoteChat(&ChatConfig{
 		Source:    types.ModelSourceRemote,
 		BaseURL:   "https://api.moonshot.ai/v1",
